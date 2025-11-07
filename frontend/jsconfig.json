@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "baseUrl": "../../../Downloads/familia-barbershop-booking-efe0d6fd-2",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx"]
+} 

@@ -1,0 +1,655 @@
+// src/api/base44Client.js
+
+const BASE_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:3001';
+export const API_ROOT =
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_ROOT) ||
+    (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
+    'http://localhost:3001';
+
+// מחלץ את הטלפון של המשתמש מה-LocalStorage לצורך שליחת כותרת ל-Admin-Guard
+function getClientPhoneForHeader() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem('familiaClient');
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    return (c && c.phone) ? String(c.phone) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function shouldAttachAdminHeader(path) {
+  try {
+    // path מגיע אצלך בפורמט '/something'
+    return typeof path === 'string' && path.startsWith('/admin/');
+  } catch {
+    return false;
+  }
+}
+
+
+// האם יש ראוטי אדמין ל־appointments בשרת?
+const HAS_ADMIN_APPOINTMENTS =
+    ((typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HAS_ADMIN_APPOINTMENTS) || 'false')
+        .toString().toLowerCase() === 'true';
+
+
+/* ---------------- low-level HTTP (GET tolerates 404) ---------------- */
+async function httpGet(path) {
+  const headers = {};
+  if (shouldAttachAdminHeader(path)) {
+    const phone = getClientPhoneForHeader();
+    if (phone) headers['X-Client-Phone'] = phone;
+  }
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'GET',
+    headers,
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  if (res.status === 404) return null;
+  const isJson = ct.indexOf('application/json') !== -1;
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('GET', path, res.status, payload);
+    console.error('[API GET ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+async function httpPost(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (shouldAttachAdminHeader(path)) {
+    const phone = getClientPhoneForHeader();
+    if (phone) headers['X-Client-Phone'] = phone;
+  }
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const isJson = ct.indexOf('application/json') !== -1;
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('POST', path, res.status, payload);
+    console.error('[API POST ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+async function httpPut(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (shouldAttachAdminHeader(path)) {
+    const phone = getClientPhoneForHeader();
+    if (phone) headers['X-Client-Phone'] = phone;
+  }
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const isJson = ct.indexOf('application/json') !== -1;
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('PUT', path, res.status, payload);
+    console.error('[API PUT ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+async function httpDelete(path) {
+  const headers = {};
+  if (shouldAttachAdminHeader(path)) {
+    const phone = getClientPhoneForHeader();
+    if (phone) headers['X-Client-Phone'] = phone;
+  }
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'DELETE',
+    headers,
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const isJson = ct.indexOf('application/json') !== -1;
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('DELETE', path, res.status, payload);
+    console.error('[API DELETE ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+async function httpPatch(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (shouldAttachAdminHeader(path)) {
+    const phone = getClientPhoneForHeader();
+    if (phone) headers['X-Client-Phone'] = phone;
+  }
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const isJson = ct.indexOf('application/json') !== -1;
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('PATCH', path, res.status, payload);
+    console.error('[API PATCH ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+
+
+async function httpFormPost(path, data) {
+  const params = new URLSearchParams();
+  Object.entries(data || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) params.append(k, String(v));
+  });
+
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
+  const phone = getClientPhoneForHeader();
+  if (phone) headers['X-Client-Phone'] = phone;
+
+  const res = await fetch(String(BASE_URL) + String(path), {
+    method: 'POST',
+    headers,
+    body: params.toString(),
+  });
+
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const isJson = ct.includes('application/json');
+  const payload = isJson ? await safeJson(res) : null;
+
+  if (!res.ok) {
+    const err = buildHttpError('POST', path, res.status, payload);
+    console.error('[API POST FORM ' + path + ']', err);
+    throw err;
+  }
+  return payload;
+}
+
+
+
+/* ---- helpers: parse & error shape ---- */
+async function safeJson(res) {
+  try { return await res.json(); } catch (e) { return null; }
+}
+
+function pick(obj, key, alt, defVal) {
+  // מקבילה בטוחה ל-obj?.key ?? obj?.alt ?? defVal
+  if (obj && typeof obj === 'object') {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+    if (alt && obj[alt] !== undefined && obj[alt] !== null) return obj[alt];
+  }
+  return defVal;
+}
+
+function buildHttpError(method, path, status, payload) {
+  const codeFromPayload =
+      (payload && (payload.code || (payload.error && payload.error.code))) ||
+      (payload && typeof payload.message === 'string' ? payload.message : undefined);
+
+  const err = new Error(codeFromPayload || ('HTTP ' + String(status)));
+  err.status = status;
+  err.payload = payload || null;
+
+  if (status === 409 && (codeFromPayload === 'UNREGISTERED_CLIENT' || payload === 'UNREGISTERED_CLIENT' || (payload && payload.message === 'UNREGISTERED_CLIENT'))) {
+    err.code = 'UNREGISTERED_CLIENT';
+  } else if (status === 409 && (codeFromPayload === 'ALREADY_REGISTERED' || (payload && payload.message === 'ALREADY_REGISTERED'))) {
+    err.code = 'ALREADY_REGISTERED';
+  } else if (status === 400 && (codeFromPayload === 'NAME_REQUIRED' || (payload && payload.message === 'NAME_REQUIRED'))) {
+    err.code = 'NAME_REQUIRED';
+  } else if (status === 400 && (codeFromPayload === 'Invalid code' || (payload && payload.message === 'Invalid code'))) {
+    err.code = 'INVALID_CODE';
+  } else {
+    err.code = codeFromPayload || ('HTTP_' + String(status));
+  }
+  return err;
+}
+
+function normalizeDateForApi(date) {
+  if (!date) return '';
+  if (date instanceof Date) return date.toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return String(date); // yyyy-MM-dd
+  const m = String(date).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); // dd/MM/yyyy
+  if (m) return m[3] + '-' + m[2] + '-' + m[1];
+  const d = new Date(date);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
+function normalizePhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.startsWith('972')) return '0' + digits.slice(3);
+  if (digits.length === 9 && digits.startsWith('5')) return '0' + digits;
+  if (digits.length === 10 && digits.startsWith('0')) return digits;
+  return digits.startsWith('0') ? digits : '0' + digits;
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function localDateStr(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // YYYY-MM-DD בלוקאלי
+}
+function localTimeStr(d) {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; // HH:mm בלוקאלי
+}
+
+
+/* ---------------- helpers: dual snake/camel fields ---------------- */
+function both(obj, snake, camel, def) {
+  var a = (obj && obj[snake] !== undefined) ? obj[snake] : ((obj && obj[camel] !== undefined) ? obj[camel] : def);
+  var b = (obj && obj[camel] !== undefined) ? obj[camel] : ((obj && obj[snake] !== undefined) ? obj[snake] : def);
+  var r = {};
+  r[snake] = a;
+  r[camel] = b;
+  return r;
+}
+function mapArr(arr, fn) { return Array.isArray(arr) ? arr.map(fn) : []; }
+
+/* ---- normalizers ---- */
+function normService(s) {
+  s = s || {};
+  return Object.assign({}, s,
+      both(s, 'order_index', 'orderIndex', 0),
+      both(s, 'is_active', 'isActive', true),
+      {
+        duration: (s.duration !== undefined ? s.duration : s.durationMinutes),
+        durationMinutes: (s.durationMinutes !== undefined ? s.durationMinutes : s.duration),
+      }
+  );
+}
+var normServiceArr = function (a) { return mapArr(a, normService); };
+
+function normOrdAct(x) {
+  x = x || {};
+  return Object.assign({}, x,
+      both(x, 'order_index', 'orderIndex', 0),
+      both(x, 'is_active', 'isActive', true)
+  );
+}
+var normOrdActArr = function (a) { return mapArr(a, normOrdAct); };
+
+function normMedia(x) {
+  x = x || {};
+  var image = pick(x, 'image_url', 'imageUrl', undefined);
+  var video = pick(x, 'video_url', 'videoUrl', undefined);
+  if (video === undefined) video = x.url;
+
+  var base = normOrdAct(x);
+  var withImg = both({ image_url: image, imageUrl: image }, 'image_url', 'imageUrl', undefined);
+  var withVid = both({ video_url: video, videoUrl: video }, 'video_url', 'videoUrl', undefined);
+
+  var out = Object.assign({}, base, withImg, withVid);
+  out.url = (video !== undefined && video !== null) ? video : x.url;
+  return out;
+}
+var normMediaArr = function (a) { return mapArr(a, normMedia); };
+
+function normSetting(s) {
+  if (!s) return null;
+  return Object.assign({}, s, {
+    key: s.key || s.name || s.id || null,
+    value: (s.value !== undefined ? s.value : (s.val !== undefined ? s.val : null)),
+  });
+}
+
+// הוסף/עדכן את הנרמלר אם עדיין לא קיים
+function normAppointment(x) {
+  x = x || {};
+  const nestedFirst = (x.client && (x.client.firstName || x.client.first_name)) || '';
+  const nestedLast  = (x.client && (x.client.lastName  || x.client.last_name))  || '';
+  const nestedName  = (x.client && (x.client.name || `${nestedFirst} ${nestedLast}`.trim())) || '';
+  const nestedPhone = (x.client && (x.client.phone || x.client.client_phone)) || '';
+
+  const out = Object.assign({}, x,
+      both(x, 'starts_at', 'startsAt', x.starts_at),
+      both(x, 'ends_at',   'endsAt',   x.ends_at),
+      both({ client_name:  x.client_name  ?? x.clientName  ?? nestedName  }, 'client_name',  'clientName',  ''),
+      both({ client_phone: x.client_phone ?? x.clientPhone ?? x.phone ?? nestedPhone }, 'client_phone', 'clientPhone', '')
+  );
+
+  if (!out.client) {
+    out.client = { name: out.client_name, phone: out.client_phone };
+  }
+  return out;
+}
+const normAppointmentArr = (a) => Array.isArray(a) ? a.map(normAppointment) : [];
+
+/* ---- input mappers (accept snake or camel) ---- */
+function toServiceBody(b) {
+  b = b || {};
+  return {
+    name: b.name,
+    durationMinutes: (b.durationMinutes !== undefined ? b.durationMinutes : b.duration),
+    price: b.price,
+    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
+    isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+  };
+}
+function toProductBody(b) {
+  b = b || {};
+  return {
+    name: b.name,
+    price: b.price,
+    imageUrl: (b.imageUrl !== undefined ? b.imageUrl : b.image_url),
+    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
+    isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+  };
+}
+function toTestimonialBody(b) {
+  b = b || {};
+  return {
+    author: b.author, rating: b.rating, content: b.content,
+    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
+    isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+  };
+}
+function toGalleryBody(b) {
+  b = b || {};
+  return {
+    videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
+    isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+  };
+}
+function toBackgroundBody(b) {
+  b = b || {};
+  return {
+    videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
+    isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : false)),
+  };
+}
+
+/* ---------------- API (with fallbacks) ---------------- */
+const api = {
+  Service: {
+    list: async () => normServiceArr((await httpGet('/services')) || []),
+    adminList: async () => normServiceArr((await httpGet('/admin/services')) || []),
+    create: async (data) => normService(await httpPost('/admin/services', toServiceBody(data))),
+    update: async (id, data) => normService(await httpPut('/admin/services/' + encodeURIComponent(id), toServiceBody(data))),
+    remove: (id) => httpDelete('/admin/services/' + encodeURIComponent(id)),
+  },
+
+  Appointment: {
+    getAvailable: async (serviceOrId, date) => {
+      const sid = (typeof serviceOrId === 'string') ? serviceOrId : (serviceOrId && serviceOrId.id);
+      const day = normalizeDateForApi(date);
+      if (!sid || !day) return [];
+      return (await httpGet('/appointments/available?serviceId=' + encodeURIComponent(sid) + '&date=' + encodeURIComponent(day))) || [];
+    },
+
+    // list – קודם ציבורי, פולבק ל־admin
+    list: async (sort) => {
+      try {
+        if (HAS_ADMIN_APPOINTMENTS) {
+          const a = await httpGet('/admin/appointments');
+          if (Array.isArray(a)) return a;
+        }
+        const b = await httpGet('/appointments');
+        return Array.isArray(b) ? b : [];
+      } catch (e) {
+        const b = await httpGet('/appointments').catch(() => []);
+        return Array.isArray(b) ? b : [];
+      }
+    },
+
+    // >>> החלפה מלאה מכאן <<<
+    create: async (payload) => {
+      payload = payload || {};
+
+      // אם הגיעו starts_at/ends_at ויש תמיכת אדמין אפשר להרחיב פה; כרגע תמיד נלך על המסלול הציבורי
+      // if ((payload.starts_at || payload.ends_at) && HAS_ADMIN_APPOINTMENTS) { ... }
+
+      // --- בנייה למסלול הציבורי /appointments ---
+      // תאריך/שעה: נקבל או מ-date/time או מ-starts_at
+      const startInput = payload.starts_at || payload.date || null;
+      const start = startInput ? new Date(startInput) : null;
+
+      // אם אין date/time מפורשים — נחלץ מ-start (אם קיים)
+      const date =
+          (payload.date && normalizeDateForApi(payload.date)) ||
+          (start && !Number.isNaN(start.getTime()) ? localDateStr(start) : '');
+
+      const time =
+          (payload.time && String(payload.time).slice(0,5)) || // "HH:mm"
+          (start && !Number.isNaN(start.getTime()) ? localTimeStr(start) : '');
+
+      // שירות
+      const serviceId =
+          payload.service_id ??
+          payload.serviceId ??
+          (payload.service && payload.service.id) ??
+          null;
+
+      // שם הלקוח (אופציונלי)
+      const typedName = String(payload.client_name || payload.clientName || '').trim();
+      const parts = typedName ? typedName.split(/\s+/) : [];
+      const firstName = payload.firstName || payload.client_first_name || (parts[0] || '');
+      const lastName  = payload.lastName  || payload.client_last_name  || (parts.slice(1).join(' ') || '');
+
+      // טלפון — נכסה את כל הווריאציות האפשריות וננרמל
+      const rawPhone =
+          (payload.client && (payload.client.phone || payload.client.client_phone)) ??
+          payload.client_phone ??
+          payload.clientPhone ??
+          payload.phone ??
+          '';
+
+      const phone = normalizePhone(rawPhone);
+
+      // ולידציה מקומית כדי לא לקבל 400 “חסרים שדות”
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('DATE_REQUIRED'); // אפשר ללכוד ולהראות הודעה יפה ב־UI
+      }
+      if (!time || !/^\d{2}:\d{2}$/.test(time)) {
+        throw new Error('TIME_REQUIRED');
+      }
+      if (!phone || !/^\d{9,10}$/.test(phone)) {
+        // normalizePhone יחזיר 0XXXXXXXXX לרוב המקרים; אם לא — נכשיל כאן
+        throw new Error('PHONE_REQUIRED');
+      }
+
+      const publicBody = {
+        serviceId,
+        date,                        // YYYY-MM-DD
+        time,                        // HH:mm
+        note: payload.note,
+        client: { firstName, lastName, phone },
+        client_name: typedName,
+        is_guest: true,
+        // גיבוי כפול (לא חובה, אבל עוזר לשרתים שמצפים לשדות שטוחים):
+        phone,
+      };
+
+      const res = await httpPost('/appointments', publicBody);
+      return normAppointment(res);
+    },
+
+    update: async (id, data) => {
+      data = data || {};
+      if (data.starts_at || data.ends_at) {
+        const res = await api.Admin.reschedule(id, data.starts_at, data.ends_at);
+        return normAppointment(res);
+      }
+      const res = await httpPut('/admin/appointments/' + encodeURIComponent(id), data);
+      return normAppointment(res);
+    },
+
+    // delete – קודם ציבורי, פולבק ל-admin
+    delete: async (id) => {
+      try {
+        return await httpDelete('/appointments/' + encodeURIComponent(id));
+      } catch (e) {
+        if (e && e.status === 404) {
+          return await httpDelete('/admin/appointments/' + encodeURIComponent(id));
+        }
+        throw e;
+      }
+    },
+
+    listMine: (phone) =>
+        httpGet('/clients/me/appointments?phone=' + encodeURIComponent(normalizePhone(phone || ''))),
+  },
+
+  WaitingList: {
+    join: ({ clientId, date, time, serviceId }) =>
+        httpPost('/admin/waiting-list', { clientId: clientId, date: date, time: time, serviceId: serviceId }),
+    listByDate: (date) => httpGet('/admin/waiting-list?date=' + encodeURIComponent(date || '')),
+  },
+
+  Admin : {
+    // מחזיר רשימת תורים ליום מסוים (פורמט YYYY-MM-DD)
+    appointmentsByDate: (date) => {
+      const d = (date instanceof Date)
+          ? date.toISOString().slice(0, 10)
+          : String(date || '').slice(0, 10);
+      return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
+    },
+
+    // שינוי מועד תור קיים (מקבל ISO מלאים)
+    reschedule: (id, newStartAtIso, newEndAtIso) => {
+      return httpPost('/admin/appointments/reschedule', {
+        id,
+        newStartAt: String(newStartAtIso),
+        newEndAt:   String(newEndAtIso),
+      });
+    },
+
+    appointments: {
+      async delete(id) {
+        return api.delete(`/admin/appointments/${id}`);
+      },
+    },
+
+    blocks: {
+      list: (date) => {
+        const q = date
+            ? '?date=' + encodeURIComponent(
+            date instanceof Date ? date.toISOString().slice(0,10) : String(date).slice(0,10)
+        )
+            : '';
+        return httpGet('/admin/blocked-times' + q);
+      },
+
+      // נסיונות מדורגים: JSON camel -> FORM camel -> FORM snake
+      add: async (startIso, endIso, reason) => {
+        return await httpPost('/admin/blocked-times', {
+          starts_at: String(startIso),
+          ends_at:   String(endIso),
+          reason:    reason ?? ''
+        });
+      },
+
+      remove: (id) => httpDelete('/admin/blocked-times/' + encodeURIComponent(id)),
+    }
+  },
+
+  Product: {
+    list: async () => normMediaArr((await httpGet('/products')) || []),
+    create: async (data) => normMedia(await httpPost('/admin/products', toProductBody(data))),
+    update: async (id, data) => normMedia(await httpPut('/admin/products/' + encodeURIComponent(id), toProductBody(data))),
+    remove: (id) => httpDelete('/admin/products/' + encodeURIComponent(id)),
+  },
+
+  Testimonial: {
+    list: async () => {
+      try {
+        const admin = await httpGet('/admin/testimonials');
+        if (Array.isArray(admin)) return normOrdActArr(admin);
+        const pub = await httpGet('/testimonials');
+        return normOrdActArr(pub || []);
+      } catch (e) {
+        if (e && e.status === 404) {
+          const pub = await httpGet('/testimonials');
+          return normOrdActArr(pub || []);
+        }
+        return [];
+      }
+    },
+    create: async (data) => normOrdAct(await httpPost('/admin/testimonials', toTestimonialBody(data))),
+    update: async (id, data) => normOrdAct(await httpPut('/admin/testimonials/' + encodeURIComponent(id), toTestimonialBody(data))),
+    remove: (id) => httpDelete('/admin/testimonials/' + encodeURIComponent(id)),
+  },
+
+
+  GalleryVideo: {
+    list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
+    create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
+    update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
+    remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
+  },
+  // alias: some UIs still call GalleryImage
+  GalleryImage: {
+    list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
+    create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
+    update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
+    remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
+  },
+
+  BackgroundVideo: {
+    list: async () => normMediaArr((await httpGet('/background-videos')) || []),
+    create: async (data) => normMedia(await httpPost('/admin/background-videos', toBackgroundBody(data))),
+    update: async (id, data) => normMedia(await httpPut('/admin/background-videos/' + encodeURIComponent(id), toBackgroundBody(data))),
+    remove: (id) => httpDelete('/admin/background-videos/' + encodeURIComponent(id)),
+  },
+
+  Setting: {
+    // return { key, value } or null; doesn't throw on 404
+    get: async (key) => normSetting(await httpGet('/settings/' + encodeURIComponent(key))),
+    set: async (key, value) => normSetting(await httpPost('/admin/settings/' + encodeURIComponent(key), { value: value })),
+  },
+
+  /* ---------------- AUTH ---------------- */
+  Auth: {
+    requestCodeForLogin: async (phone) => {
+      return httpPost('/auth/request-code', { phone: normalizePhone(phone) });
+    },
+
+    requestCodeForRegister: async (phone) => {
+      return httpPost('/auth/request-code', { phone: normalizePhone(phone) });
+    },
+    verify: async (p) => {
+      p = p || {};
+      return httpPost('/auth/verify-code', {
+        phone: normalizePhone(p.phone), code: p.code, firstName: p.firstName, lastName: p.lastName
+      });
+    },
+  },
+};
+
+// הוסף את השורה הבאה לפני ה-exports:
+Object.assign(api, { get: httpGet, post: httpPost, put: httpPut, patch: httpPatch, delete: httpDelete });
+
+
+/* --------------- exports (keep all styles) --------------- */
+export const base44 = api;
+export default api;
+export const {
+  Service, Appointment, WaitingList, Admin, Product,
+  Testimonial, GalleryVideo, GalleryImage, BackgroundVideo, Setting, Auth
+} = api;
+export const base44Client = api; // legacy alias
+export const Base44 = api;       // legacy alias
+if (typeof window !== 'undefined') window.base44 = api; // handy for debugging

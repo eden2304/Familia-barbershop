@@ -1,0 +1,681 @@
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  ChevronLeft, ChevronRight, AlertCircle, Scissors, Calendar,
+  CheckCircle2, Clock, Clock4, Zap, Tag
+} from "lucide-react";
+import { format, addDays, startOfWeek, startOfDay, isBefore, isSameDay } from "date-fns";
+import { he } from "date-fns/locale";
+import { motion, AnimatePresence } from "framer-motion";
+import VerificationModal from "../components/VerificationModal.jsx";
+import WaitingListModal from "../components/WaitingListModal.jsx";
+
+// ✅ API החדש
+import api from "@/api/base44Client";
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+
+/* ---------------- utils ---------------- */
+const normalizePhone = (phone) => {
+  const cleaned = (phone || "").replace(/\D/g, "");
+  if (cleaned.startsWith("972")) return `0${cleaned.slice(3)}`;
+  if (cleaned.length === 9 && cleaned.startsWith("5")) return `0${cleaned}`;
+  if (cleaned.length === 10 && cleaned.startsWith("05")) return cleaned;
+  return cleaned.startsWith("0") ? cleaned : `0${cleaned}`;
+};
+
+const normalizeClientObject = (raw) => {
+  if (!raw) return null;
+  return {
+    id: raw.id,
+    phone: raw.phone,
+    // לתמוך בשני הסגנונות
+    first_name: raw.first_name ?? raw.firstName ?? "",
+    last_name:  raw.last_name  ?? raw.lastName  ?? "",
+  };
+};
+
+
+const DAYS_IN_WEEK = [
+  { key: 0, name: "ראשון" },
+  { key: 1, name: "שני" },
+  { key: 2, name: "שלישי" },
+  { key: 3, name: "רביעי" },
+  { key: 4, name: "חמישי" },
+  { key: 5, name: "שישי" },
+  { key: 6, name: "שבת" },
+];
+
+const toYMD = (d) => {
+  if (!d) return "";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  // פורמט מקומי: yyyy-mm-dd לפי השעון המקומי (ללא UTC)
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const combineDateTime = (date, hhmm) => {
+  const [hh, mm] = String(hhmm).split(":").map(Number);
+  const d = new Date(date);
+  d.setHours(hh, mm, 0, 0);
+  return d;
+};
+
+function getClosingDateFor(d, businessHours) {
+  try {
+    const dow = d.getDay(); // 0=ראשון ... 6=שבת
+    const row = (businessHours || []).find(
+        x => (x.day_of_week ?? x.weekday ?? x.day) === dow
+    );
+    const closeStr = row?.closes_at ?? row?.close_at ?? row?.closing_time ?? row?.end ?? row?.close;
+    if (!closeStr) return null;
+    const [hh, mm] = String(closeStr).split(':').map(Number);
+    const out = new Date(d);
+    out.setHours(hh || 0, mm || 0, 0, 0);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+
+function isFutureSlot(dateObj, hhmm) {
+  // dateObj = today/date user selected (Date)
+  // hhmm = "HH:MM"
+  const slotStart = combineDateTime(dateObj, hhmm);
+  const now = new Date();
+  // אם זה לא היום – אין מגבלה, זה עתיד
+  if (!isSameDay(slotStart, now)) return true;
+  // אם זה היום – לא לאפשר סלוטים שכבר התחילו/עברו (עם מרווח בטיחות של 60 שניות)
+  return slotStart.getTime() > now.getTime() + 60 * 1000;
+}
+
+
+/* ---------------- component ---------------- */
+export default function Book() {
+  const navigate = useNavigate();
+
+  const [step, setStep] = useState(1);
+  const [client, setClient] = useState(null);
+  const [services, setServices] = useState([]);
+  const [selectedService, setSelectedService] = useState(null);
+
+  // נשארים עבור מודל רשימת המתנה בלבד (לא נחוצים לזמינות/קביעת תור)
+  const [businessHours, setBusinessHours] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [blockedTimes, setBlockedTimes] = useState([]);
+
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
+
+  // זמינות מהשרת: {'yyyy-MM-dd': ['HH:MM', ...]}
+  const [availableByDate, setAvailableByDate] = useState({});
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  const [showForm, setShowForm] = useState(false);
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
+  const [showWaitingList, setShowWaitingList] = useState(false);
+
+  const getInitialWeekOffset = () => (new Date().getDay() === 6 ? 1 : 0);
+  const [selectedWeek, setSelectedWeek] = useState(getInitialWeekOffset());
+
+  const [aptsLoading, setAptsLoading] = useState(false);
+
+  /* -------- init: client + services -------- */
+  useEffect(() => {
+    const stored = localStorage.getItem("familiaClient");
+    if (stored) {
+      const parsed = normalizeClientObject(JSON.parse(stored));
+      setClient(parsed);
+    } else {
+      navigate("/");
+    }
+    loadInitialData();
+  }, [navigate]);
+
+  const loadInitialData = async () => {
+    setLoading(true);
+    try {
+      const servicesData = await api.Service.list().catch(() => []);
+      // אל תסנן לפי .active (לא קיים בבאק); אם יש isActive=false – נסיר
+      setServices((servicesData || []).filter((s) => s.isActive !== false));
+
+      // לשימוש עתידי במודלים אחרים – משאירים ריק כאן
+      const bh = await api.BusinessHours?.list?.().catch(() => []);
+      setBusinessHours(Array.isArray(bh) ? bh : []);
+      setAppointments([]);
+      setBlockedTimes([]);
+    } catch (e) {
+      console.error("Error loading initial data:", e);
+      // לא מראים באנר אם שירותים לא קרסו – המסך ממשיך לעבוד
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* -------- helpers -------- */
+  const getWeekDays = (weekOffset) => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+    const base = addDays(start, weekOffset * 7);
+    return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+  };
+
+  // טען זמינות ל־7 הימים המוצגים בכל שינוי שירות/שבוע
+  useEffect(() => {
+    const svcId = selectedService?.id;
+    if (!svcId) {
+      setAvailableByDate({});
+      return;
+    }
+    const weekDays = getWeekDays(selectedWeek);
+    setLoadingSlots(true);
+    Promise.all(
+        weekDays.map(async (d) => {
+          const ymd = toYMD(d);
+          try {
+            const arr = await api.Appointment.getAvailable(svcId, ymd);
+            return [ymd, Array.isArray(arr) ? arr : []];
+          } catch (e) {
+            console.warn("availability failed for", ymd, e);
+            return [ymd, []];
+          }
+        })
+    )
+        .then((entries) => {
+          const map = {};
+          for (const [k, v] of entries) map[k] = v;
+          setAvailableByDate(map);
+        })
+        .finally(() => setLoadingSlots(false));
+  }, [selectedService?.id, selectedWeek]);
+
+  useEffect(() => {
+    // נטען תורים רק אם:
+    // - המודאל של רשימת המתנה פתוח
+    // - ויש תאריך נבחר
+    if (!showWaitingList || !selectedDate) return;
+
+    const fetchDayAppointments = async () => {
+      try {
+        setAptsLoading(true);
+        const ymd = toYMD(selectedDate);           // "yyyy-MM-dd"
+        const res = await fetch(`${API_URL}/appointments?date=${ymd}`);
+        const data = await res.json();
+        // ה־WaitingListModal מצפה לרשימה מלאה של תורים של אותו יום
+        setAppointments(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error("Failed to load day appointments for waiting list:", e);
+        setAppointments([]); // לא להפיל את ה־UI
+      } finally {
+        setAptsLoading(false);
+      }
+    };
+
+    fetchDayAppointments();
+  }, [showWaitingList, selectedDate]);
+
+  useEffect(() => {
+    // כשנכנסים למסך ימים/שעות, נבטל פוקוס אוטומטי שאולי נשאר מכפתורים
+    if (document && document.activeElement && document.activeElement !== document.body) {
+      try { document.activeElement.blur(); } catch (_) {}
+    }
+  }, [step]);
+
+
+
+  /* -------- handlers -------- */
+  const handleServiceSelect = (service) => {
+    setSelectedService(service);
+    setSelectedDate(null);
+    setSelectedTimeSlot(null);
+    setAvailableByDate({});
+    setStep(2);
+    setError(null);
+  };
+
+  const handleDateSelect = (date) => {
+    setSelectedDate(date);
+    setSelectedTimeSlot(null);
+    setStep(3);
+    setError(null);
+  };
+
+  const handleTimeSelect = (hhmm) => {
+    // הגנה: אם הסלוט כבר עבר (במיוחד כשהתאריך היום) — אל תאפשר
+    if (!isFutureSlot(selectedDate, hhmm)) {
+      setError("השעה שבחרת כבר עברה. בחר/י שעה אחרת.");
+      return;
+    }
+    const dt = combineDateTime(selectedDate, hhmm);
+    setSelectedTimeSlot({ time: dt, hhmm, formatted: hhmm });
+    setShowForm(true);
+    setError(null);
+  };
+
+
+  const handleUrgentAppointment = () => {
+    const clientName = client ? `${client.first_name} ${client.last_name}`.trim() : "אני";
+    const message = `היי חן מה קורה, זה ${clientName}, אני חייב תור דחוף להיום. יש מצב אתה מארגן לי?`;
+    const whatsappUrl = `https://wa.me/972523767851?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, "_blank");
+  };
+
+  const handleLoginSuccess = (loggedInClient) => {
+    const norm = normalizeClientObject(loggedInClient);
+    setClient(norm);
+    setShowVerification(false);
+    setShowWaitingList(true);
+  };
+
+  const handleJoinWaitingList = () => {
+    if (client) setShowWaitingList(true);
+    else setShowVerification(true);
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const fn = client?.first_name ?? client?.firstName ?? "";
+      const ln = client?.last_name  ?? client?.lastName  ?? "";
+      if (!fn || !ln) throw new Error("שם הלקוח חסר");
+      if (!selectedService || !selectedTimeSlot || !selectedDate) throw new Error("שירות/תאריך/שעה לא נבחרו");
+
+      await api.Appointment.create({
+        serviceId: selectedService.id,
+        date: toYMD(selectedDate),
+        time: selectedTimeSlot.hhmm,
+        client: {
+          firstName: client.first_name ?? client.firstName,
+          lastName:  client.last_name  ?? client.lastName,
+          phone: normalizePhone(client.phone),
+        },
+        note: note?.trim() || undefined,
+      });
+
+      setSuccess(true);
+      setSelectedService(null);
+      setSelectedDate(null);
+      setSelectedTimeSlot(null);
+      setShowForm(false);
+      setNote("");
+      await loadInitialData();
+    } catch (err) {
+      console.error("Appointment creation error:", err);
+      setError("שגיאה ביצירת התור: " + (err.code || err.message || "נסה שוב."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* -------- derived -------- */
+  const weekDays = getWeekDays(selectedWeek);
+  const availableSlots =
+      selectedDate && selectedService
+          ? (availableByDate[toYMD(selectedDate)] || [])
+              // סינון: השאר רק סלוטים עתידיים
+              .filter((hhmm) => isFutureSlot(selectedDate, hhmm))
+              // מיפוי לאובייקטים עם time/labels
+              .map((hhmm) => ({
+                time: combineDateTime(selectedDate, hhmm),
+                formatted: hhmm,
+                hhmm,
+              }))
+          : [];
+
+  /* -------- UI -------- */
+  if (loading) {
+    return (
+        <div className="fixed inset-0 bg-white flex items-center justify-center z-50">
+          <div className="flex flex-col items-center">
+            <div
+                className="loader ease-linear rounded-full border-8 border-t-8 border-gray-200 h-24 w-24 mb-4"
+                style={{ borderTopColor: "black" }}
+            />
+            <p className="text-gray-700 text-lg">טוען נתונים...</p>
+          </div>
+        </div>
+    );
+  }
+
+  if (success) {
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="bg-white rounded-3xl p-8 shadow-2xl max-w-sm mx-auto text-center"
+          >
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle2 className="w-10 h-10 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">התור נקבע בהצלחה!</h2>
+            <p className="text-gray-600 mb-8">נתראה בקרוב בפמיליה</p>
+            <Button onClick={() => navigate("/")} className="bg-black text-white hover:bg-gray-800 rounded-full px-8 py-3 font-medium w-full">
+              חזור למסך הבית
+            </Button>
+          </motion.div>
+        </div>
+    );
+  }
+
+  return (
+      <>
+        {showVerification && (
+            <VerificationModal
+                isOpen={showVerification}
+                onClose={() => setShowVerification(false)}
+                onSuccess={handleLoginSuccess}
+            />
+        )}
+
+        {showWaitingList && (
+            <WaitingListModal
+                isOpen={showWaitingList}
+                onClose={() => setShowWaitingList(false)}
+                service={selectedService}
+                day={selectedDate}
+                client={client}
+                allAppointments={appointments}
+                businessHours={businessHours}
+                blockedTimes={blockedTimes}
+            />
+        )}
+
+        {showForm && selectedService && selectedDate && selectedTimeSlot && (
+            <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+              <motion.div
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
+              >
+                {/* כותרת */}
+                <h3 className="text-xl font-bold text-center text-gray-900 mb-5">אישור התור</h3>
+
+                {/* כרטיסיות מידע (4 שורות) */}
+                <div className="space-y-3 mb-6">
+                  {/* שירות */}
+                  <div className="w-full bg-gray-100 rounded-2xl px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span className="text-sm">שירות</span>
+                      <Scissors className="w-4 h-4" />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">{selectedService?.name}</div>
+                  </div>
+
+                  {/* תאריך */}
+                  <div className="w-full bg-gray-100 rounded-2xl px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span className="text-sm">תאריך</span>
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {format(selectedDate, "dd/MM/yy", { locale: he })}
+                    </div>
+                  </div>
+
+                  {/* שעה */}
+                  <div className="w-full bg-gray-100 rounded-2xl px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span className="text-sm">שעה</span>
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {selectedTimeSlot?.formatted || selectedTimeSlot?.hhmm}
+                    </div>
+                  </div>
+
+                  {/* מחיר */}
+                  <div className="w-full bg-gray-100 rounded-2xl px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span className="text-sm">מחיר</span>
+                      <Tag className="w-4 h-4" />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900">₪{selectedService?.price}</div>
+                  </div>
+                </div>
+
+                {/* שגיאה (אם יש) */}
+                {error && (
+                    <Alert className="mb-4" variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{error}</AlertDescription>
+                    </Alert>
+                )}
+
+                {/* כפתורים */}
+                <div className="flex items-center gap-3">
+                  <Button
+                      onClick={() => setShowForm(false)}
+                      type="button"
+                      variant="outline"
+                      className="rounded-full h-11 px-6 flex-1"
+                  >
+                    ביטול
+                  </Button>
+                  <Button
+                      type="button"
+                      onClick={handleCreate}
+                      disabled={loading}
+                      className="rounded-full h-11 px-6 flex-1 bg-black text-white hover:bg-gray-800"
+                  >
+                    {loading ? "קובע/ת…" : "אישור התור"}
+                  </Button>
+                </div>
+              </motion.div>
+            </div>
+        )}
+
+        <div className="flex items-center justify-center p-4" style={{ paddingTop: "120px", paddingBottom: "20px", minHeight: "calc(100vh - 140px)" }}>
+          <div className="w-full max-w-sm flex flex-col justify-center">
+            {error && (
+                <Alert className="mb-4 border-red-200 bg-red-50 rounded-xl">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-700 text-sm">{error}</AlertDescription>
+                </Alert>
+            )}
+
+            <AnimatePresence mode="wait">
+              {step === 1 && (
+                  <motion.div key="services" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
+                    <div className="mb-6">
+                      <h2 className="text-lg font-bold text-gray-900 mb-1">בחירת שירות</h2>
+                      <p className="text-gray-600 text-sm">בחר את השירות הרצוי</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {services.map((service) => (
+                          <motion.div
+                              key={service.id}
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => handleServiceSelect(service)}
+                              className="relative bg-white rounded-2xl p-4 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-all"
+                          >
+                            <div className="absolute top-2 left-2 bg-black text-white px-2 py-1 rounded-md font-bold text-xs">₪{service.price}</div>
+                            <div className="text-center">
+                              <h3 className="text-base font-bold text-gray-900">{service.name}</h3>
+                            </div>
+                          </motion.div>
+                      ))}
+                    </div>
+                  </motion.div>
+              )}
+
+              {step === 2 && selectedService && (
+                  <motion.div
+                      key="days"
+                      initial={{opacity: 0}}
+                      animate={{opacity: 1}}
+                      exit={{opacity: 0}}
+                      className="text-center flex flex-col justify-center h-full"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="rounded-full">
+                        <ChevronRight className="w-5 h-5"/>
+                      </Button>
+                      <div className="text-center">
+                        <h2 className="text-lg font-bold text-gray-900 mb-1">בחר תאריך נוח</h2>
+                        <p className="text-gray-600 text-sm">איזה יום מתאים לך?</p>
+                      </div>
+                      <div className="w-10"/>
+                    </div>
+
+                    <div className="flex justify-between items-center mb-6">
+                      <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedWeek((p) => p + 1)}
+                          className="text-gray-600 hover:text-gray-900 rounded-full p-2"
+                      >
+                        <ChevronLeft className="w-4 h-4"/>
+                      </Button>
+                      <span className="text-xs text-gray-500 font-medium">
+                    {selectedWeek === 0 ? "השבוע" : `שבוע +${selectedWeek}`}
+                  </span>
+                      <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedWeek((p) => Math.max(0, p - 1))}
+                          disabled={selectedWeek === 0}
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full p-2"
+                      >
+                        <ChevronRight className="w-4 h-4"/>
+                      </Button>
+                    </div>
+
+                    <div className="space-y-3 flex-1 max-h-none">
+                      {weekDays.map((date, i) => {
+                        const dayIsPast = isBefore(date, startOfDay(new Date()));
+                        const isSaturday = date.getDay() === 6;
+
+                        const isAfterClosingToday =
+                            isSameDay(date, new Date()) &&
+                            (() => {
+                              const closing = getClosingDateFor(date, businessHours);
+                              return closing ? new Date() > closing : false;
+                            })();
+
+                        const disabled = isSaturday || dayIsPast || isAfterClosingToday || loadingSlots;
+                        const dayName = DAYS_IN_WEEK.find((d) => d.key === date.getDay())?.name;
+
+                        return (
+                            <Button
+                                key={i}
+                                onClick={() => {
+                                  if (!disabled) handleDateSelect(date);
+                                }}
+                                disabled={disabled}
+                                variant="outline"
+                                className={`w-full h-12 flex justify-center items-center rounded-xl border transition-all text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${
+                                    disabled
+                                        ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
+                                        : "border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50"
+                                }`}
+                                title={
+                                  isSaturday
+                                      ? "שבת - אין תורים"
+                                      : isAfterClosingToday
+                                          ? "היום כבר אחרי שעת הסגירה"
+                                          : undefined
+                                }
+                            >
+                        <span>
+                          {dayName}, {format(date, "dd/MM")}
+                        </span>
+                            </Button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-gray-200">
+                      <Button
+                          onClick={handleUrgentAppointment}
+                          variant="outline"
+                          className="w-full bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 hover:border-orange-300 rounded-full py-3 font-medium flex items-center justify-center gap-2"
+                      >
+                        <Zap className="w-4 h-4"/>
+                        צריך תור דחוף?
+                      </Button>
+                    </div>
+                  </motion.div>
+              )}
+
+              {step === 3 && selectedDate && selectedService && (
+                  <motion.div
+                      key="times"
+                      initial={{opacity: 0}}
+                      animate={{opacity: 1}}
+                      exit={{opacity: 0}}
+                      className="text-center flex flex-col justify-center h-full"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <Button variant="ghost" size="icon" onClick={() => setStep(2)} className="rounded-full">
+                        <ChevronRight className="w-5 h-5"/>
+                      </Button>
+                      <div className="text-center">
+                        <h2 className="text-lg font-bold text-gray-900 mb-1">בחר שעה פנויה</h2>
+                        <p className="text-gray-600 text-sm">
+                          {format(selectedDate, "EEEE, dd MMMM", {locale: he})}
+                        </p>
+                      </div>
+                      <div className="w-10"/>
+                    </div>
+
+                    <div className="flex flex-col gap-3 flex-1 overflow-y-auto px-2" style={{scrollbarWidth: "thin"}}>
+                      {availableSlots.length > 0 ? (
+                          availableSlots.map((slot, index) => (
+                              <Button
+                                  key={index}
+                                  onClick={() => handleTimeSelect(slot.hhmm)}
+                                  variant="outline"
+                                  className="w-full h-14 rounded-2xl border border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50 font-medium text-base"
+                              >
+                                {slot.formatted}
+                              </Button>
+                          ))
+                      ) : (
+                          <div className="text-center py-8 px-4 bg-gray-100 rounded-2xl">
+                            <p className="font-semibold text-gray-800 mb-3">לא נותרו תורים פנויים ביום זה</p>
+                            <p className="text-sm text-gray-600 mb-4">
+                              ניתן להצטרף לרשימת ההמתנה ונעדכן אתכם אם יתפנה תור.
+                            </p>
+                            <Button onClick={handleJoinWaitingList} className="bg-black text-white rounded-full">
+                              הצטרפות לרשימת המתנה
+                            </Button>
+                          </div>
+                      )}
+                    </div>
+
+                    {availableSlots.length > 0 && (
+                        <div className="mt-6 pt-4 border-t border-gray-200">
+                          <Button
+                              onClick={handleJoinWaitingList}
+                              variant="outline"
+                              className="w-full h-14 rounded-2xl border border-gray-300 accent-blue-50 text-gray-800 hover:border-black hover:bg-gray-50 font-medium text-base outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                          >
+                            <Clock4 className="w-4 h-4" />
+                            כניסה לרשימת המתנה
+                          </Button>
+                        </div>
+                    )}
+                  </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </>
+  );
+}

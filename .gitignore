@@ -1,0 +1,39 @@
+# מערכות הפעלה / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# קבצי לוג
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node
+node_modules/
+
+# Build/Dist
+dist/
+build/
+coverage/
+
+# סביבות (ENV)
+.env
+.env.local
+.env.*.local
+
+# אם יש תתי-פרויקטים
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+server/node_modules/
+server/dist/
+server/.env
+
+# ספקי דיפלוי (אם רלוונטי)
+.vercel/
+.netlify/

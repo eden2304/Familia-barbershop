@@ -95,6 +95,7 @@ export default function Home() {
       const c = (loggedInClient && typeof loggedInClient === "object") ? loggedInClient : {};
       const fn = c.firstName || c.first_name || "";
       const ln = c.lastName  || c.last_name  || "";
+      const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
       const payload = {
         ...c,
         phone: (c.phone || "").toString(),
@@ -102,6 +103,8 @@ export default function Home() {
         lastName:  ln,
         first_name: fn,
         last_name:  ln,
+        isMember: memberFlag,
+        is_member: memberFlag,
         client_name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || ""),
         name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || "")
       };

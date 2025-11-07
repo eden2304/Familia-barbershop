@@ -41,7 +41,7 @@ export class AdminContentController {
     // ----- Testimonials -----
     @Get('testimonials')
     listTestimonials() {
-        return this.testimonials.find({ order: { orderIndex: 'ASC', id: 'ASC' } }); // ✔
+        return this.testimonials.find({ order: { order_index: 'ASC', id: 'ASC' } });
     }
 
     @Post('testimonials')
@@ -51,13 +51,15 @@ export class AdminContentController {
 
     @Put('testimonials/:id')
     async updateTestimonial(@Param('id') id: string, @Body() dto: Partial<Testimonial>) {
-        await this.testimonials.update({ id }, dto); // ✔
-        return this.testimonials.findOne({ where: { id } });
+        const testimonialId = Number(id);
+        await this.testimonials.update({ id: testimonialId }, dto);
+        return this.testimonials.findOne({ where: { id: testimonialId } });
     }
 
     @Delete('testimonials/:id')
     async deleteTestimonial(@Param('id') id: string) {
-        await this.testimonials.delete({ id }); // ✔
+        const testimonialId = Number(id);
+        await this.testimonials.delete({ id: testimonialId });
         return { ok: true };
     }
 

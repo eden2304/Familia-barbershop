@@ -198,12 +198,15 @@ export default function VerificationModal({ onVerify, onCancel }) {
       const res = await postJson("/auth/verify-code", { phone: phoneToSend, code: pin });
       const c = res?.client || res?.user;
       if (!res?.ok || !c) throw new Error("UNREGISTERED_CLIENT");
+      const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
       const payload = {
         ...c,
         phone: (c.phone || phoneToSend || "").toString(),
         firstName: c.firstName || c.first_name || "",
         lastName:  c.lastName  || c.last_name  || "",
         isAdmin: Boolean(c.isAdmin || (IS_DEV && isAdminLocal(c.phone || phoneToSend))),
+        isMember: memberFlag,
+        is_member: memberFlag,
       };
 
       localStorage.setItem("familiaClient", JSON.stringify(payload));
@@ -305,12 +308,15 @@ export default function VerificationModal({ onVerify, onCancel }) {
         const c = res.client || res.user || {};
         const fn = c.firstName || c.first_name || firstName || "";
         const ln = c.lastName  || c.last_name  || lastName  || "";
+        const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
         const payload = {
           ...c,
           phone: (c.phone || normalizedPhone || "").toString(),
           firstName: fn,
           lastName:  ln,
-          isAdmin: c.isAdmin ?? isAdminLocal(c.phone || normalizedPhone) // 👈
+          isAdmin: c.isAdmin ?? isAdminLocal(c.phone || normalizedPhone), // 👈
+          isMember: memberFlag,
+          is_member: memberFlag,
         };
         localStorage.setItem("familiaClient", JSON.stringify(payload));
         if (res.token) localStorage.setItem("token", res.token);

@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectValue, SelectTrigger } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -564,12 +565,30 @@ export default function Admin() { // Removed props
         return;
       }
 
-      await Client.create({ ...clientData, phone: normalizedPhone });
+      const isMember = Boolean(clientData.is_member ?? clientData.isMember ?? false);
+      await Client.create({ ...clientData, phone: normalizedPhone, is_member: isMember });
       loadData();
       setShowClientForm(false);
     } catch (error) {
       console.error("Error saving client:", error);
       alert("שגיאה בהוספת הלקוח.");
+    }
+  };
+
+  const toggleClientMembership = async (client) => {
+    if (!client?.id) return;
+    const current = Boolean(client.isMember ?? client.is_member);
+    const payload = { is_member: !current };
+    try {
+      if (Client?.update) {
+        await Client.update(client.id, payload);
+      } else {
+        await api.put(`/clients/${client.id}`, payload);
+      }
+      loadData();
+    } catch (error) {
+      console.error("Error updating membership:", error);
+      alert("שגיאה בעדכון סטטוס המועדון.");
     }
   };
 
@@ -1118,35 +1137,43 @@ export default function Admin() { // Removed props
                         </CardHeader>
                         <CardContent>
                           <div className="divide-y divide-gray-200">
-                            {clientDataWithAppointments.map((client) => (
-                                <div key={client.id} className="py-4 flex justify-between items-center">
-                                  <div>
-                                    {(() => {
-                                      const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
-                                      const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
-                                      const phoneDisplay = client.phone ?? client.client_phone ?? '';
-                                      return (
-                                          <>
-                                            <p className="font-bold text-gray-900">{[first, last].filter(Boolean).join(' ')}</p>
-                                            <p className="text-sm text-gray-600">{phoneDisplay}</p>
-                                          </>
-                                      );
-                                    })()}
+                            {clientDataWithAppointments.map((client) => {
+                              const memberFlag = Boolean(client.isMember ?? client.is_member);
+                              const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
+                              const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
+                              const phoneDisplay = client.phone ?? client.client_phone ?? '';
+                              const lastAppointment = client.lastAppointmentDate ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', { locale: he }) : 'אין היסטוריה';
+                              const lastClass = client.lastAppointmentDate
+                                  ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
+                                  : 'text-gray-800';
+                              return (
+                                  <div key={client.id} className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                    <div>
+                                      <p className="font-bold text-gray-900">{[first, last].filter(Boolean).join(' ')}</p>
+                                      <p className="text-sm text-gray-600">{phoneDisplay}</p>
+                                      {memberFlag && (
+                                          <span className="mt-2 inline-block rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1">
+                                            חבר מועדון
+                                          </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                      <div className="text-left md:text-right">
+                                        <p className="text-sm text-gray-500">תור אחרון:</p>
+                                        <p className={`font-medium ${lastClass}`}>{lastAppointment}</p>
+                                      </div>
+                                      <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => toggleClientMembership(client)}
+                                          className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
+                                      >
+                                        {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
+                                      </Button>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <p className="text-sm text-gray-500">תור אחרון:</p>
-                                    <p className={`font-medium ${
-                                        client.lastAppointmentDate
-                                            ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
-                                            : 'text-gray-800'
-                                    }`}>
-                                      {client.lastAppointmentDate
-                                          ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', {locale: he})
-                                          : 'אין היסטוריה'}
-                                    </p>
-                                  </div>
-                                </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </CardContent>
                       </Card>
@@ -1879,7 +1906,8 @@ function ClientForm({ onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
-    phone: ""
+    phone: "",
+    is_member: false,
   });
 
   const handleSubmit = (e) => {
@@ -1912,6 +1940,16 @@ function ClientForm({ onSubmit, onCancel }) {
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               required
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">חבר מועדון</p>
+            <p className="text-xs text-gray-500">חברים יכולים להזמין עד שבועיים מראש</p>
+          </div>
+          <Switch
+              checked={formData.is_member}
+              onCheckedChange={(val) => setFormData({ ...formData, is_member: Boolean(val) })}
           />
         </div>
         <div className="flex gap-3 pt-4">

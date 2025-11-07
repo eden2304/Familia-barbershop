@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { X, Ban, Clock } from "lucide-react";
 import { format, isValid as isValidDate, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
@@ -76,6 +77,7 @@ export default function BlockAppointmentsModal({
   const [from, setFrom] = useState(""); // "HH:mm"
   const [to, setTo] = useState("");     // "HH:mm"
   const [reason, setReason] = useState("");
+  const [membersOnly, setMembersOnly] = useState(false);
 
   // חסימות קיימות ליום הנבחר (נטען מהשרת)
   const [blocks, setBlocks] = useState([]);
@@ -159,6 +161,12 @@ export default function BlockAppointmentsModal({
     return () => { stop = true; };
   }, [dateStr, dayDate]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setMembersOnly(false);
+    }
+  }, [isOpen]);
+
   // אזהרת חפיפה לטווח שנבחר כרגע מול תורים
   const selectedRangeConflicts = useMemo(() => {
     if (!dayDate || !from || !to) return [];
@@ -200,7 +208,8 @@ export default function BlockAppointmentsModal({
       await Admin.blocks.add(
           toLocalIsoWithOffset(startAt),
           toLocalIsoWithOffset(endAt),
-          reason || ""
+          reason || "",
+          membersOnly
       );
       onBlock?.();
       onClose?.();
@@ -316,6 +325,14 @@ export default function BlockAppointmentsModal({
               />
             </div>
 
+            <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-800">פתוח לחברי מועדון בלבד</p>
+                <p className="text-xs text-gray-500">לקוחות רגילים לא יראו או יזמינו בטווח זה</p>
+              </div>
+              <Switch checked={membersOnly} onCheckedChange={setMembersOnly} />
+            </div>
+
             {hoursForDay?.isClosed && (
                 <div className="text-red-600 text-sm">היום הזה מוגדר כסגור ביומן.</div>
             )}
@@ -365,11 +382,19 @@ export default function BlockAppointmentsModal({
               {blocks.length === 0 ? (
                   <div className="text-xs text-gray-500">אין חסימות ליום זה.</div>
               ) : (
-                  blocks.map(b => (
-                      <div key={b.id} className="text-xs text-gray-700 bg-orange-50 rounded-xl px-3 py-2">
-                        {safeFormat(b.s, "HH:mm")}–{safeFormat(b.e, "HH:mm")} · {b.reason || "חסימה"}
-                      </div>
-                  ))
+                  blocks.map(b => {
+                    const membersOnlyBlock = Boolean(b.members_only ?? b.membersOnly);
+                    return (
+                        <div key={b.id} className="text-xs text-gray-700 bg-orange-50 rounded-xl px-3 py-2 space-y-1">
+                          <div>{safeFormat(b.s, "HH:mm")}–{safeFormat(b.e, "HH:mm")} · {b.reason || "חסימה"}</div>
+                          {membersOnlyBlock && (
+                              <div className="text-[11px] font-medium text-orange-700 bg-orange-100 rounded-full inline-block px-2 py-[2px]">
+                                לחברי מועדון בלבד
+                              </div>
+                          )}
+                        </div>
+                    );
+                  })
               )}
             </div>
           </div>

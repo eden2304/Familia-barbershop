@@ -52,11 +52,14 @@ function normalizeClient(c = {}) {
     const firstName = c.firstName ?? c.first_name ?? '';
     const lastName  = c.lastName  ?? c.last_name  ?? '';
     const phone     = normalizePhone(c.phone ?? c.client_phone ?? '');
+    const isMember  = Boolean(c.isMember ?? c.is_member ?? false);
     return {
         firstName, lastName, phone,
         first_name: firstName,
         last_name: lastName,
         client_phone: phone,
+        isMember,
+        is_member: isMember,
     };
 }
 function getStored() { try { const raw = localStorage.getItem(LOCAL_KEY); return raw ? normalizeClient(JSON.parse(raw)) : null; } catch { return null; } }
@@ -126,12 +129,13 @@ export const BlockedTime = (() => {
             return e > start && s < end;
         });
     };
-    const add = (startAt, endAt, reason) => root.add(startAt, endAt, reason);
+    const add = (startAt, endAt, reason, membersOnly = false) => root.add(startAt, endAt, reason, membersOnly);
     const create = (data) => {
         const startAt = data.startAt ?? data.start_at ?? data.start;
         const endAt   = data.endAt   ?? data.end_at   ?? data.end;
         const reason  = data.reason  ?? '';
-        return root.add(startAt, endAt, reason);
+        const membersOnly = Boolean(data.membersOnly ?? data.members_only ?? false);
+        return root.add(startAt, endAt, reason, membersOnly);
     };
     const remove = (id) => root.remove(id);
     const del = (id) => root.remove(id);

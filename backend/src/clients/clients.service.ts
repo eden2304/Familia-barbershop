@@ -15,6 +15,14 @@ function normalizePhone(p?: string) {
     return digits.startsWith('0') ? digits : '0' + digits;
 }
 
+function parseBool(value: any): boolean {
+    if (value === undefined || value === null) return false;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    const norm = String(value).trim().toLowerCase();
+    return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
+}
+
 @Injectable()
 export class ClientsService {
     constructor(@InjectRepository(Client) private repo: Repository<Client>) {}
@@ -30,7 +38,8 @@ export class ClientsService {
         const phone = normalizePhone(dto.phone);
         const exists = await this.repo.exists({ where: { phone } });
         if (exists) throw new BadRequestException('PHONE_EXISTS');
-        const entity = this.repo.create({ ...dto, phone });
+        const isMember = parseBool((dto as any).isMember ?? dto.is_member);
+        const entity = this.repo.create({ ...dto, phone, is_member: isMember });
         return this.repo.save(entity);
     }
 
@@ -41,6 +50,9 @@ export class ClientsService {
         if (next.phone !== cur.phone) {
             const clash = await this.repo.exists({ where: { phone: next.phone } });
             if (clash) throw new BadRequestException('PHONE_EXISTS');
+        }
+        if ((dto as any).isMember !== undefined || dto.is_member !== undefined) {
+            next.is_member = parseBool((dto as any).isMember ?? dto.is_member);
         }
         await this.repo.update({ id }, next);
         return this.repo.findOneByOrFail({ id });
@@ -77,6 +89,8 @@ export class ClientsService {
             phone:      (c as any).phone     ?? '',
             first_name: (c as any).first_name ?? (c as any).firstName ?? '',
             last_name:  (c as any).last_name  ?? (c as any).lastName  ?? '',
+            isMember:   Boolean((c as any).isMember ?? (c as any).is_member ?? false),
+            is_member:  Boolean((c as any).is_member ?? (c as any).isMember ?? false),
             lastAppointmentAt: raw[i]?.lastAppointmentAt ?? raw[i]?.la_last_at ?? null,
         }));
     }

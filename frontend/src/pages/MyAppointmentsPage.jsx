@@ -26,6 +26,8 @@ const normalizeClientObject = (raw) => {
     phone: raw.phone,
     first_name: raw.first_name ?? raw.firstName ?? "",
     last_name:  raw.last_name  ?? raw.lastName  ?? "",
+    isMember: Boolean(raw.isMember ?? raw.is_member ?? false),
+    is_member: Boolean(raw.is_member ?? raw.isMember ?? false),
   };
 };
 

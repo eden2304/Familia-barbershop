@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Length, Matches } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class CreateClientDto {
     @IsString() @IsNotEmpty() @Length(1, 80)
@@ -10,4 +10,7 @@ export class CreateClientDto {
 // 0XXXXXXXXX – normalized (we’ll normalize server-side as well)
     @IsString() @Matches(/^0\d{8,9}$/)
     phone: string;
+
+    @IsOptional() @IsBoolean()
+    is_member?: boolean;
 }

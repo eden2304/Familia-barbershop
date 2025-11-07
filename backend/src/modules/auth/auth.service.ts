@@ -64,6 +64,8 @@ export class AuthService {
         const client = await this.clientRepo.findOne({ where: variants.map(p => ({ phone: p })) });
         if (!client) throw new ConflictException('UNREGISTERED_CLIENT');
 
+        const isMember = Boolean((client as any).isMember ?? (client as any).is_member ?? false);
+
         return {
             ok: true,
             client: {
@@ -71,6 +73,8 @@ export class AuthService {
                 phone: client.phone,
                 firstName: (client as any).firstName,
                 lastName: (client as any).lastName,
+                isMember,
+                is_member: isMember,
             },
         };
     }
@@ -91,7 +95,14 @@ export class AuthService {
         }
 
         // מכאן ואילך – שומרים תמיד בפורמט 05… כדי לאחד את הנתונים
-        const partial: DeepPartial<Client> = { phone: norm, firstName, lastName };
+        const partial: DeepPartial<Client> = {
+            phone: norm,
+            first_name: firstName,
+            last_name: lastName,
+            is_member: false,
+        } as any;
+        (partial as any).firstName = firstName;
+        (partial as any).lastName = lastName;
         const client = this.clientRepo.create(partial);
 
         try {
@@ -108,6 +119,8 @@ export class AuthService {
                 phone: client.phone,
                 firstName: (client as any).firstName,
                 lastName: (client as any).lastName,
+                isMember: false,
+                is_member: false,
             },
         };
     }

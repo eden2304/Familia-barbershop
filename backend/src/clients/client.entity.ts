@@ -15,6 +15,17 @@ export class Client {
     @Column({type: 'varchar', length: 20})
     phone: string; // normalized to Israeli leading 0
 
+    @Column({ type: 'boolean', name: 'is_member', default: false })
+    is_member: boolean;
+
+    get isMember(): boolean {
+        return this.is_member;
+    }
+
+    set isMember(value: boolean) {
+        this.is_member = value;
+    }
+
     @CreateDateColumn({type: 'timestamp with time zone'})
     created_at: Date;
 }

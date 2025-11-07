@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, AlertCircle, Scissors, Calendar,
   CheckCircle2, Clock, Clock4, Zap, Tag
 } from "lucide-react";
-import { format, addDays, startOfWeek, startOfDay, isBefore, isSameDay } from "date-fns";
+import { format, addDays, startOfWeek, startOfDay, isBefore, isSameDay, differenceInCalendarDays } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import VerificationModal from "../components/VerificationModal.jsx";
@@ -34,6 +34,8 @@ const normalizeClientObject = (raw) => {
     // לתמוך בשני הסגנונות
     first_name: raw.first_name ?? raw.firstName ?? "",
     last_name:  raw.last_name  ?? raw.lastName  ?? "",
+    isMember: Boolean(raw.isMember ?? raw.is_member ?? false),
+    is_member: Boolean(raw.is_member ?? raw.isMember ?? false),
   };
 };
 
@@ -129,6 +131,44 @@ export default function Book() {
 
   const [aptsLoading, setAptsLoading] = useState(false);
 
+  const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
+  const maxAdvanceDays = clientIsMember ? 14 : 7;
+
+  const isWithinBookingWindow = useCallback((date) => {
+    if (!date) return false;
+    const start = startOfDay(date);
+    const today = startOfDay(new Date());
+    const diff = differenceInCalendarDays(start, today);
+    return diff <= maxAdvanceDays;
+  }, [maxAdvanceDays]);
+
+  const canViewWeek = useCallback((weekOffset) => {
+    const days = getWeekDays(weekOffset);
+    return days.some((d) => isWithinBookingWindow(d));
+  }, [getWeekDays, isWithinBookingWindow]);
+
+  const canGoForward = useMemo(() => canViewWeek(selectedWeek + 1), [canViewWeek, selectedWeek]);
+
+  useEffect(() => {
+    if (!canViewWeek(selectedWeek)) {
+      let next = selectedWeek;
+      while (next > 0 && !canViewWeek(next)) {
+        next -= 1;
+      }
+      if (next !== selectedWeek) {
+        setSelectedWeek(next);
+      }
+    }
+  }, [canViewWeek, selectedWeek]);
+
+  useEffect(() => {
+    if (selectedDate && !isWithinBookingWindow(selectedDate)) {
+      setSelectedDate(null);
+      setSelectedTimeSlot(null);
+      setShowForm(false);
+    }
+  }, [selectedDate, isWithinBookingWindow]);
+
   /* -------- init: client + services -------- */
   useEffect(() => {
     const stored = localStorage.getItem("familiaClient");
@@ -162,11 +202,11 @@ export default function Book() {
   };
 
   /* -------- helpers -------- */
-  const getWeekDays = (weekOffset) => {
+  const getWeekDays = useCallback((weekOffset) => {
     const start = startOfWeek(new Date(), { weekStartsOn: 0 });
     const base = addDays(start, weekOffset * 7);
     return Array.from({ length: 7 }, (_, i) => addDays(base, i));
-  };
+  }, []);
 
   // טען זמינות ל־7 הימים המוצגים בכל שינוי שירות/שבוע
   useEffect(() => {
@@ -180,8 +220,11 @@ export default function Book() {
     Promise.all(
         weekDays.map(async (d) => {
           const ymd = toYMD(d);
+          if (!isWithinBookingWindow(d)) {
+            return [ymd, []];
+          }
           try {
-            const arr = await api.Appointment.getAvailable(svcId, ymd);
+            const arr = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember });
             return [ymd, Array.isArray(arr) ? arr : []];
           } catch (e) {
             console.warn("availability failed for", ymd, e);
@@ -195,7 +238,7 @@ export default function Book() {
           setAvailableByDate(map);
         })
         .finally(() => setLoadingSlots(false));
-  }, [selectedService?.id, selectedWeek]);
+  }, [selectedService?.id, selectedWeek, clientIsMember, getWeekDays, isWithinBookingWindow]);
 
   useEffect(() => {
     // נטען תורים רק אם:
@@ -537,8 +580,9 @@ export default function Book() {
                       <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setSelectedWeek((p) => p + 1)}
-                          className="text-gray-600 hover:text-gray-900 rounded-full p-2"
+                          onClick={() => setSelectedWeek((p) => (canViewWeek(p + 1) ? p + 1 : p))}
+                          disabled={!canGoForward}
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full p-2"
                       >
                         <ChevronLeft className="w-4 h-4"/>
                       </Button>
@@ -555,6 +599,11 @@ export default function Book() {
                         <ChevronRight className="w-4 h-4"/>
                       </Button>
                     </div>
+                    <div className="text-xs text-gray-500 mb-4">
+                      {clientIsMember
+                          ? "חברי מועדון יכולים להזמין עד 14 ימים קדימה"
+                          : "לקוחות רגילים יכולים להזמין עד 7 ימים קדימה – לחברי מועדון יש טווח ארוך יותר"}
+                    </div>
 
                     <div className="space-y-3 flex-1 max-h-none">
                       {weekDays.map((date, i) => {
@@ -568,8 +617,19 @@ export default function Book() {
                               return closing ? new Date() > closing : false;
                             })();
 
-                        const disabled = isSaturday || dayIsPast || isAfterClosingToday || loadingSlots;
+                        const beyondWindow = !isWithinBookingWindow(date);
+                        const disabled = isSaturday || dayIsPast || isAfterClosingToday || loadingSlots || beyondWindow;
                         const dayName = DAYS_IN_WEEK.find((d) => d.key === date.getDay())?.name;
+                        const title =
+                            beyondWindow
+                                ? (clientIsMember
+                                    ? "תאריך זה מחוץ לטווח ההזמנות"
+                                    : "פתוח לחברי מועדון בלבד")
+                                : isSaturday
+                                    ? "שבת - אין תורים"
+                                    : isAfterClosingToday
+                                        ? "היום כבר אחרי שעת הסגירה"
+                                        : undefined;
 
                         return (
                             <Button
@@ -584,13 +644,7 @@ export default function Book() {
                                         ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
                                         : "border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50"
                                 }`}
-                                title={
-                                  isSaturday
-                                      ? "שבת - אין תורים"
-                                      : isAfterClosingToday
-                                          ? "היום כבר אחרי שעת הסגירה"
-                                          : undefined
-                                }
+                                title={title}
                             >
                         <span>
                           {dayName}, {format(date, "dd/MM")}

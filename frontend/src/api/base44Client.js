@@ -393,11 +393,19 @@ const api = {
   },
 
   Appointment: {
-    getAvailable: async (serviceOrId, date) => {
+    getAvailable: async (serviceOrId, date, options = {}) => {
       const sid = (typeof serviceOrId === 'string') ? serviceOrId : (serviceOrId && serviceOrId.id);
       const day = normalizeDateForApi(date);
       if (!sid || !day) return [];
-      return (await httpGet('/appointments/available?serviceId=' + encodeURIComponent(sid) + '&date=' + encodeURIComponent(day))) || [];
+      const params = new URLSearchParams({
+        serviceId: sid,
+        date: day,
+      });
+      const memberFlag = options?.isMember ?? options?.member ?? options?.members ?? undefined;
+      if (memberFlag !== undefined) {
+        params.set('isMember', memberFlag ? 'true' : 'false');
+      }
+      return (await httpGet('/appointments/available?' + params.toString())) || [];
     },
 
     // list – קודם ציבורי, פולבק ל־admin
@@ -554,11 +562,12 @@ const api = {
       },
 
       // נסיונות מדורגים: JSON camel -> FORM camel -> FORM snake
-      add: async (startIso, endIso, reason) => {
+      add: async (startIso, endIso, reason, membersOnly = false) => {
         return await httpPost('/admin/blocked-times', {
           starts_at: String(startIso),
           ends_at:   String(endIso),
-          reason:    reason ?? ''
+          reason:    reason ?? '',
+          members_only: Boolean(membersOnly),
         });
       },
 

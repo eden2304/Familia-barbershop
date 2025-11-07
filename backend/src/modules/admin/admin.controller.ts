@@ -10,6 +10,14 @@ export class AdminController {
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
     ) {}
 
+    private parseBoolean(value: any): boolean {
+        if (value === undefined || value === null) return false;
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value === 1;
+        const norm = String(value).trim().toLowerCase();
+        return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
+    }
+
     @Get('blocked-times')
     listBlocks() {
         return this.blockRepo.find({ order: { startsAt: 'ASC' } });
@@ -22,7 +30,9 @@ export class AdminController {
         if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || !(endsAt > startsAt)) {
             throw new BadRequestException('Invalid startAt/endAt');
         }
-        return this.blockRepo.save(this.blockRepo.create({ startsAt, endsAt, reason: b.reason }));
+        const rawMembersOnly = (b as any).membersOnly ?? (b as any).members_only;
+        const membersOnly = this.parseBoolean(rawMembersOnly);
+        return this.blockRepo.save(this.blockRepo.create({ startsAt, endsAt, reason: b.reason, membersOnly }));
     }
 
     @Delete('blocked-times/:id')

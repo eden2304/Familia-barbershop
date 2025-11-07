@@ -18,11 +18,24 @@ export class AppointmentsController {
         throw new BadRequestException('Invalid date');
     }
 
+    private parseBooleanFlag(input: any): boolean {
+        if (input === undefined || input === null) return false;
+        if (typeof input === 'boolean') return input;
+        const norm = String(input).trim().toLowerCase();
+        return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
+    }
+
     @Get('available')
-    async getAvailable(@Query('serviceId') serviceId: string, @Query('date') date: string) {
+    async getAvailable(
+        @Query('serviceId') serviceId: string,
+        @Query('date') date: string,
+        @Query('member') member?: string,
+        @Query('isMember') isMember?: string,
+    ) {
         if (!serviceId) throw new BadRequestException('serviceId is required');
         const norm = this.normDate(date);
-        return this.svc.getAvailableSlots(serviceId, norm);
+        const isMemberFlag = this.parseBooleanFlag(isMember ?? member);
+        return this.svc.getAvailableSlots(serviceId, norm, { isMember: isMemberFlag });
     }
 
     @Post()

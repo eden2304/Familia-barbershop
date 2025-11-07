@@ -60,6 +60,19 @@ export class AppointmentsService {
         }
     }
 
+    private ensureWithinAdvanceWindow(startAt: Date, isMember: boolean) {
+        const windowBase = new Date();
+        const todayUTC = Date.UTC(windowBase.getFullYear(), windowBase.getMonth(), windowBase.getDate());
+        const startIso = startAt.toISOString().slice(0, 10);
+        const [y, m, d] = startIso.split('-').map(Number);
+        const startUTC = Date.UTC(y, m - 1, d);
+        const diffDays = Math.floor((startUTC - todayUTC) / 86_400_000);
+        const maxDays = isMember ? 14 : 7;
+        if (diffDays > maxDays) {
+            throw new ForbiddenException(isMember ? 'MEMBER_ADVANCE_LIMIT' : 'PUBLIC_ADVANCE_LIMIT');
+        }
+    }
+
     private async ensureWithinBusinessHours(dateStr: string, slotStart: Date, slotEnd: Date) {
         const jsDow = new Date(`${dateStr}T12:00:00+03:00`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
@@ -94,41 +107,59 @@ export class AppointmentsService {
         // 3) לא להזמין לעבר
         this.ensureNotPast(startAt);
 
-        // 4) שעות פעילות + אינטרוול
-        const dateStr = startAt.toISOString().slice(0, 10);
-        const bh = await this.ensureWithinBusinessHours(dateStr, startAt, endAt);
-        this.ensureAlignedToInterval(startAt, bh);
-
-        // 5) קליינט
+        // 4) קליינט
         const phone = this.normalizePhone(dto.clientPhone);
         if (!phone) throw new BadRequestException('Phone required');
 
         let client = await this.clientRepo.findOne({ where: { phone } });
 
         if (!client) {
-            const partial: DeepPartial<Client> = {
-                phone,
-                firstName: (dto.clientFirstName || '').trim(),
-                lastName: (dto.clientLastName || '').trim(),
-            };
-            if (!partial.firstName || !partial.lastName) {
+            const firstName = (dto.clientFirstName || '').trim();
+            const lastName = (dto.clientLastName || '').trim();
+            if (!firstName || !lastName) {
                 throw new BadRequestException('NAME_REQUIRED');
             }
+            const partial: DeepPartial<Client> = {
+                phone,
+                first_name: firstName,
+                last_name: lastName,
+            } as any;
+            (partial as any).firstName = firstName;
+            (partial as any).lastName = lastName;
             client = this.clientRepo.create(partial);
             client = await this.clientRepo.save(client);
         } else {
+            const clientAny = client as any;
             const needSave =
-                (!client.firstName || !client.firstName.trim()) ||
-                (!client.lastName || !client.lastName.trim());
+                (!clientAny.firstName || !String(clientAny.firstName).trim()) ||
+                (!clientAny.lastName || !String(clientAny.lastName).trim());
             if (needSave) {
-                client.firstName = client.firstName && client.firstName.trim() ? client.firstName : (dto.clientFirstName || '').trim();
-                client.lastName = client.lastName && client.lastName.trim() ? client.lastName : (dto.clientLastName || '').trim();
-                if (!client.firstName || !client.lastName) {
+                const nextFirst = clientAny.firstName && String(clientAny.firstName).trim()
+                    ? String(clientAny.firstName).trim()
+                    : (dto.clientFirstName || '').trim();
+                const nextLast = clientAny.lastName && String(clientAny.lastName).trim()
+                    ? String(clientAny.lastName).trim()
+                    : (dto.clientLastName || '').trim();
+                if (!nextFirst || !nextLast) {
                     throw new BadRequestException('NAME_REQUIRED');
                 }
+                clientAny.firstName = nextFirst;
+                clientAny.lastName = nextLast;
+                client.first_name = nextFirst;
+                client.last_name = nextLast;
                 await this.clientRepo.save(client);
             }
         }
+
+        const clientAny = client as any;
+        const isMember = Boolean(clientAny?.isMember ?? clientAny?.is_member ?? false);
+
+        this.ensureWithinAdvanceWindow(startAt, isMember);
+
+        // 5) שעות פעילות + אינטרוול
+        const dateStr = startAt.toISOString().slice(0, 10);
+        const bh = await this.ensureWithinBusinessHours(dateStr, startAt, endAt);
+        this.ensureAlignedToInterval(startAt, bh);
 
         // 6) חפיפות
         const hasApptOverlap = await this.apptRepo.exist({
@@ -136,10 +167,11 @@ export class AppointmentsService {
         });
         if (hasApptOverlap) throw new ConflictException('Slot overlaps with another appointment');
 
-        const hasBlockOverlap = await this.blockRepo.exist({
+        const overlappingBlocks = await this.blockRepo.find({
             where: { startsAt: LessThan(endAt), endsAt: MoreThan(startAt) },
         });
-        if (hasBlockOverlap) throw new ConflictException('Slot is blocked');
+        const blocking = overlappingBlocks.some(block => !block.membersOnly || !isMember);
+        if (blocking) throw new ConflictException('Slot is blocked');
 
         // 7) יצירה
         const appt = this.apptRepo.create({
@@ -153,9 +185,20 @@ export class AppointmentsService {
         return this.apptRepo.save(appt);
     }
 
-    async getAvailableSlots(serviceId: string, dateStr: string): Promise<string[]> {
+    async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
         const service = await this.svcRepo.findOne({ where: { id: serviceId } });
         if (!service) throw new NotFoundException('Service not found');
+
+        const isMember = Boolean(opts.isMember);
+        const now = new Date();
+        const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        const [yearStr, monthStr, dayStr] = dateStr.split('-');
+        const targetUTC = Date.UTC(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
+        const diffDays = Math.floor((targetUTC - todayUTC) / 86_400_000);
+        const maxDays = isMember ? 14 : 7;
+        if (diffDays > maxDays) {
+            return [];
+        }
 
         const dayLocalStart = new Date(`${dateStr}T00:00:00+03:00`);
         const dayLocalEnd = new Date(`${dateStr}T23:59:59+03:00`);
@@ -183,6 +226,7 @@ export class AppointmentsService {
             },
             order: { startsAt: 'ASC' },
         });
+        const relevantBlocks = blocks.filter(b => !b.membersOnly || !isMember);
 
         const slots: string[] = [];
         for (
@@ -194,7 +238,7 @@ export class AppointmentsService {
             const slotEnd = new Date(t.getTime() + service.durationMinutes * 60000);
 
             const overlapsAppt = appts.some(a => !(slotEnd <= a.startsAt || slotStart >= a.endsAt));
-            const overlapsBlock = blocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
+            const overlapsBlock = relevantBlocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
 
             if (!overlapsAppt && !overlapsBlock) {
                 const hh = String(slotStart.getHours()).padStart(2, '0');
@@ -204,10 +248,10 @@ export class AppointmentsService {
         }
 
         // לא להציע עבר ביום הנוכחי
-        const now = new Date();
-        if (now.toISOString().slice(0, 10) === dateStr) {
-            const nowHH = now.getHours();
-            const nowMM = now.getMinutes();
+        const nowFilter = new Date();
+        if (nowFilter.toISOString().slice(0, 10) === dateStr) {
+            const nowHH = nowFilter.getHours();
+            const nowMM = nowFilter.getMinutes();
             return slots.filter(s => {
                 const [h, m] = s.split(':').map(Number);
                 return h > nowHH || (h === nowHH && m > nowMM);

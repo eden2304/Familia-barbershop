@@ -1,4 +1,4 @@
-import { IsISO8601, IsNotEmpty, IsOptional, IsPhoneNumber, IsString, IsUUID, Matches, MinLength } from 'class-validator';
+import { IsBoolean, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MinLength } from 'class-validator';
 
 export class CreateAppointmentDto {
     @IsString()
@@ -46,4 +46,8 @@ export class AddBlockDto {
     @IsOptional()
     @IsString()
     reason?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    membersOnly?: boolean;
 }

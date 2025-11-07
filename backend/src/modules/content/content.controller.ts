@@ -18,7 +18,10 @@ export class ContentController {
     ) {}
 
     // Public lists
-    @Get('testimonials') listTestimonials() { return this.testiRepo.find({ where: { isActive: true }, order: { orderIndex: 'ASC' } }); }
+    @Get('testimonials')
+    listTestimonials() {
+        return this.testiRepo.find({ where: { is_active: true }, order: { order_index: 'ASC' } });
+    }
     @Get('products') listProducts() { return this.prodRepo.find({ where: { isActive: true }, order: { orderIndex: 'ASC' } }); }
     @Get('gallery-videos') listGallery() { return this.galRepo.find({ where: { isActive: true }, order: { orderIndex: 'ASC' } }); }
     @Get('background-videos')
@@ -35,9 +38,22 @@ export class ContentController {
     }    @Get('settings/:key') getSetting(@Param('key') key: string) { return this.setRepo.findOneBy({ key }); }
 
     // Admin CRUD (פשוט)
-    @Post('admin/testimonials') addTestimonial(@Body() b: Partial<Testimonial>) { return this.testiRepo.save(this.testiRepo.create(b)); }
-    @Put('admin/testimonials/:id') updTestimonial(@Param('id') id: string, @Body() b: Partial<Testimonial>) { return this.testiRepo.update(id, b); }
-    @Delete('admin/testimonials/:id') delTestimonial(@Param('id') id: string) { return this.testiRepo.delete(id); }
+    @Post('admin/testimonials')
+    addTestimonial(@Body() b: Partial<Testimonial>) {
+        return this.testiRepo.save(this.testiRepo.create(b));
+    }
+
+    @Put('admin/testimonials/:id')
+    updTestimonial(@Param('id') id: string, @Body() b: Partial<Testimonial>) {
+        const testimonialId = Number(id);
+        return this.testiRepo.update({ id: testimonialId }, b);
+    }
+
+    @Delete('admin/testimonials/:id')
+    delTestimonial(@Param('id') id: string) {
+        const testimonialId = Number(id);
+        return this.testiRepo.delete({ id: testimonialId });
+    }
 
     @Post('admin/products') addProduct(@Body() b: Partial<Product>) { return this.prodRepo.save(this.prodRepo.create(b)); }
     @Put('admin/products/:id') updProduct(@Param('id') id: string, @Body() b: Partial<Product>) { return this.prodRepo.update(id, b); }

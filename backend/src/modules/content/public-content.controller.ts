@@ -27,8 +27,8 @@ export class PublicContentController {
     @Get('testimonials')
     listTestimonials() {
         return this.testimonials.find({
-            where: { isActive: true },
-            order: { orderIndex: 'ASC', id: 'ASC' },
+            where: { is_active: true },
+            order: { order_index: 'ASC', id: 'ASC' },
         });
     }
 

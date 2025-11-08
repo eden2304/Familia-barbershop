@@ -56,6 +56,9 @@ const buildWeekDays = (weekOffset) => {
   return Array.from({ length: 7 }, (_, i) => addDays(base, i));
 };
 
+// שמירת API ישן שמרפררים אליו קומפוננטים אחרים
+const getWeekDays = (weekOffset = 0) => buildWeekDays(weekOffset);
+
 const toYMD = (d) => {
   if (!d) return "";
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -149,13 +152,13 @@ export default function Book() {
   }, [maxAdvanceDays]);
 
   const canViewWeek = useCallback((weekOffset) => {
-    const days = buildWeekDays(weekOffset);
+    const days = getWeekDays(weekOffset);
     return days.some((d) => isWithinBookingWindow(d));
   }, [isWithinBookingWindow]);
 
   const canGoForward = useMemo(() => canViewWeek(selectedWeek + 1), [canViewWeek, selectedWeek]);
 
-  const visibleWeekDays = useMemo(() => buildWeekDays(selectedWeek), [selectedWeek]);
+  const visibleWeekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
 
   useEffect(() => {
     if (!canViewWeek(selectedWeek)) {

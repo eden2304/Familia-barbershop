@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import { Client } from './client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -23,9 +23,68 @@ function parseBool(value: any): boolean {
     return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
 }
 
+function toNumericId(raw: any): number | null {
+    if (raw === undefined || raw === null) return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : null;
+}
+
 @Injectable()
 export class ClientsService {
     constructor(@InjectRepository(Client) private repo: Repository<Client>) {}
+
+    private async findByAnyId(candidate: any): Promise<Client | null> {
+        if (candidate === undefined || candidate === null) return null;
+
+        const numericId = toNumericId(candidate);
+        if (numericId !== null) {
+            const byNumeric = await this.repo.findOne({ where: { id: numericId } });
+            if (byNumeric) return byNumeric;
+        }
+
+        const raw = String(candidate).trim();
+        if (!raw) return null;
+
+        try {
+            return await this.repo.createQueryBuilder('c')
+                .where('CAST(c.id AS text) = :raw', { raw })
+                .getOne();
+        } catch {
+            return null;
+        }
+    }
+
+    private extractName(source: any, primary: 'first' | 'last', fallback: string): string {
+        const snake = primary === 'first' ? 'first_name' : 'last_name';
+        const camel = primary === 'first' ? 'firstName' : 'lastName';
+        if (Object.prototype.hasOwnProperty.call(source, snake) || Object.prototype.hasOwnProperty.call(source, camel)) {
+            return String(source[snake] ?? source[camel] ?? '').trim();
+        }
+        return fallback;
+    }
+
+    private extractPhone(source: any, fallback: string): { value: string; provided: boolean } {
+        const hasSnake = Object.prototype.hasOwnProperty.call(source, 'phone') ||
+            Object.prototype.hasOwnProperty.call(source, 'client_phone') ||
+            Object.prototype.hasOwnProperty.call(source, 'clientPhone');
+
+        if (!hasSnake) {
+            return { value: fallback, provided: false };
+        }
+
+        const raw = source.phone ?? source.client_phone ?? source.clientPhone ?? '';
+        return { value: normalizePhone(String(raw)), provided: true };
+    }
+
+    private extractIsMember(source: any, fallback: boolean): { value: boolean; provided: boolean } {
+        const has = Object.prototype.hasOwnProperty.call(source, 'is_member') ||
+            Object.prototype.hasOwnProperty.call(source, 'isMember');
+        if (!has) {
+            return { value: fallback, provided: false };
+        }
+        const raw = source.is_member ?? source.isMember;
+        return { value: parseBool(raw), provided: true };
+    }
 
     // אם אין לך createdAt ב-Entity – תישאר עם id:
     async findAll(): Promise<Client[]> {
@@ -35,31 +94,83 @@ export class ClientsService {
     }
 
     async create(dto: CreateClientDto): Promise<Client> {
-        const phone = normalizePhone(dto.phone);
+        const body: any = dto as any;
+        const firstName = String(body.first_name ?? body.firstName ?? '').trim();
+        const lastName = String(body.last_name ?? body.lastName ?? '').trim();
+        const phone = normalizePhone(body.phone ?? body.client_phone ?? body.clientPhone ?? '');
+        if (!phone) throw new BadRequestException('PHONE_REQUIRED');
+
         const exists = await this.repo.exists({ where: { phone } });
         if (exists) throw new BadRequestException('PHONE_EXISTS');
-        const isMember = parseBool((dto as any).isMember ?? dto.is_member);
-        const entity = this.repo.create({ ...dto, phone, is_member: isMember });
+
+        const isMember = parseBool(body.is_member ?? body.isMember);
+        const entity = this.repo.create({
+            first_name: firstName,
+            last_name: lastName,
+            phone,
+            is_member: isMember,
+        });
         return this.repo.save(entity);
     }
 
-    async update(id: number, dto: UpdateClientDto): Promise<Client> {
-        const cur = await this.repo.findOneByOrFail({ id });
-        const next = { ...cur, ...dto } as Client;
-        if (dto.phone) next.phone = normalizePhone(dto.phone);
-        if (next.phone !== cur.phone) {
-            const clash = await this.repo.exists({ where: { phone: next.phone } });
+    async update(id: string, dto: UpdateClientDto): Promise<Client> {
+        const body: any = dto as any;
+
+        const candidates = [id, body.id, body.client_id, body.clientId];
+        let current: Client | null = null;
+        for (const candidate of candidates) {
+            current = await this.findByAnyId(candidate);
+            if (current) break;
+        }
+
+        if (!current) {
+            const phoneFallback = body.phone ?? body.client_phone ?? body.clientPhone ?? null;
+            if (phoneFallback) {
+                const normalized = normalizePhone(String(phoneFallback));
+                if (normalized) {
+                    current = await this.repo.findOne({ where: { phone: normalized } });
+                }
+            }
+        }
+
+        if (!current) {
+            throw new NotFoundException('CLIENT_NOT_FOUND');
+        }
+
+        const nextFirst = this.extractName(body, 'first', current.first_name ?? '');
+        const nextLast = this.extractName(body, 'last', current.last_name ?? '');
+        const phoneInfo = this.extractPhone(body, current.phone ?? '');
+        const memberInfo = this.extractIsMember(body, Boolean(current.is_member));
+
+        if (phoneInfo.provided && !phoneInfo.value) {
+            throw new BadRequestException('PHONE_REQUIRED');
+        }
+
+        const desiredPhone = phoneInfo.provided ? phoneInfo.value : current.phone;
+
+        if (desiredPhone !== current.phone) {
+            const clash = await this.repo.findOne({ where: { phone: desiredPhone, id: Not(current.id) }, select: { id: true } });
             if (clash) throw new BadRequestException('PHONE_EXISTS');
         }
-        if ((dto as any).isMember !== undefined || dto.is_member !== undefined) {
-            next.is_member = parseBool((dto as any).isMember ?? dto.is_member);
-        }
-        await this.repo.update({ id }, next);
-        return this.repo.findOneByOrFail({ id });
+
+        const desiredMember = memberInfo.provided ? memberInfo.value : current.is_member;
+
+        await this.repo.update({ id: current.id }, {
+            first_name: nextFirst,
+            last_name: nextLast,
+            phone: desiredPhone,
+            is_member: desiredMember,
+        });
+
+        return this.repo.findOneByOrFail({ id: current.id });
     }
 
-    async remove(id: number): Promise<void> {
-        await this.repo.delete({ id });
+    async remove(id: string): Promise<void> {
+        const existing = await this.findByAnyId(id);
+        if (!existing) {
+            throw new NotFoundException('CLIENT_NOT_FOUND');
+        }
+        await this.repo.delete({ id: existing.id });
     }
 
     async findAllWithLastAppointment() {

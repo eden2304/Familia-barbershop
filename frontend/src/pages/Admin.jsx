@@ -583,7 +583,12 @@ export default function Admin() { // Removed props
   const toggleClientMembership = async (client) => {
     if (!client?.id) return;
     const current = Boolean(client.isMember ?? client.is_member);
-    const payload = { is_member: !current };
+    const payload = {
+      is_member: !current,
+      first_name: client.first_name ?? client.firstName ?? "",
+      last_name: client.last_name ?? client.lastName ?? "",
+      phone: normalizePhone(client.phone ?? client.client_phone ?? ""),
+    };
     try {
       if (Client?.update) {
         await Client.update(client.id, payload);

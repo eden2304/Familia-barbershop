@@ -140,8 +140,6 @@ export default function Book() {
   const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
   const maxAdvanceDays = clientIsMember ? 14 : 7;
 
-  const getWeekDays = useCallback(buildWeekDays, []);
-
   const isWithinBookingWindow = useCallback((date) => {
     if (!date) return false;
     const start = startOfDay(date);
@@ -151,11 +149,13 @@ export default function Book() {
   }, [maxAdvanceDays]);
 
   const canViewWeek = useCallback((weekOffset) => {
-    const days = getWeekDays(weekOffset);
+    const days = buildWeekDays(weekOffset);
     return days.some((d) => isWithinBookingWindow(d));
-  }, [getWeekDays, isWithinBookingWindow]);
+  }, [isWithinBookingWindow]);
 
   const canGoForward = useMemo(() => canViewWeek(selectedWeek + 1), [canViewWeek, selectedWeek]);
+
+  const visibleWeekDays = useMemo(() => buildWeekDays(selectedWeek), [selectedWeek]);
 
   useEffect(() => {
     if (!canViewWeek(selectedWeek)) {
@@ -217,7 +217,7 @@ export default function Book() {
       setAvailableByDate({});
       return;
     }
-    const weekDays = getWeekDays(selectedWeek);
+    const weekDays = visibleWeekDays;
     setLoadingSlots(true);
     Promise.all(
         weekDays.map(async (d) => {
@@ -240,7 +240,7 @@ export default function Book() {
           setAvailableByDate(map);
         })
         .finally(() => setLoadingSlots(false));
-  }, [selectedService?.id, selectedWeek, clientIsMember, getWeekDays, isWithinBookingWindow]);
+  }, [selectedService?.id, selectedWeek, clientIsMember, visibleWeekDays, isWithinBookingWindow]);
 
   useEffect(() => {
     // נטען תורים רק אם:
@@ -363,7 +363,7 @@ export default function Book() {
   };
 
   /* -------- derived -------- */
-  const weekDays = getWeekDays(selectedWeek);
+  const weekDays = visibleWeekDays;
   const availableSlots =
       selectedDate && selectedService
           ? (availableByDate[toYMD(selectedDate)] || [])

@@ -771,15 +771,54 @@ async function router(req, res) {
         const parsed = parseId(idRaw);
         if (!parsed.raw) return json(res, 400, { error: 'Missing id' });
 
-        const where = idWhere('clients', parsed);
-        const currentQ = await pool.query(
+        const body = await readBody(req) || {};
+
+        let where = idWhere('clients', parsed);
+        let currentQ = await pool.query(
             `select id, first_name, last_name, phone, coalesce(is_member,false) as is_member from clients where ${where.sql}`,
             [where.param]
         );
-        const current = currentQ.rows[0];
-        if (!current) return json(res, 404, { error: 'CLIENT_NOT_FOUND' });
+        let current = currentQ.rows[0];
 
-        const body = await readBody(req) || {};
+        if (!current) {
+            const fallbackIdRaw = body.id ?? body.client_id ?? body.clientId ?? null;
+            if (fallbackIdRaw) {
+                const altParsed = parseId(fallbackIdRaw);
+                if (altParsed.raw) {
+                    const altWhere = idWhere('clients', altParsed);
+                    const altQ = await pool.query(
+                        `select id, first_name, last_name, phone, coalesce(is_member,false) as is_member from clients where ${altWhere.sql}`,
+                        [altWhere.param]
+                    );
+                    current = altQ.rows[0];
+                    if (current) {
+                        where = idWhere('clients', parseId(current.id));
+                    }
+                }
+            }
+        }
+
+        if (!current) {
+            const rawPhone = body.phone ?? body.client_phone ?? body.clientPhone ?? null;
+            if (rawPhone) {
+                const { p0, p972 } = phoneDigitsPair(rawPhone);
+                if (p0 || p972) {
+                    const byPhone = await pool.query(
+                        `select id, first_name, last_name, phone, coalesce(is_member,false) as is_member
+                           from clients
+                          where regexp_replace(phone, '\\D', '', 'g') in ($1,$2)
+                          limit 1`,
+                        [p0 || '', p972 || p0 || '']
+                    );
+                    current = byPhone.rows[0];
+                    if (current) {
+                        where = idWhere('clients', parseId(current.id));
+                    }
+                }
+            }
+        }
+
+        if (!current) return json(res, 404, { error: 'CLIENT_NOT_FOUND' });
 
         const hasFirst = Object.prototype.hasOwnProperty.call(body, 'first_name') || Object.prototype.hasOwnProperty.call(body, 'firstName');
         const hasLast = Object.prototype.hasOwnProperty.call(body, 'last_name') || Object.prototype.hasOwnProperty.call(body, 'lastName');

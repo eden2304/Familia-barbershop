@@ -565,8 +565,13 @@ export default function Admin() { // Removed props
         return;
       }
 
-      const isMember = Boolean(clientData.is_member ?? clientData.isMember ?? false);
-      await Client.create({ ...clientData, phone: normalizedPhone, is_member: isMember });
+      const payload = {
+        first_name: clientData.first_name ?? clientData.firstName ?? "",
+        last_name: clientData.last_name ?? clientData.lastName ?? "",
+        phone: normalizedPhone,
+        is_member: Boolean(clientData.is_member ?? clientData.isMember ?? false),
+      };
+      await Client.create(payload);
       loadData();
       setShowClientForm(false);
     } catch (error) {

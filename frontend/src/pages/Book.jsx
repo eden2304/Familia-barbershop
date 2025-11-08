@@ -134,6 +134,12 @@ export default function Book() {
   const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
   const maxAdvanceDays = clientIsMember ? 14 : 7;
 
+  const getWeekDays = useCallback((weekOffset) => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+    const base = addDays(start, weekOffset * 7);
+    return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+  }, []);
+
   const isWithinBookingWindow = useCallback((date) => {
     if (!date) return false;
     const start = startOfDay(date);
@@ -202,12 +208,6 @@ export default function Book() {
   };
 
   /* -------- helpers -------- */
-  const getWeekDays = useCallback((weekOffset) => {
-    const start = startOfWeek(new Date(), { weekStartsOn: 0 });
-    const base = addDays(start, weekOffset * 7);
-    return Array.from({ length: 7 }, (_, i) => addDays(base, i));
-  }, []);
-
   // טען זמינות ל־7 הימים המוצגים בכל שינוי שירות/שבוע
   useEffect(() => {
     const svcId = selectedService?.id;

@@ -239,6 +239,11 @@ async function migrate() {
 
 
     // ----- שמירה על תאימות קיימת בשאר הטבלאות -----
+    await ensureColumn('clients', 'is_member', 'boolean default false');
+    await pool.query(`update clients set is_member = coalesce(is_member, false)`);
+    await pool.query(`alter table clients alter column is_member set default false`);
+    await pool.query(`alter table clients alter column is_member set not null`);
+
     await ensureSnakeFromCamel('products', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('gallery_videos', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('gallery_videos', 'video_url', 'videoUrl', 'text');
@@ -276,6 +281,11 @@ async function migrate() {
 
     if (hasStartPlural) await pool.query(`alter table blocked_times drop column if exists starts_at`);
     if (hasEndPlural)   await pool.query(`alter table blocked_times drop column if exists ends_at`);
+
+    await ensureColumn('blocked_times', 'members_only', 'boolean default false');
+    await pool.query(`update blocked_times set members_only = coalesce(members_only, false)`);
+    await pool.query(`alter table blocked_times alter column members_only set default false`);
+    await pool.query(`alter table blocked_times alter column members_only set not null`);
 
     // אינדקסים
     await createIndexIfColumnExists('appointments', 'starts_at', 'idx_appointments_starts_at');
@@ -384,6 +394,16 @@ function idWhere(tableAlias, idParsed) {
     // אם העמודה היא int (serial), cast לטקסט עדיין יעבוד להשוואה רק אם מגיע מספר כמחרוזת.
     // אבל אם מגיע UUID ואין כזה בטבלה — זה יחזיר 0 שורות (תקין).
     return { sql: `CAST(${tableAlias}.id AS text) = $1`, param: idParsed.raw };
+}
+
+function parseBoolean(value, fallback = false) {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const norm = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(norm)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(norm)) return false;
+    return fallback;
 }
 
 // helper: מקבל מחרוזת תאריך ושעה בכמה פורמטים אפשריים
@@ -695,7 +715,7 @@ async function router(req, res) {
     // GET /clients – כל הלקוחות + תאריך תור אחרון
     if (req.method === 'GET' && pathname === '/clients') {
         const q = await pool.query(`
-          select c.id, c.first_name, c.last_name, c.phone,
+          select c.id, c.first_name, c.last_name, c.phone, coalesce(c.is_member,false) as is_member,
                  (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at
           from clients c
           order by c.id desc
@@ -707,9 +727,104 @@ async function router(req, res) {
             phone:      r.phone      || '',
             firstName:  r.first_name || '',
             lastName:   r.last_name  || '',
+            is_member:  !!r.is_member,
+            isMember:   !!r.is_member,
             lastAppointmentAt: r.last_appointment_at || null,
         }));
         return json(res, 200, rows);
+    }
+
+    if (req.method === 'POST' && pathname === '/clients') {
+        const body = await readBody(req) || {};
+        const firstName = body.first_name ?? body.firstName ?? '';
+        const lastName  = body.last_name  ?? body.lastName  ?? '';
+        const rawPhone  = body.phone ?? body.client_phone ?? '';
+        const phone = normalizePhone(rawPhone);
+        if (!phone) return json(res, 400, { error: 'PHONE_REQUIRED' });
+
+        const exists = await pool.query(`select id from clients where phone = $1 limit 1`, [phone]);
+        if (exists.rows[0]?.id) {
+            return json(res, 409, { error: 'PHONE_EXISTS' });
+        }
+
+        const isMember = parseBoolean(body.is_member ?? body.isMember, false);
+        const ins = await pool.query(
+            `insert into clients (first_name, last_name, phone, is_member) values ($1,$2,$3,$4)
+             returning id, first_name, last_name, phone, coalesce(is_member,false) as is_member`,
+            [String(firstName || ''), String(lastName || ''), phone, isMember]
+        );
+        const r = ins.rows[0];
+        return json(res, 200, {
+            id: r.id,
+            first_name: r.first_name || '',
+            last_name: r.last_name || '',
+            phone: r.phone || '',
+            firstName: r.first_name || '',
+            lastName: r.last_name || '',
+            is_member: !!r.is_member,
+            isMember: !!r.is_member,
+        });
+    }
+
+    if (req.method === 'PUT' && pathname.startsWith('/clients/')) {
+        const idRaw = pathname.split('/').pop();
+        const parsed = parseId(idRaw);
+        if (!parsed.raw) return json(res, 400, { error: 'Missing id' });
+
+        const where = idWhere('clients', parsed);
+        const currentQ = await pool.query(
+            `select id, first_name, last_name, phone, coalesce(is_member,false) as is_member from clients where ${where.sql}`,
+            [where.param]
+        );
+        const current = currentQ.rows[0];
+        if (!current) return json(res, 404, { error: 'CLIENT_NOT_FOUND' });
+
+        const body = await readBody(req) || {};
+
+        const hasFirst = Object.prototype.hasOwnProperty.call(body, 'first_name') || Object.prototype.hasOwnProperty.call(body, 'firstName');
+        const hasLast = Object.prototype.hasOwnProperty.call(body, 'last_name') || Object.prototype.hasOwnProperty.call(body, 'lastName');
+        const hasPhone = Object.prototype.hasOwnProperty.call(body, 'phone') || Object.prototype.hasOwnProperty.call(body, 'client_phone');
+        const hasMember = Object.prototype.hasOwnProperty.call(body, 'is_member') || Object.prototype.hasOwnProperty.call(body, 'isMember');
+
+        const nextFirst = hasFirst ? String(body.first_name ?? body.firstName ?? '') : current.first_name;
+        const nextLast  = hasLast  ? String(body.last_name  ?? body.lastName  ?? '') : current.last_name;
+
+        let nextPhone = current.phone;
+        if (hasPhone) {
+            const candidate = normalizePhone(body.phone ?? body.client_phone ?? '');
+            if (!candidate) return json(res, 400, { error: 'PHONE_REQUIRED' });
+            nextPhone = candidate;
+        }
+
+        if (nextPhone !== current.phone) {
+            const clash = await pool.query(`select id from clients where phone = $1 and id <> $2 limit 1`, [nextPhone, current.id]);
+            if (clash.rows[0]?.id) {
+                return json(res, 409, { error: 'PHONE_EXISTS' });
+            }
+        }
+
+        const nextIsMember = hasMember ? parseBoolean(body.is_member ?? body.isMember, current.is_member) : current.is_member;
+
+        await pool.query(
+            `update clients set first_name=$2, last_name=$3, phone=$4, is_member=$5 where ${where.sql}`,
+            [where.param, nextFirst, nextLast, nextPhone, nextIsMember]
+        );
+
+        const refreshed = await pool.query(
+            `select id, first_name, last_name, phone, coalesce(is_member,false) as is_member from clients where ${where.sql}`,
+            [where.param]
+        );
+        const r = refreshed.rows[0];
+        return json(res, 200, {
+            id: r.id,
+            first_name: r.first_name || '',
+            last_name: r.last_name || '',
+            phone: r.phone || '',
+            firstName: r.first_name || '',
+            lastName: r.last_name || '',
+            is_member: !!r.is_member,
+            isMember: !!r.is_member,
+        });
     }
 
 
@@ -819,7 +934,8 @@ async function router(req, res) {
                 return json(res, 400, { error: 'INVALID_RANGE' });
             }
 
-            const clientId = await upsertClient(client_first_name, client_last_name, client_phone);
+            const clientRec = await upsertClient(client_first_name, client_last_name, client_phone);
+            const clientId = clientRec.id;
             const q = await pool.query(
                 `insert into appointments (service_id, client_id, starts_at, ends_at, status, note)
                  values ($1,$2,$3,$4,$5,$6)
@@ -862,7 +978,18 @@ async function router(req, res) {
         }
 
 
-        const clientId = await upsertClient(firstName, lastName, phone);
+        const clientRec = await upsertClient(firstName, lastName, phone);
+        const clientId = clientRec.id;
+        const clientIsMember = !!clientRec.is_member;
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const diffDays = Math.floor((start.getTime() - today.getTime()) / 86400000);
+        const maxAdvance = clientIsMember ? 14 : 7;
+        if (diffDays > maxAdvance) {
+            return json(res, 400, { error: 'ADVANCE_LIMIT_EXCEEDED', maxDays: maxAdvance });
+        }
+
         const ins = await pool.query(
             `insert into appointments (service_id, client_id, starts_at, ends_at, status, note)
              values ($1,$2,$3,$4,$5,$6) returning id`,
@@ -930,11 +1057,22 @@ async function router(req, res) {
         const date = url.searchParams.get('date'); // yyyy-MM-dd
         if (!serviceId || !date) return json(res, 200, []);
 
+        const isMemberQuery = url.searchParams.get('isMember') ?? url.searchParams.get('member') ?? url.searchParams.get('members');
+        const isMember = parseBoolean(isMemberQuery, false);
+
+        const d = new Date(date + 'T00:00:00');
+        if (Number.isNaN(d.getTime())) return json(res, 200, []);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const diffDays = Math.floor((d.getTime() - today.getTime()) / 86400000);
+        const maxAdvance = isMember ? 14 : 7;
+        if (diffDays > maxAdvance) return json(res, 200, []);
+
         let duration = 30;
         const s = await pool.query(`select duration_minutes from services where id=$1`, [serviceId]);
         if (s.rows[0]?.duration_minutes) duration = Number(s.rows[0].duration_minutes) || 30;
 
-        const d = new Date(date + 'T00:00:00');
         const weekday = d.getDay();
         const bh = DEFAULT_HOURS.find(x => x.weekday === weekday);
         if (!bh?.isOpen) return json(res, 200, []);
@@ -943,14 +1081,23 @@ async function router(req, res) {
         const close = toLocalDateTime(date, bh.close);
 
         const { start, end } = dayBounds(date);
-        const ap = await pool.query(`select starts_at, ends_at from appointments where starts_at >= $1 and starts_at < $2`, [start, end]);
+        const ap = await pool.query(`
+            select starts_at, ends_at
+            from appointments
+            where starts_at >= $1 and starts_at < $2
+              and coalesce(status, 'booked') <> 'canceled'
+        `, [start, end]);
         const bl = await pool.query(`
-            select start_at as starts_at, end_at as ends_at
+            select start_at as starts_at, end_at as ends_at, coalesce(members_only,false) as members_only
             from blocked_times
             where start_at < $2 and end_at > $1
         `, [start, end]);
 
-        const busy = [...ap.rows, ...bl.rows].map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+        const blockBusy = bl.rows
+            .filter(r => !(r.members_only && isMember))
+            .map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+        const apBusy = ap.rows.map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+        const busy = [...apBusy, ...blockBusy];
 
         const slots = [];
         for (let t = new Date(open); t.getTime() + duration * 60000 <= close.getTime(); t = new Date(t.getTime() + bh.slot * 60000)) {
@@ -966,7 +1113,7 @@ async function router(req, res) {
     /* ---- BLOCKS ---- */
     if (req.method === 'GET' && pathname === '/admin/blocked-times') {
         const q = await pool.query(`
-            select id, start_at, end_at, reason
+            select id, start_at, end_at, reason, coalesce(members_only,false) as members_only
             from blocked_times
             order by start_at desc
         `);
@@ -977,6 +1124,8 @@ async function router(req, res) {
             reason:  r.reason,
             start_at: r.start_at,
             end_at:   r.end_at,
+            members_only: !!r.members_only,
+            membersOnly: !!r.members_only,
         }));
         return json(res, 200, rows);
     }
@@ -991,6 +1140,7 @@ async function router(req, res) {
         const startsAtRaw = body.starts_at || body.startAt || body.start || body.from;
         const endsAtRaw   = body.ends_at   || body.endAt   || body.end   || body.to;
         const reason      = body.reason    || body.desc    || '';
+        const membersOnly = parseBoolean(body.members_only ?? body.membersOnly ?? body.members, false);
 
         if (!startsAtRaw || !endsAtRaw) {
             return json(res, 400, { error: 'Missing starts_at/ends_at' });
@@ -1034,10 +1184,10 @@ async function router(req, res) {
 
         // אין חפיפה — מוסיפים חסימה
         const q = await pool.query(
-            `insert into blocked_times (start_at, end_at, reason)
-             values ($1,$2,$3)
-                 returning id, start_at, end_at, reason`,
-            [s, e, String(reason)]
+            `insert into blocked_times (start_at, end_at, reason, members_only)
+             values ($1,$2,$3,$4)
+                 returning id, start_at, end_at, reason, coalesce(members_only,false) as members_only`,
+            [s, e, String(reason), membersOnly]
         );
 
         const row = q.rows[0];
@@ -1045,7 +1195,9 @@ async function router(req, res) {
             id: row.id,
             starts_at: row.start_at,
             ends_at:   row.end_at,
-            reason: row.reason
+            reason: row.reason,
+            members_only: !!row.members_only,
+            membersOnly: !!row.members_only,
         });
     }
 
@@ -1081,11 +1233,12 @@ async function router(req, res) {
         // קישור לקוח קיים/יצירה (אופציונלי)
         let clientId = null;
         try {
-            clientId = await upsertClient(
+            const ensured = await upsertClient(
                 name.split(' ')[0] || '',
                 name.split(' ').slice(1).join(' ') || '',
                 phone
             );
+            clientId = ensured.id;
         } catch {}
 
         const q = await pool.query(
@@ -1632,15 +1785,37 @@ function normalizePhone(phone) {
 }
 
 
-async function upsertClient(firstName, lastName, phone) {
+async function upsertClient(firstName, lastName, phone, options = {}) {
     const p0 = normalizePhone(phone);
-    const sel = await pool.query(`select id from clients where phone=$1`, [p0]);
-    if (sel.rows[0]?.id) return sel.rows[0].id;
+    if (!p0) throw new Error('PHONE_REQUIRED');
+
+    const existing = await pool.query(`
+        select id, first_name, last_name, phone, coalesce(is_member,false) as is_member
+        from clients
+        where phone = $1
+        limit 1
+    `, [p0]);
+
+    if (existing.rows[0]) {
+        const row = existing.rows[0];
+        const desiredFirst = firstName ? String(firstName) : row.first_name;
+        const desiredLast  = lastName  ? String(lastName)  : row.last_name;
+        if (desiredFirst !== row.first_name || desiredLast !== row.last_name) {
+            await pool.query(`update clients set first_name=$2, last_name=$3 where id=$1`, [row.id, desiredFirst, desiredLast]);
+            row.first_name = desiredFirst;
+            row.last_name = desiredLast;
+        }
+        return { id: row.id, is_member: !!row.is_member };
+    }
+
+    const isMember = parseBoolean(options.is_member ?? options.isMember, false);
     const ins = await pool.query(
-        `insert into clients (first_name, last_name, phone) values ($1,$2,$3) returning id`,
-        [firstName || '', lastName || '', p0]
+        `insert into clients (first_name, last_name, phone, is_member)
+         values ($1,$2,$3,$4)
+         returning id, coalesce(is_member,false) as is_member`,
+        [String(firstName || ''), String(lastName || ''), p0, isMember]
     );
-    return ins.rows[0].id;
+    return { id: ins.rows[0].id, is_member: !!ins.rows[0].is_member };
 }
 
 async function pruneOldAppointments() {

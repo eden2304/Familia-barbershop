@@ -50,6 +50,12 @@ const DAYS_IN_WEEK = [
   { key: 6, name: "שבת" },
 ];
 
+const buildWeekDays = (weekOffset) => {
+  const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+  const base = addDays(start, weekOffset * 7);
+  return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+};
+
 const toYMD = (d) => {
   if (!d) return "";
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -134,11 +140,7 @@ export default function Book() {
   const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
   const maxAdvanceDays = clientIsMember ? 14 : 7;
 
-  const getWeekDays = useCallback((weekOffset) => {
-    const start = startOfWeek(new Date(), { weekStartsOn: 0 });
-    const base = addDays(start, weekOffset * 7);
-    return Array.from({ length: 7 }, (_, i) => addDays(base, i));
-  }, []);
+  const getWeekDays = useCallback(buildWeekDays, []);
 
   const isWithinBookingWindow = useCallback((date) => {
     if (!date) return false;

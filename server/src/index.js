@@ -362,6 +362,165 @@ const DEFAULT_HOURS = [
     { weekday: 5, open: '08:00', close: '15:00', slot: 30, isOpen: true },
     { weekday: 6, open: null,     close: null,    slot: 30, isOpen: false },
 ];
+
+const BOOKING_RULE_DEFAULTS = {
+    publicMaxAdvanceDays: 7,
+    memberMaxAdvanceDays: 14,
+    memberOnlyServiceIds: [],
+    memberOnlyWindows: [],
+};
+
+function clampAdvanceDays(value, fallback) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    const intVal = Math.floor(num);
+    if (intVal < 0) return 0;
+    if (intVal > 365) return 365;
+    return intVal;
+}
+
+function normalizeRuleTime(value) {
+    if (value === undefined || value === null) return null;
+    const str = String(value).trim();
+    const match = str.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    let h = Number(match[1]);
+    let m = Number(match[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    if (h < 0) h = 0;
+    if (h > 23) h = 23;
+    if (m < 0) m = 0;
+    if (m > 59) m = 59;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function normalizeMemberWindowsValue(candidate) {
+    const windows = [];
+
+    const pushWindow = (weekday, start, end) => {
+        if (weekday === undefined || weekday === null) return;
+        const day = Number(weekday);
+        if (!Number.isInteger(day) || day < 0 || day > 6) return;
+        const startNorm = normalizeRuleTime(start);
+        const endNorm = normalizeRuleTime(end);
+        if (!startNorm || !endNorm) return;
+        const startMinutes = Number(startNorm.slice(0, 2)) * 60 + Number(startNorm.slice(3));
+        const endMinutes = Number(endNorm.slice(0, 2)) * 60 + Number(endNorm.slice(3));
+        if (endMinutes <= startMinutes) return;
+        const key = `${day}|${startNorm}|${endNorm}`;
+        if (windows.some((w) => w.key === key)) return;
+        windows.push({ weekday: day, start: startNorm, end: endNorm, key });
+    };
+
+    const explore = (value, fallbackDay) => {
+        if (!value) return;
+        if (Array.isArray(value)) {
+            value.forEach((entry) => explore(entry, fallbackDay));
+            return;
+        }
+        if (typeof value === 'object') {
+            const day = value.weekday ?? value.day ?? value.day_of_week ?? fallbackDay;
+            const start = value.start ?? value.from ?? value.open ?? value.start_time ?? value.startTime;
+            const end = value.end ?? value.to ?? value.close ?? value.end_time ?? value.endTime;
+            if (day !== undefined || (start !== undefined && end !== undefined)) {
+                pushWindow(day, start, end);
+                return;
+            }
+            Object.entries(value).forEach(([maybeDay, nested]) => {
+                const parsedDay = Number.isNaN(Number(maybeDay)) ? fallbackDay : Number(maybeDay);
+                explore(nested, parsedDay);
+            });
+        }
+    };
+
+    explore(candidate, undefined);
+
+    windows.sort((a, b) => {
+        if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+        return a.start.localeCompare(b.start);
+    });
+
+    return windows.map((win) => ({ weekday: win.weekday, start: win.start, end: win.end }));
+}
+
+function normalizeBookingRulesValue(raw) {
+    let source = raw;
+    if (typeof source === 'string') {
+        try { source = JSON.parse(source); }
+        catch { source = null; }
+    }
+    if (!source || typeof source !== 'object') {
+        return { ...BOOKING_RULE_DEFAULTS };
+    }
+
+    const publicCandidate =
+        source.publicMaxAdvanceDays ??
+        source.public ??
+        source.publicDays ??
+        source.public_days ??
+        source.regular ??
+        source.nonMember ??
+        source.non_member;
+    const memberCandidate =
+        source.memberMaxAdvanceDays ??
+        source.member ??
+        source.members ??
+        source.memberDays ??
+        source.member_days ??
+        source.vip ??
+        source.memberAdvanceDays ??
+        source.member_advance_days;
+    const listCandidate =
+        source.memberOnlyServiceIds ??
+        source.membersOnlyServiceIds ??
+        source.memberServices ??
+        source.member_services ??
+        source.member_only_services ??
+        source.members_only_services ??
+        [];
+    const windowCandidate =
+        source.memberOnlyWindows ??
+        source.member_only_windows ??
+        source.memberWindows ??
+        source.member_windows ??
+        [];
+
+    const publicMaxAdvanceDays = clampAdvanceDays(publicCandidate, BOOKING_RULE_DEFAULTS.publicMaxAdvanceDays);
+    const memberMaxAdvanceDays = clampAdvanceDays(memberCandidate, BOOKING_RULE_DEFAULTS.memberMaxAdvanceDays);
+    const ids = Array.isArray(listCandidate)
+        ? Array.from(
+            new Set(
+                listCandidate
+                    .map((value) => {
+                        if (value === undefined || value === null) return null;
+                        const str = String(value).trim();
+                        return str.length > 0 ? str : null;
+                    })
+                    .filter(Boolean)
+            )
+        )
+        : [];
+    const windows = normalizeMemberWindowsValue(windowCandidate);
+
+    return {
+        publicMaxAdvanceDays,
+        memberMaxAdvanceDays,
+        memberOnlyServiceIds: ids,
+        memberOnlyWindows: windows,
+    };
+}
+
+async function loadBookingRules() {
+    try {
+        const q = await pool.query(`select value from settings where key=$1 limit 1`, ['booking.rules']);
+        const raw = q.rows[0]?.value;
+        return normalizeBookingRulesValue(raw);
+    } catch (e) {
+        console.warn('[booking.rules] load failed, using defaults', e);
+        return { ...BOOKING_RULE_DEFAULTS };
+    }
+}
+
 function dayBounds(dStr) {
     const d = new Date(dStr + 'T00:00:00');
     const start = new Date(d);
@@ -734,6 +893,30 @@ async function router(req, res) {
         return json(res, 200, rows);
     }
 
+    if (req.method === 'GET' && pathname === '/clients/lookup') {
+        const rawPhone = url.searchParams.get('phone') ?? url.searchParams.get('q') ?? '';
+        const { p0, p972 } = phoneDigitsPair(rawPhone);
+        if (!p0 && !p972) return json(res, 200, null);
+        const q = await pool.query(`
+            select id, first_name, last_name, phone, coalesce(is_member,false) as is_member
+            from clients
+            where regexp_replace(phone, '\\D', '', 'g') in ($1, $2)
+            limit 1
+        `, [p0 || '', p972 || p0 || '']);
+        const row = q.rows[0];
+        if (!row) return json(res, 200, null);
+        return json(res, 200, {
+            id: row.id,
+            first_name: row.first_name || '',
+            last_name: row.last_name || '',
+            phone: row.phone || '',
+            firstName: row.first_name || '',
+            lastName: row.last_name || '',
+            is_member: !!row.is_member,
+            isMember: !!row.is_member,
+        });
+    }
+
     if (req.method === 'POST' && pathname === '/clients') {
         const body = await readBody(req) || {};
         const firstName = body.first_name ?? body.firstName ?? '';
@@ -877,7 +1060,10 @@ async function router(req, res) {
     if (req.method === 'POST' && pathname.startsWith('/admin/settings/')) {
         const key = decodeURIComponent(pathname.split('/').pop());
         const body = await readBody(req);
-        const val = body?.value ?? null;
+        const rawVal = body?.value ?? null;
+        const val = (rawVal && typeof rawVal === 'object' && !Buffer.isBuffer(rawVal))
+            ? JSON.stringify(rawVal)
+            : rawVal;
         const q = await pool.query(
             `insert into settings(key, value) values ($1,$2)
                 on conflict (key) do update set value=excluded.value
@@ -1021,12 +1207,50 @@ async function router(req, res) {
         const clientId = clientRec.id;
         const clientIsMember = !!clientRec.is_member;
 
+        const rules = await loadBookingRules();
+        const serviceIdStr = serviceId != null ? String(serviceId) : null;
+        if (!clientIsMember && serviceIdStr && (rules.memberOnlyServiceIds || []).includes(serviceIdStr)) {
+            return json(res, 400, { error: 'MEMBERS_ONLY_SERVICE' });
+        }
+
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const diffDays = Math.floor((start.getTime() - today.getTime()) / 86400000);
-        const maxAdvance = clientIsMember ? 14 : 7;
+        const maxAdvance = clientIsMember ? rules.memberMaxAdvanceDays : rules.publicMaxAdvanceDays;
         if (diffDays > maxAdvance) {
             return json(res, 400, { error: 'ADVANCE_LIMIT_EXCEEDED', maxDays: maxAdvance });
+        }
+
+        const weekday = start.getDay();
+        const bh = DEFAULT_HOURS.find((x) => x.weekday === weekday);
+        const hasBaseWindow = bh?.isOpen && bh?.open && bh?.close;
+        const baseOpen = hasBaseWindow ? toLocalDateTime(date, bh.open) : null;
+        const baseClose = hasBaseWindow ? toLocalDateTime(date, bh.close) : null;
+        const memberWindowsForDay = (rules.memberOnlyWindows || [])
+            .filter((win) => Number(win.weekday) === weekday)
+            .map((win) => ({ start: toLocalDateTime(date, win.start), end: toLocalDateTime(date, win.end) }))
+            .filter((win) => win.start instanceof Date && win.end instanceof Date && !Number.isNaN(win.start.getTime()) && !Number.isNaN(win.end.getTime()) && win.end > win.start);
+
+        const isInMemberWindow = memberWindowsForDay.some((win) => win.start <= start && win.end > start);
+
+        if (!hasBaseWindow && (!clientIsMember || memberWindowsForDay.length === 0)) {
+            return json(res, 400, { error: 'DAY_CLOSED' });
+        }
+
+        if (!clientIsMember && isInMemberWindow) {
+            return json(res, 400, { error: 'MEMBERS_ONLY_WINDOW' });
+        }
+
+        if (!hasBaseWindow && clientIsMember && !isInMemberWindow) {
+            return json(res, 400, { error: 'MEMBERS_ONLY_WINDOW' });
+        }
+
+        if (hasBaseWindow && baseOpen && baseClose) {
+            if (start < baseOpen || start >= baseClose) {
+                if (!(clientIsMember && isInMemberWindow)) {
+                    return json(res, 400, { error: 'OUTSIDE_BUSINESS_HOURS' });
+                }
+            }
         }
 
         const ins = await pool.query(
@@ -1099,13 +1323,19 @@ async function router(req, res) {
         const isMemberQuery = url.searchParams.get('isMember') ?? url.searchParams.get('member') ?? url.searchParams.get('members');
         const isMember = parseBoolean(isMemberQuery, false);
 
+        const rules = await loadBookingRules();
+        const serviceIdStr = String(serviceId);
+        if (!isMember && (rules.memberOnlyServiceIds || []).includes(serviceIdStr)) {
+            return json(res, 200, []);
+        }
+
         const d = new Date(date + 'T00:00:00');
         if (Number.isNaN(d.getTime())) return json(res, 200, []);
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const diffDays = Math.floor((d.getTime() - today.getTime()) / 86400000);
-        const maxAdvance = isMember ? 14 : 7;
+        const maxAdvance = isMember ? rules.memberMaxAdvanceDays : rules.publicMaxAdvanceDays;
         if (diffDays > maxAdvance) return json(res, 200, []);
 
         let duration = 30;
@@ -1114,10 +1344,17 @@ async function router(req, res) {
 
         const weekday = d.getDay();
         const bh = DEFAULT_HOURS.find(x => x.weekday === weekday);
-        if (!bh?.isOpen) return json(res, 200, []);
+        const hasBaseWindow = bh?.isOpen && bh?.open && bh?.close;
+        const open = hasBaseWindow ? toLocalDateTime(date, bh.open) : null;
+        const close = hasBaseWindow ? toLocalDateTime(date, bh.close) : null;
+        const memberWindowsForDay = (rules.memberOnlyWindows || [])
+            .filter((win) => Number(win.weekday) === weekday)
+            .map((win) => ({ start: toLocalDateTime(date, win.start), end: toLocalDateTime(date, win.end) }))
+            .filter((win) => win.start instanceof Date && win.end instanceof Date && !Number.isNaN(win.start.getTime()) && !Number.isNaN(win.end.getTime()) && win.end > win.start);
 
-        const open = toLocalDateTime(date, bh.open);
-        const close = toLocalDateTime(date, bh.close);
+        if (!hasBaseWindow && (!isMember || memberWindowsForDay.length === 0)) {
+            return json(res, 200, []);
+        }
 
         const { start, end } = dayBounds(date);
         const ap = await pool.query(`
@@ -1138,13 +1375,33 @@ async function router(req, res) {
         const apBusy = ap.rows.map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
         const busy = [...apBusy, ...blockBusy];
 
-        const slots = [];
-        for (let t = new Date(open); t.getTime() + duration * 60000 <= close.getTime(); t = new Date(t.getTime() + bh.slot * 60000)) {
-            const slotStart = new Date(t);
-            const slotEnd = new Date(t.getTime() + duration * 60000);
-            const overlaps = busy.some(b => b.start < slotEnd && b.end > slotStart);
-            if (!overlaps) slots.push(formatHHmm(slotStart));
+        const stepMinutes = Number(bh?.slot || 30) || 30;
+        const durationMs = duration * 60000;
+        const baseWindows = hasBaseWindow && open && close ? [{ start: open, end: close }] : [];
+        const candidateWindows = isMember
+            ? [...baseWindows, ...memberWindowsForDay]
+            : baseWindows;
+
+        if (candidateWindows.length === 0) {
+            return json(res, 200, []);
         }
+
+        const slotsSet = new Set();
+        const isInMemberWindow = (slotStart) => memberWindowsForDay.some((win) => win.start <= slotStart && win.end > slotStart);
+
+        for (const window of candidateWindows) {
+            for (let t = new Date(window.start); t.getTime() + durationMs <= window.end.getTime(); t = new Date(t.getTime() + stepMinutes * 60000)) {
+                const slotStart = new Date(t);
+                if (Number.isNaN(slotStart.getTime())) continue;
+                const slotEnd = new Date(slotStart.getTime() + durationMs);
+                const overlaps = busy.some(b => b.start < slotEnd && b.end > slotStart);
+                if (overlaps) continue;
+                if (!isMember && isInMemberWindow(slotStart)) continue;
+                slotsSet.add(formatHHmm(slotStart));
+            }
+        }
+
+        const slots = Array.from(slotsSet).sort();
         return json(res, 200, slots);
     }
 

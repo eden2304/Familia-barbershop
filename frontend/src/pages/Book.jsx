@@ -169,6 +169,23 @@ export default function Book() {
 
   const visibleWeekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
 
+  const refreshClientFromServer = useCallback(async (phone) => {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
+    try {
+      const res = await api.get(`/clients/lookup?phone=${encodeURIComponent(normalizedPhone)}`);
+      if (res && (res.phone || res.client_phone)) {
+        const normalized = normalizeClientObject({ ...res, phone: res.phone ?? res.client_phone ?? normalizedPhone });
+        if (normalized) {
+          setClient(normalized);
+          localStorage.setItem("familiaClient", JSON.stringify(normalized));
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to refresh client membership", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (!canViewWeek(selectedWeek)) {
       let next = selectedWeek;
@@ -207,13 +224,20 @@ export default function Book() {
   useEffect(() => {
     const stored = localStorage.getItem("familiaClient");
     if (stored) {
-      const parsed = normalizeClientObject(JSON.parse(stored));
-      setClient(parsed);
+      try {
+        const parsed = normalizeClientObject(JSON.parse(stored));
+        setClient(parsed);
+        refreshClientFromServer(parsed?.phone);
+      } catch {
+        navigate("/");
+        return;
+      }
     } else {
       navigate("/");
+      return;
     }
     loadInitialData();
-  }, [navigate]);
+  }, [navigate, refreshClientFromServer]);
 
   const loadInitialData = async () => {
     setLoading(true);

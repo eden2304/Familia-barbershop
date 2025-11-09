@@ -85,6 +85,8 @@ const navItems = [
   { id: 'background', label: 'סרטון רקע', icon: Video },
 ];
 
+const WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
 const normalizePhone = (phone) => {
   if (!phone) return "";
   const cleaned = phone.toString().replace(/\D/g, '');
@@ -124,6 +126,7 @@ export default function Admin() { // Removed props
   const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
+  const [memberWindowDrafts, setMemberWindowDrafts] = useState(() => ({}));
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -150,6 +153,8 @@ export default function Admin() { // Removed props
   const [editingProduct, setEditingProduct] = useState(null);
   const [showClientForm, setShowClientForm] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
+  const [clientSearchTerm, setClientSearchTerm] = useState("");
+  const [showMembersOnlyClients, setShowMembersOnlyClients] = useState(false);
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
 
@@ -421,6 +426,16 @@ export default function Admin() { // Removed props
       () => new Set((memberSettings.memberOnlyServiceIds || []).map((id) => String(id))),
       [memberSettings.memberOnlyServiceIds]
   );
+
+  const memberWindowsByDay = useMemo(() => {
+    const grouped = Array.from({ length: 7 }, () => []);
+    for (const window of memberSettings.memberOnlyWindows || []) {
+      const day = Number(window.weekday);
+      if (!Number.isInteger(day) || day < 0 || day > 6) continue;
+      grouped[day].push(window);
+    }
+    return grouped.map((arr) => [...arr].sort((a, b) => a.start.localeCompare(b.start)));
+  }, [memberSettings.memberOnlyWindows]);
 
   const updateAdvanceDays = (field, rawValue, fallback) => {
     const sanitized = clampAdvanceDays(rawValue, fallback);
@@ -783,6 +798,76 @@ export default function Admin() { // Removed props
       return { ...c, lastAppointmentDate: lastDate, lastAppointmentRecent: isRecent };
     });
   }, [allClients, appointments]);
+
+  const filteredClients = useMemo(() => {
+    const term = clientSearchTerm.trim().toLowerCase();
+    return clientDataWithAppointments.filter((client) => {
+      const memberFlag = Boolean(client.isMember ?? client.is_member);
+      if (showMembersOnlyClients && !memberFlag) return false;
+      if (!term) return true;
+      const nameParts = [
+        client.first_name ?? client.firstName ?? '',
+        client.last_name ?? client.lastName ?? '',
+      ];
+      const displayName = nameParts.filter(Boolean).join(' ').toLowerCase();
+      const phoneDigits = String(client.phone ?? client.client_phone ?? '')
+          .replace(/\D/g, '');
+      return displayName.includes(term) || phoneDigits.includes(term);
+    });
+  }, [clientDataWithAppointments, clientSearchTerm, showMembersOnlyClients]);
+
+  const updateMemberWindowDraft = (weekday, field, value) => {
+    setMemberWindowDrafts((prev) => ({
+      ...prev,
+      [weekday]: {
+        ...(prev?.[weekday] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleAddMemberWindow = (weekday) => {
+    const draft = memberWindowDrafts?.[weekday] || {};
+    const start = (draft.start || '').trim();
+    const end = (draft.end || '').trim();
+    if (!start || !end) {
+      alert('יש לבחור שעת התחלה ושעת סיום');
+      return;
+    }
+    if (start >= end) {
+      alert('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+      return;
+    }
+    const exists = (memberSettings.memberOnlyWindows || []).some(
+        (win) => Number(win.weekday) === Number(weekday) && win.start === start && win.end === end
+    );
+    if (exists) {
+      alert('טווח זה כבר קיים עבור היום הנבחר');
+      return;
+    }
+    setMemberSettings((prev) => ({
+      ...prev,
+      memberOnlyWindows: [
+        ...(prev.memberOnlyWindows || []),
+        { id: `win-${Date.now()}-${weekday}-${start}-${end}`, weekday, start, end },
+      ],
+    }));
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+    setMemberWindowDrafts((prev) => ({
+      ...prev,
+      [weekday]: { start: '', end: '' },
+    }));
+  };
+
+  const handleRemoveMemberWindow = (id) => {
+    setMemberSettings((prev) => ({
+      ...prev,
+      memberOnlyWindows: (prev.memberOnlyWindows || []).filter((win) => win.id !== id),
+    }));
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  };
 
   const blocksForSelectedDay = useMemo(() => {
     return (blocks || []).filter((b) => {
@@ -1228,45 +1313,64 @@ export default function Admin() { // Removed props
                           <CardTitle>רשימת לקוחות</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="divide-y divide-gray-200">
-                            {clientDataWithAppointments.map((client) => {
-                              const memberFlag = Boolean(client.isMember ?? client.is_member);
-                              const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
-                              const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
-                              const phoneDisplay = client.phone ?? client.client_phone ?? '';
-                              const lastAppointment = client.lastAppointmentDate ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', { locale: he }) : 'אין היסטוריה';
-                              const lastClass = client.lastAppointmentDate
-                                  ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
-                                  : 'text-gray-800';
-                              return (
-                                  <div key={client.id} className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                    <div>
-                                      <p className="font-bold text-gray-900">{[first, last].filter(Boolean).join(' ')}</p>
-                                      <p className="text-sm text-gray-600">{phoneDisplay}</p>
-                                      {memberFlag && (
-                                          <span className="mt-2 inline-block rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1">
-                                            חבר מועדון
-                                          </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                      <div className="text-left md:text-right">
-                                        <p className="text-sm text-gray-500">תור אחרון:</p>
-                                        <p className={`font-medium ${lastClass}`}>{lastAppointment}</p>
-                                      </div>
-                                      <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => toggleClientMembership(client)}
-                                          className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
-                                      >
-                                        {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                              );
-                            })}
+                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                            <Input
+                                placeholder="חיפוש לפי שם או טלפון"
+                                value={clientSearchTerm}
+                                onChange={(e) => setClientSearchTerm(e.target.value)}
+                                className="md:max-w-sm"
+                            />
+                            <label className="flex items-center gap-2 text-sm text-gray-600">
+                              <Switch
+                                  checked={showMembersOnlyClients}
+                                  onCheckedChange={(val) => setShowMembersOnlyClients(Boolean(val))}
+                              />
+                              <span>הצג רק חברי מועדון</span>
+                            </label>
                           </div>
+                          {filteredClients.length === 0 ? (
+                              <p className="text-sm text-gray-500">לא נמצאו לקוחות תואמים.</p>
+                          ) : (
+                              <div className="divide-y divide-gray-200">
+                                {filteredClients.map((client) => {
+                                  const memberFlag = Boolean(client.isMember ?? client.is_member);
+                                  const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
+                                  const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
+                                  const phoneDisplay = client.phone ?? client.client_phone ?? '';
+                                  const lastAppointment = client.lastAppointmentDate ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', { locale: he }) : 'אין היסטוריה';
+                                  const lastClass = client.lastAppointmentDate
+                                      ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
+                                      : 'text-gray-800';
+                                  return (
+                                      <div key={client.id} className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                          <p className="font-bold text-gray-900">{[first, last].filter(Boolean).join(' ')}</p>
+                                          <p className="text-sm text-gray-600">{phoneDisplay}</p>
+                                          {memberFlag && (
+                                              <span className="mt-2 inline-block rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1">
+                                                חבר מועדון
+                                              </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                          <div className="text-left md:text-right">
+                                            <p className="text-sm text-gray-500">תור אחרון:</p>
+                                            <p className={`font-medium ${lastClass}`}>{lastAppointment}</p>
+                                          </div>
+                                          <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => toggleClientMembership(client)}
+                                              className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
+                                          >
+                                            {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                  );
+                                })}
+                              </div>
+                          )}
                         </CardContent>
                       </Card>
                       <div className="fixed bottom-24 right-6 z-30">
@@ -1354,6 +1458,75 @@ export default function Admin() { // Removed props
                                   );
                                 })
                             )}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader>
+                          <CardTitle>שעות בלעדיות לחברי מועדון</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 mb-4">
+                            קבע חלונות זמן בכל יום שיופיעו רק לחברי מועדון. לקוחות רגילים לא יראו את השעות האלו.
+                          </p>
+                          <div className="space-y-6">
+                            {WEEKDAY_LABELS.map((label, idx) => {
+                              const windows = memberWindowsByDay[idx] || [];
+                              const draft = memberWindowDrafts?.[idx] || { start: '', end: '' };
+                              return (
+                                  <div key={label} className="space-y-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <h4 className="font-semibold text-gray-900">{label}</h4>
+                                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                        <Input
+                                            type="time"
+                                            value={draft.start || ''}
+                                            onChange={(e) => updateMemberWindowDraft(idx, 'start', e.target.value)}
+                                            className="w-full sm:w-32"
+                                        />
+                                        <span className="hidden sm:inline text-sm text-gray-500">עד</span>
+                                        <Input
+                                            type="time"
+                                            value={draft.end || ''}
+                                            onChange={(e) => updateMemberWindowDraft(idx, 'end', e.target.value)}
+                                            className="w-full sm:w-32"
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="sm:ml-2"
+                                            onClick={() => handleAddMemberWindow(idx)}
+                                        >
+                                          הוסף
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    {windows.length === 0 ? (
+                                        <p className="text-xs text-gray-500">אין טווחים בלעדיים ליום זה.</p>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                          {windows.map((win) => (
+                                              <span
+                                                  key={win.id}
+                                                  className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold px-3 py-1"
+                                              >
+                                                {win.start} – {win.end}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveMemberWindow(win.id)}
+                                                    className="text-emerald-700 hover:text-emerald-900"
+                                                    aria-label="הסר חלון"
+                                                >
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              </span>
+                                          ))}
+                                        </div>
+                                    )}
+                                  </div>
+                              );
+                            })}
                           </div>
                         </CardContent>
                       </Card>

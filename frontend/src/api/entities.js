@@ -25,7 +25,18 @@ export const Client = {
     },
     create: (data) => api.post('/clients', data),
     update: (id, data) => api.put(`/clients/${id}`, data),
-    delete: (id) => api.delete(`/clients/${id}`)
+    delete: (id) => api.delete(`/clients/${id}`),
+    lookup: async (query) => {
+        const raw = typeof query === 'string' ? query : (query?.phone ?? '');
+        const phone = normalizePhone(raw);
+        if (!phone) return null;
+        try {
+            return await api.get(`/clients/lookup?phone=${encodeURIComponent(phone)}`);
+        } catch (e) {
+            console.warn('[Client.lookup] failed', e);
+            return null;
+        }
+    },
 };
 
 

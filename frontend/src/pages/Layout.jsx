@@ -3,8 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { User, Home as HomeIcon, History, Navigation, Phone, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
-import LoadingScreen from "@/components/LoadingScreen";
+import { AnimatePresence } from "framer-motion";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 // Admin phone numbers - only these users will see the admin button
@@ -23,7 +22,6 @@ const normalizePhone = (phone) => {
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
   const { setSidebarOpen } = useSidebar();
-  const [showLoading, setShowLoading] = useState(false);
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
@@ -64,13 +62,6 @@ function MainLayout({ children, currentPageName }) {
     window.location.href = "tel:+972523767851";
   };
 
-  const handleLogoClick = (e) => {
-    setShowLoading(true);
-    setTimeout(() => {
-      setShowLoading(false);
-    }, 3000);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900" dir="rtl">
       <style>{`
@@ -95,14 +86,11 @@ function MainLayout({ children, currentPageName }) {
           min-height: calc(100vh - 100px);
         }
       `}</style>
-      
-      {showLoading && <LoadingScreen />}
-      
       <AnimatePresence>
         {showWelcomeBanner && client && <ClientWelcomeBanner onClose={() => setShowWelcomeBanner(false)} />}
       </AnimatePresence>
 
-      <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl">
+      <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none">
         <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
             {isAdmin && currentPageName === 'Admin' ? (
@@ -110,14 +98,14 @@ function MainLayout({ children, currentPageName }) {
                 variant="ghost"
                 size="icon"
                 onClick={() => setSidebarOpen(prev => !prev)}
-                className="text-white hover:text-gray-300 relative z-20"
+                className="text-white hover:text-gray-300 relative z-20 pointer-events-auto"
               >
                 <Menu className="w-6 h-6" />
               </Button>
             ) : isAdmin ? (
               <Link
                 to={createPageUrl("Admin")}
-                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20"
+                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
               >
                 <User className="w-6 h-6" />
               </Link>
@@ -126,17 +114,14 @@ function MainLayout({ children, currentPageName }) {
             )}
           </div>
 
-          <Link
-            to={createPageUrl("Home")}
-            onClick={handleLogoClick}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center"
-          >
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center select-none">
             <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
               alt="Familia Logo"
               className="h-10 w-auto max-w-[200px] object-contain"
+              draggable={false}
             />
-          </Link>
+          </div>
 
           <div className="w-10 h-10" /> 
         </div>

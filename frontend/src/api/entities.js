@@ -109,12 +109,93 @@ const DEFAULT_HOURS = [
     { weekday: 5, open: '08:00', close: '15:00', slotIntervalMinutes: 30, isOpen: true },
     { weekday: 6, open: null,   close: null,     slotIntervalMinutes: 30, isOpen: false },
 ];
-const mapHours = (arr) => arr.map(h => ({ ...h, open_time: h.open, close_time: h.close, is_closed: !h.isOpen }));
+
+const sanitizeTimeString = (value) => {
+    if (value == null) return null;
+    const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const h = String(match[1]).padStart(2, '0');
+    const m = String(match[2]).padStart(2, '0');
+    return `${h}:${m}`;
+};
+
+const normalizeBusinessHour = (row = {}) => {
+    const weekday = Number(row.weekday ?? row.day ?? row.day_of_week ?? row.dayOfWeek);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return null;
+    const slot = Number(row.slotIntervalMinutes ?? row.slot_interval_minutes ?? row.slotMinutes ?? row.slot ?? 30) || 30;
+    const openRaw = sanitizeTimeString(row.open ?? row.open_time ?? row.openTime);
+    const closeRaw = sanitizeTimeString(row.close ?? row.close_time ?? row.closeTime);
+    const isOpenFlag = row.isOpen ?? row.is_open ?? (row.isClosed !== undefined ? !row.isClosed : row.is_closed !== undefined ? !row.is_closed : undefined);
+    const isOpen = isOpenFlag !== undefined ? Boolean(isOpenFlag) : Boolean(openRaw && closeRaw && openRaw !== closeRaw);
+    const openVal = isOpen ? openRaw : null;
+    const closeVal = isOpen ? closeRaw : null;
+    return {
+        weekday,
+        open: openVal,
+        close: closeVal,
+        slotIntervalMinutes: slot,
+        slot_interval_minutes: slot,
+        slotMinutes: slot,
+        slot: slot,
+        isOpen,
+        is_open: isOpen,
+        isClosed: !isOpen,
+        is_closed: !isOpen,
+        open_time: openVal,
+        close_time: closeVal,
+    };
+};
+
+const normalizeBusinessHourArr = (arr) => (Array.isArray(arr) ? arr.map(normalizeBusinessHour).filter(Boolean) : []);
+
+const prepareBusinessHourPayload = (rows = []) => rows
+    .map((row) => {
+        const weekday = Number(row.weekday ?? row.day ?? row.day_of_week ?? row.dayOfWeek);
+        if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return null;
+        const isOpen = row.isOpen !== undefined ? Boolean(row.isOpen)
+            : row.is_open !== undefined ? Boolean(row.is_open)
+                : !(row.isClosed ?? row.is_closed);
+        const open = sanitizeTimeString(row.open ?? row.open_time ?? row.openTime);
+        const close = sanitizeTimeString(row.close ?? row.close_time ?? row.closeTime);
+        const slot = Number(row.slotIntervalMinutes ?? row.slot_interval_minutes ?? row.slot ?? row.slotMinutes ?? 30) || 30;
+        return {
+            weekday,
+            open: isOpen ? open : null,
+            close: isOpen ? close : null,
+            slotIntervalMinutes: slot,
+            isOpen,
+        };
+    })
+    .filter(Boolean);
+
+const fetchBusinessHours = async () => {
+    try {
+        const res = await api.get('/business-hours');
+        const normalized = normalizeBusinessHourArr(res);
+        if (normalized.length > 0) return normalized;
+    } catch (e) {
+        console.warn('[BusinessHours.list] fallback to defaults', e);
+    }
+    return normalizeBusinessHourArr(DEFAULT_HOURS);
+};
+
 export const BusinessHours = {
-    list: async () => mapHours(DEFAULT_HOURS),
-    getWeekly: async () => mapHours(DEFAULT_HOURS),
-    get: async () => mapHours(DEFAULT_HOURS),
-    update: async () => { throw new Error('BusinessHours.update not implemented in this UI build'); },
+    list: async () => fetchBusinessHours(),
+    getWeekly: async () => fetchBusinessHours(),
+    get: async () => fetchBusinessHours(),
+    updateAll: async (rows) => {
+        const payload = prepareBusinessHourPayload(rows);
+        try {
+            const res = await api.put('/admin/business-hours', { hours: payload });
+            const normalized = normalizeBusinessHourArr(res);
+            if (normalized.length > 0) return normalized;
+        } catch (e) {
+            console.error('[BusinessHours.updateAll] failed', e);
+            throw e;
+        }
+        return normalizeBusinessHourArr(payload);
+    },
+    update: async (rows) => BusinessHours.updateAll(rows),
 };
 export const BusinessHour = BusinessHours;
 export const OpeningHours = BusinessHours;

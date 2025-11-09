@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, ChevronRight, AlertCircle, Scissors, Calendar,
   CheckCircle2, Clock, Clock4, Zap, Tag
@@ -75,6 +76,52 @@ const combineDateTime = (date, hhmm) => {
   const d = new Date(date);
   d.setHours(hh, mm, 0, 0);
   return d;
+};
+
+const timeStringToMinutes = (value) => {
+  const [hh, mm] = String(value || "").split(":").map(Number);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return hh * 60 + mm;
+};
+
+const extractSlotTimes = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object") {
+          return (
+              entry.hhmm ||
+              entry.time ||
+              entry.slot ||
+              entry.startsAt ||
+              entry.start ||
+              entry.formatted ||
+              null
+          );
+        }
+        return null;
+      })
+      .filter((val) => typeof val === "string" && val.includes(":"));
+};
+
+const mergeSlotViews = (publicTimes, memberTimes) => {
+  const publicSet = new Set(publicTimes);
+  const memberSetSource = memberTimes.length > 0 ? memberTimes : publicTimes;
+  const memberSet = new Set(memberSetSource);
+  const combined = new Set([...memberSet, ...publicSet]);
+  const sorted = Array.from(combined).sort((a, b) => {
+    const aMin = timeStringToMinutes(a);
+    const bMin = timeStringToMinutes(b);
+    if (aMin == null || bMin == null) {
+      return String(a).localeCompare(String(b));
+    }
+    return aMin - bMin;
+  });
+  return sorted.map((hhmm) => ({
+    hhmm,
+    memberOnly: !publicSet.has(hhmm),
+  }));
 };
 
 function getClosingDateFor(d, businessHours) {
@@ -283,8 +330,14 @@ export default function Book() {
             return [ymd, []];
           }
           try {
-            const arr = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember });
-            return [ymd, Array.isArray(arr) ? arr : []];
+            const [memberRaw, publicRaw] = await Promise.all([
+              api.Appointment.getAvailable(svcId, ymd, { isMember: true }),
+              api.Appointment.getAvailable(svcId, ymd, { isMember: false }),
+            ]);
+            const publicTimes = extractSlotTimes(publicRaw);
+            const memberTimes = extractSlotTimes(memberRaw);
+            const merged = mergeSlotViews(publicTimes, memberTimes);
+            return [ymd, merged];
           } catch (e) {
             console.warn("availability failed for", ymd, e);
             return [ymd, []];
@@ -350,14 +403,24 @@ export default function Book() {
     setError(null);
   };
 
-  const handleTimeSelect = (hhmm) => {
-    // הגנה: אם הסלוט כבר עבר (במיוחד כשהתאריך היום) — אל תאפשר
+  const handleTimeSelect = (slot) => {
+    const hhmm = slot?.hhmm;
+    if (!hhmm) return;
+    if (slot.memberOnly && !clientIsMember) {
+      setError("השעה שנבחרה זמינה לחברי מועדון בלבד.");
+      return;
+    }
     if (!isFutureSlot(selectedDate, hhmm)) {
       setError("השעה שבחרת כבר עברה. בחר/י שעה אחרת.");
       return;
     }
     const dt = combineDateTime(selectedDate, hhmm);
-    setSelectedTimeSlot({ time: dt, hhmm, formatted: hhmm });
+    setSelectedTimeSlot({
+      time: dt,
+      hhmm,
+      formatted: slot.formatted ?? hhmm,
+      memberOnly: Boolean(slot.memberOnly),
+    });
     setShowForm(true);
     setError(null);
   };
@@ -424,13 +487,11 @@ export default function Book() {
   const availableSlots =
       selectedDate && selectedService
           ? (availableByDate[toYMD(selectedDate)] || [])
-              // סינון: השאר רק סלוטים עתידיים
-              .filter((hhmm) => isFutureSlot(selectedDate, hhmm))
-              // מיפוי לאובייקטים עם time/labels
-              .map((hhmm) => ({
-                time: combineDateTime(selectedDate, hhmm),
-                formatted: hhmm,
-                hhmm,
+              .filter((slot) => slot?.hhmm && isFutureSlot(selectedDate, slot.hhmm))
+              .map((slot) => ({
+                ...slot,
+                time: combineDateTime(selectedDate, slot.hhmm),
+                formatted: slot.formatted ?? slot.hhmm,
               }))
           : [];
 
@@ -772,16 +833,37 @@ export default function Book() {
 
                     <div className="flex flex-col gap-3 flex-1 overflow-y-auto px-2" style={{scrollbarWidth: "thin"}}>
                       {availableSlots.length > 0 ? (
-                          availableSlots.map((slot, index) => (
-                              <Button
-                                  key={index}
-                                  onClick={() => handleTimeSelect(slot.hhmm)}
-                                  variant="outline"
-                                  className="w-full h-14 rounded-2xl border border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50 font-medium text-base"
-                              >
-                                {slot.formatted}
-                              </Button>
-                          ))
+                          availableSlots.map((slot) => {
+                            const key = `${slot.hhmm}-${slot.memberOnly ? "member" : "all"}`;
+                            const isMemberOnly = Boolean(slot.memberOnly);
+                            const blockedForClient = isMemberOnly && !clientIsMember;
+                            const buttonClasses = blockedForClient
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50 cursor-not-allowed"
+                                : "border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50";
+                            return (
+                                <Button
+                                    key={key}
+                                    onClick={() => handleTimeSelect(slot)}
+                                    variant="outline"
+                                    disabled={blockedForClient}
+                                    className={`w-full h-14 rounded-2xl font-medium text-base transition-colors disabled:opacity-100 disabled:cursor-not-allowed ${buttonClasses}`}
+                                >
+                                  <div className="flex w-full items-center justify-between">
+                                    <span>{slot.formatted}</span>
+                                    {isMemberOnly && (
+                                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[11px] font-semibold px-2 py-0.5">
+                                          חברי מועדון
+                                        </Badge>
+                                    )}
+                                  </div>
+                                  {blockedForClient && (
+                                      <span className="block w-full text-[11px] text-emerald-700 mt-1">
+                                        פתוח לחברי מועדון בלבד
+                                      </span>
+                                  )}
+                                </Button>
+                            );
+                          })
                       ) : (
                           <div className="text-center py-8 px-4 bg-gray-100 rounded-2xl">
                             <p className="font-semibold text-gray-800 mb-3">לא נותרו תורים פנויים ביום זה</p>

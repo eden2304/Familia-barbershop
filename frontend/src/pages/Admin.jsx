@@ -16,7 +16,7 @@ import { UploadFile } from "@/api/integrations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -77,6 +77,7 @@ const navItems = [
   { id: 'appointments', label: 'תורים', icon: Calendar },
   //{ id: 'statistics', label: 'סטטיסטיקות', icon: BarChart3 },
   { id: 'clients', label: 'לקוחות', icon: Users },
+  { id: 'business-hours', label: 'שעות פעילות', icon: Clock },
   { id: 'member-settings', label: 'חברי מועדון', icon: Crown },
   { id: 'services', label: 'שירותים', icon: Settings },
   { id: 'products', label: 'מוצרים', icon: Package },
@@ -86,6 +87,7 @@ const navItems = [
 ];
 
 const WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const MEMBER_SLOT_WEEKDAYS = WEEKDAY_LABELS.slice(0, 6);
 
 const DEFAULT_MEMBER_DAY_HOURS = [
   { weekday: 0, open: '10:00', close: '19:00', slotMinutes: 30 },
@@ -216,6 +218,10 @@ export default function Admin() { // Removed props
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
   const [businessHours, setBusinessHours] = useState([]);
+  const [businessHoursDraft, setBusinessHoursDraft] = useState(() => []);
+  const [businessHoursDirty, setBusinessHoursDirty] = useState(false);
+  const [businessHoursSaving, setBusinessHoursSaving] = useState(false);
+  const [businessHoursFeedback, setBusinessHoursFeedback] = useState(null);
   const [allClients, setAllClients] = useState([]);
   const [backgroundVideos, setBackgroundVideos] = useState([]);
   const [products, setProducts] = useState([]);
@@ -224,6 +230,7 @@ export default function Admin() { // Removed props
   const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
+  const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -279,6 +286,35 @@ export default function Admin() { // Removed props
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
+
+  useEffect(() => {
+    if (!Array.isArray(businessHours) || businessHoursDirty) return;
+    const rows = Array.from({ length: 7 }, (_, day) => {
+      const existing = (businessHours || []).find((row) => Number(row?.weekday) === day);
+      const normalized = normalizeBusinessHourRow(existing);
+      const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => Number(h.weekday) === day);
+      const defaultOpen = fallback?.open ?? "10:00";
+      const defaultClose = fallback?.close ?? "18:00";
+      const slotMinutes = Number(
+          normalized?.slotMinutes ??
+          normalized?.slot ??
+          fallback?.slotMinutes ??
+          fallback?.slot ??
+          30
+      ) || 30;
+      const open = normalized?.open ?? defaultOpen;
+      const close = normalized?.close ?? defaultClose;
+      const isOpen = normalized?.isOpen ?? (Boolean(open && close) && open !== close);
+      return {
+        weekday: day,
+        open,
+        close,
+        slotIntervalMinutes: slotMinutes,
+        isOpen,
+      };
+    });
+    setBusinessHoursDraft(rows);
+  }, [businessHours, businessHoursDirty]);
 
   async function handleAdminCodeSubmit(e) {
     e?.preventDefault?.();
@@ -503,6 +539,8 @@ export default function Admin() { // Removed props
       setTestimonials(testimonialsData || []);
       setGalleryImages(galleryData || []);
       setBusinessHours(hoursData || []);
+      setBusinessHoursDirty(false);
+      setBusinessHoursFeedback(null);
       setAllClients(clientsData || []);
       setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
@@ -517,6 +555,139 @@ export default function Admin() { // Removed props
     } finally {
       setLoading(false);
     }
+  };
+
+  const sanitizeTimeInput = (value) => {
+    if (!value) return "";
+    const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "";
+    const hh = String(match[1]).padStart(2, "0");
+    const mm = String(match[2]).padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
+  const handleBusinessTimeChange = (weekday, field, value) => {
+    const sanitized = sanitizeTimeInput(value);
+    setBusinessHoursDraft((prev) =>
+        prev.map((row) => (row.weekday === weekday ? { ...row, [field]: sanitized } : row))
+    );
+    setBusinessHoursDirty(true);
+    setBusinessHoursFeedback(null);
+  };
+
+  const handleBusinessIntervalChange = (weekday, value) => {
+    const minutes = Number(value);
+    setBusinessHoursDraft((prev) =>
+        prev.map((row) =>
+            row.weekday === weekday
+                ? {
+                  ...row,
+                  slotIntervalMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : row.slotIntervalMinutes,
+                }
+                : row
+        )
+    );
+    setBusinessHoursDirty(true);
+    setBusinessHoursFeedback(null);
+  };
+
+  const handleBusinessDayToggle = (weekday, isOpen) => {
+    setBusinessHoursDraft((prev) =>
+        prev.map((row) => {
+          if (row.weekday !== weekday) return row;
+          if (!isOpen) {
+            return { ...row, isOpen: false };
+          }
+          const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => Number(h.weekday) === Number(weekday)) || {};
+          const nextOpen = sanitizeTimeInput(row.open || fallback.open || '10:00');
+          const nextClose = sanitizeTimeInput(row.close || fallback.close || '18:00');
+          return {
+            ...row,
+            isOpen: true,
+            open: nextOpen,
+            close: nextClose,
+          };
+        })
+    );
+    setBusinessHoursDirty(true);
+    setBusinessHoursFeedback(null);
+  };
+
+  const handleSaveBusinessHours = async () => {
+    try {
+      setBusinessHoursSaving(true);
+      setBusinessHoursFeedback(null);
+      const rowsToSave = businessHoursDraft.map((row) => ({
+        weekday: row.weekday,
+        open: row.isOpen ? row.open : null,
+        close: row.isOpen ? row.close : null,
+        slotIntervalMinutes: Number(row.slotIntervalMinutes) || 30,
+        isOpen: Boolean(row.isOpen),
+      }));
+
+      for (const row of rowsToSave) {
+        if (row.isOpen) {
+          const openMin = toMinutes(row.open);
+          const closeMin = toMinutes(row.close);
+          if (openMin == null || closeMin == null) {
+            setBusinessHoursFeedback({
+              type: 'error',
+              message: `אנא הזינו שעות פתיחה וסגירה תקינות עבור ${WEEKDAY_LABELS[row.weekday]}.`,
+            });
+            setBusinessHoursSaving(false);
+            return;
+          }
+          if (closeMin <= openMin) {
+            setBusinessHoursFeedback({
+              type: 'error',
+              message: `שעת הסגירה חייבת להיות מאוחרת משעת הפתיחה עבור ${WEEKDAY_LABELS[row.weekday]}.`,
+            });
+            setBusinessHoursSaving(false);
+            return;
+          }
+        }
+      }
+
+      const response = await BusinessHours.updateAll(rowsToSave);
+      const normalized = Array.isArray(response) ? response : rowsToSave;
+      setBusinessHours(normalized);
+      setBusinessHoursDirty(false);
+      setBusinessHoursFeedback({ type: 'success', message: 'שעות הפעילות נשמרו בהצלחה.' });
+    } catch (error) {
+      console.error('Failed to save business hours', error);
+      setBusinessHoursFeedback({ type: 'error', message: 'שמירת שעות הפעילות נכשלה. נסה שוב.' });
+    } finally {
+      setBusinessHoursSaving(false);
+    }
+  };
+
+  const describeRecurringSchedule = (recurring, clientId) => {
+    if (!recurring) return null;
+    const weekdayIndex = Number(recurring.weekday ?? recurring.day ?? 0);
+    const boundedWeekday = Number.isInteger(weekdayIndex) && weekdayIndex >= 0 && weekdayIndex < WEEKDAY_LABELS.length
+        ? weekdayIndex
+        : 0;
+    const dayLabel = WEEKDAY_LABELS[boundedWeekday];
+    const timeLabel = recurring.start_time ?? recurring.startTime ?? '';
+    const intervalWeeks = Number(recurring.intervalWeeks ?? recurring.interval_weeks ?? recurring.every ?? 1) || 1;
+    const intervalLabel = intervalWeeks === 1
+        ? 'כל שבוע'
+        : intervalWeeks === 2
+            ? 'כל שבועיים'
+            : `כל ${intervalWeeks} שבועות`;
+    const serviceLabel = recurring.service_name ?? recurring.serviceName ?? '';
+    const id = recurring.id ?? recurring.recurring_id ?? null;
+    const scheduleKey = id ?? `${clientId}-${boundedWeekday}-${timeLabel || '00:00'}`;
+    return {
+      id,
+      dayLabel,
+      timeLabel,
+      intervalWeeks,
+      intervalLabel,
+      serviceLabel,
+      scheduleKey,
+      recurring,
+    };
   };
 
   const memberOnlyServiceSet = useMemo(
@@ -649,6 +820,22 @@ export default function Admin() { // Removed props
       throw error;
     }
   }, [loadData]);
+
+  const handleCancelRecurringSchedule = async (recurring) => {
+    if (!recurring?.id) return;
+    if (!confirm('האם לבטל את התור הקבוע ולמחוק את כל התורים העתידיים שלו?')) return;
+    try {
+      setCancelingRecurringId(recurring.id);
+      await AdminApi.appointments.cancelRecurring(recurring.id);
+      alert('התור הקבוע בוטל וכל התורים העתידיים הוסרו.');
+      await loadData();
+    } catch (error) {
+      console.error('Failed to cancel recurring appointment', error);
+      alert('ביטול התור הקבוע נכשל. נסה שוב.');
+    } finally {
+      setCancelingRecurringId(null);
+    }
+  };
 
   const handleRescheduleRequest = (appointment, service) => {
     setSelectedAppointment(null);
@@ -1489,15 +1676,53 @@ export default function Admin() { // Removed props
                                   const lastClass = client.lastAppointmentDate
                                       ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
                                       : 'text-gray-800';
+                                  const recurringRaw = client.recurringAppointments ?? client.recurring_appointments ?? [];
+                                  const recurringList = Array.isArray(recurringRaw) ? recurringRaw : [];
+                                  const recurringMeta = recurringList
+                                      .map((recurring) => describeRecurringSchedule(recurring, client.id))
+                                      .filter(Boolean);
+                                  const primaryRecurring = recurringMeta[0] || null;
                                   return (
                                       <div key={client.id} className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                         <div>
-                                          <p className="font-bold text-gray-900">{[first, last].filter(Boolean).join(' ')}</p>
+                                          <p className="font-bold text-gray-900 flex flex-wrap items-center gap-2">
+                                            {[first, last].filter(Boolean).join(' ')}
+                                            {primaryRecurring && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold px-2 py-0.5">
+                                                  <span>{`${primaryRecurring.dayLabel}${primaryRecurring.timeLabel ? ` ${primaryRecurring.timeLabel}` : ''}`}</span>
+                                                  <span className="text-emerald-600">· {primaryRecurring.intervalLabel}</span>
+                                                </span>
+                                            )}
+                                          </p>
                                           <p className="text-sm text-gray-600">{phoneDisplay}</p>
                                           {memberFlag && (
                                               <span className="mt-2 inline-block rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1">
                                                 חבר מועדון
                                               </span>
+                                          )}
+                                          {recurringMeta.length > 0 && (
+                                              <div className="mt-2 space-y-1">
+                                                {recurringMeta.map((item) => (
+                                                    <div key={item.scheduleKey} className="flex flex-col sm:flex-row sm:items-center sm:gap-2 text-xs text-gray-600">
+                                                      <span className="font-semibold text-emerald-700">
+                                                        {`תור קבוע: ${item.dayLabel}${item.timeLabel ? ` ${item.timeLabel}` : ''}`}
+                                                      </span>
+                                                      <span className="text-gray-500">
+                                                        {item.intervalLabel}
+                                                        {item.serviceLabel ? ` · ${item.serviceLabel}` : ''}
+                                                      </span>
+                                                      <Button
+                                                          variant="ghost"
+                                                          size="sm"
+                                                          className="text-red-600 hover:text-red-700 h-auto px-2 py-1"
+                                                          onClick={() => handleCancelRecurringSchedule(item.recurring)}
+                                                          disabled={cancelingRecurringId === (item.id ?? item.recurring?.id)}
+                                                      >
+                                                        {cancelingRecurringId === (item.id ?? item.recurring?.id) ? 'מבטל…' : 'ביטול'}
+                                                      </Button>
+                                                    </div>
+                                                ))}
+                                              </div>
                                           )}
                                         </div>
                                         <div className="flex items-center gap-4">
@@ -1529,6 +1754,107 @@ export default function Admin() { // Removed props
                           <Plus className="w-6 h-6" />
                         </Button>
                       </div>
+                    </div>
+                )}
+
+                {activeTab === 'business-hours' && (
+                    <div className="space-y-6">
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader>
+                          <CardTitle>שעות פעילות</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 mb-4">
+                            קבע את שעות הפתיחה והסגירה לכל יום בשבוע. הלקוחות יוכלו להזמין תורים רק במסגרת שעות הפעילות.
+                          </p>
+                          {businessHoursDraft.length === 0 ? (
+                              <p className="text-sm text-gray-500">טוען נתוני שעות פעילות…</p>
+                          ) : (
+                              <div className="space-y-4">
+                                {businessHoursDraft.map((row) => {
+                                  const label = WEEKDAY_LABELS[row.weekday];
+                                  return (
+                                      <div key={row.weekday} className="border border-gray-200 rounded-2xl p-4 space-y-4">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <h4 className="text-base font-semibold text-gray-900">{label}</h4>
+                                            {!row.isOpen && (
+                                                <Badge variant="secondary" className="bg-gray-200 text-gray-700">
+                                                  סגור
+                                                </Badge>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm text-gray-500">פתוח?</span>
+                                            <Switch
+                                                checked={row.isOpen}
+                                                onCheckedChange={(val) => handleBusinessDayToggle(row.weekday, val)}
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="grid gap-3 sm:grid-cols-3">
+                                          <div>
+                                            <Label className="text-xs text-gray-500 mb-1">שעת פתיחה</Label>
+                                            <Input
+                                                type="time"
+                                                value={row.open || ""}
+                                                disabled={!row.isOpen}
+                                                onChange={(e) => handleBusinessTimeChange(row.weekday, 'open', e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <Label className="text-xs text-gray-500 mb-1">שעת סגירה</Label>
+                                            <Input
+                                                type="time"
+                                                value={row.close || ""}
+                                                disabled={!row.isOpen}
+                                                onChange={(e) => handleBusinessTimeChange(row.weekday, 'close', e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <Label className="text-xs text-gray-500 mb-1">מרווחי תורים (בדקות)</Label>
+                                            <Input
+                                                type="number"
+                                                min={5}
+                                                max={180}
+                                                step={5}
+                                                value={row.slotIntervalMinutes}
+                                                onChange={(e) => handleBusinessIntervalChange(row.weekday, e.target.value)}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                  );
+                                })}
+                              </div>
+                          )}
+                        </CardContent>
+                        <CardFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          {businessHoursFeedback && (
+                              <Alert
+                                  className={businessHoursFeedback.type === 'error'
+                                      ? 'border-red-200 bg-red-50'
+                                      : 'border-emerald-200 bg-emerald-50'}
+                              >
+                                <AlertDescription
+                                    className={businessHoursFeedback.type === 'error'
+                                        ? 'text-red-700'
+                                        : 'text-emerald-700'}
+                                >
+                                  {businessHoursFeedback.message}
+                                </AlertDescription>
+                              </Alert>
+                          )}
+                          <Button
+                              onClick={handleSaveBusinessHours}
+                              disabled={!businessHoursDirty || businessHoursSaving}
+                              className="rounded-full px-6"
+                          >
+                            {businessHoursSaving ? 'שומר…' : 'שמירת שעות הפעילות'}
+                          </Button>
+                        </CardFooter>
+                      </Card>
                     </div>
                 )}
 
@@ -1619,7 +1945,7 @@ export default function Admin() { // Removed props
                             קבע חלונות זמן בכל יום שיופיעו רק לחברי מועדון. לקוחות רגילים לא יראו את השעות האלו.
                           </p>
                           <div className="space-y-6">
-                            {WEEKDAY_LABELS.map((label, idx) => {
+                            {MEMBER_SLOT_WEEKDAYS.map((label, idx) => {
                               const slots = memberSlotsByDay[idx] || [];
                               const options = possibleSlotsByDay[idx] || [];
                               const hasSelection = slots.length > 0;

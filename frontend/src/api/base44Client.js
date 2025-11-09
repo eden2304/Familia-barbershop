@@ -527,6 +527,29 @@ const api = {
     listByDate: (date) => httpGet('/admin/waiting-list?date=' + encodeURIComponent(date || '')),
   },
 
+  BusinessHours: {
+    list: async () => {
+      try {
+        const res = await httpGet('/business-hours');
+        return Array.isArray(res) ? res : [];
+      } catch (error) {
+        if (error?.status === 403 || error?.status === 404) {
+          return [];
+        }
+        throw error;
+      }
+    },
+    get: async () => {
+      return api.BusinessHours.list();
+    },
+    updateAll: async (rows) => {
+      const payload = Array.isArray(rows) ? rows : [];
+      const res = await httpPut('/admin/business-hours', { hours: payload });
+      return Array.isArray(res) ? res : payload;
+    },
+    update: async (rows) => api.BusinessHours.updateAll(rows),
+  },
+
   Admin : {
     // מחזיר רשימת תורים ליום מסוים (פורמט YYYY-MM-DD)
     appointmentsByDate: (date) => {
@@ -553,6 +576,9 @@ const api = {
         return httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, {
           intervalWeeks,
         });
+      },
+      async cancelRecurring(id) {
+        return httpDelete(`/admin/recurring-appointments/${encodeURIComponent(id)}`);
       },
     },
 
@@ -661,7 +687,7 @@ Object.assign(api, { get: httpGet, post: httpPost, put: httpPut, patch: httpPatc
 export const base44 = api;
 export default api;
 export const {
-  Service, Appointment, WaitingList, Admin, Product,
+  Service, Appointment, WaitingList, BusinessHours, Admin, Product,
   Testimonial, GalleryVideo, GalleryImage, BackgroundVideo, Setting, Auth
 } = api;
 export const base44Client = api; // legacy alias

@@ -206,9 +206,9 @@ async function migrate() {
     const serviceIdTypeDDL = udtToDDL(servicesIdUdt || 'int4');
 
 // אם קיימת waiting_list עם טיפוסים לא מתאימים — נמחק וניצור מחדש (פשוט ובטוח)
-    await pool.query(`drop table if exists waiting_list cascade`);
+  await pool.query(`drop table if exists waiting_list cascade`);
 
-    await pool.query(`
+  await pool.query(`
   create table waiting_list (
     id serial primary key,
     client_id ${clientIdTypeDDL} references clients(id) on delete set null,
@@ -236,6 +236,28 @@ async function migrate() {
   before update on waiting_list
   for each row execute procedure touch_updated_at();
 `);
+
+  await pool.query(`
+    create table if not exists business_hours (
+      id serial primary key,
+      weekday int not null unique,
+      open varchar(5),
+      close varchar(5),
+      slot_interval_minutes int not null default 30
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists recurring_appointments (
+      id serial primary key,
+      client_id int not null references clients(id) on delete cascade,
+      service_id int not null references services(id) on delete cascade,
+      weekday int not null,
+      start_time varchar(8) not null,
+      interval_weeks int not null default 1,
+      created_at timestamptz not null default now()
+    );
+  `);
 
 
     // ----- שמירה על תאימות קיימת בשאר הטבלאות -----
@@ -282,15 +304,24 @@ async function migrate() {
     if (hasStartPlural) await pool.query(`alter table blocked_times drop column if exists starts_at`);
     if (hasEndPlural)   await pool.query(`alter table blocked_times drop column if exists ends_at`);
 
-    await ensureColumn('blocked_times', 'members_only', 'boolean default false');
-    await pool.query(`update blocked_times set members_only = coalesce(members_only, false)`);
-    await pool.query(`alter table blocked_times alter column members_only set default false`);
-    await pool.query(`alter table blocked_times alter column members_only set not null`);
+  await ensureColumn('blocked_times', 'members_only', 'boolean default false');
+  await pool.query(`update blocked_times set members_only = coalesce(members_only, false)`);
+  await pool.query(`alter table blocked_times alter column members_only set default false`);
+  await pool.query(`alter table blocked_times alter column members_only set not null`);
 
-    // אינדקסים
-    await createIndexIfColumnExists('appointments', 'starts_at', 'idx_appointments_starts_at');
-    await createIndexIfColumnExists('appointments', 'client_id',  'idx_appointments_client');
-    await createIndexIfColumnExists('blocked_times', 'start_at',  'idx_blocked_times_start_at');
+  await ensureColumn('business_hours', 'slot_interval_minutes', 'int default 30');
+  await pool.query(`alter table business_hours alter column slot_interval_minutes set default 30`);
+  try { await pool.query(`alter table business_hours alter column open drop not null`); } catch {}
+  try { await pool.query(`alter table business_hours alter column close drop not null`); } catch {}
+
+  await pool.query(`create unique index if not exists ux_business_hours_weekday on business_hours (weekday)`);
+  await ensureRecurringTable();
+  await ensureBusinessHoursDefaults();
+
+  // אינדקסים
+  await createIndexIfColumnExists('appointments', 'starts_at', 'idx_appointments_starts_at');
+  await createIndexIfColumnExists('appointments', 'client_id',  'idx_appointments_client');
+  await createIndexIfColumnExists('blocked_times', 'start_at',  'idx_blocked_times_start_at');
 }
 
 /* ---------- HTTP helpers ---------- */
@@ -354,14 +385,15 @@ function formatHHmm(date) {
     return `${h}:${m}`;
 }
 const DEFAULT_HOURS = [
-    { weekday: 0, open: '10:00', close: '19:00', slot: 30, isOpen: true },
-    { weekday: 1, open: '10:00', close: '19:00', slot: 30, isOpen: true },
-    { weekday: 2, open: '10:00', close: '19:00', slot: 30, isOpen: true },
-    { weekday: 3, open: '10:00', close: '19:00', slot: 30, isOpen: true },
-    { weekday: 4, open: '10:00', close: '19:00', slot: 30, isOpen: true },
-    { weekday: 5, open: '08:00', close: '15:00', slot: 30, isOpen: true },
-    { weekday: 6, open: null,     close: null,    slot: 30, isOpen: false },
+    { weekday: 0, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 1, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 2, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 3, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 4, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 5, open: '08:00', close: '15:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
+    { weekday: 6, open: null,     close: null,    slot: 30, slotIntervalMinutes: 30, isOpen: false },
 ];
+const WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
 const MAX_RECURRING_OCCURRENCES = 26;
 
@@ -443,6 +475,97 @@ function normalizeMemberWindowsValue(candidate) {
     });
 
     return windows.map((win) => ({ weekday: win.weekday, start: win.start, end: win.end }));
+}
+
+const sanitizeBusinessTime = (value) => normalizeRuleTime(value);
+
+const timeToMinutes = (value) => {
+    const norm = sanitizeBusinessTime(value);
+    if (!norm) return null;
+    const [h, m] = norm.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+};
+
+async function ensureBusinessHoursDefaults() {
+    await pool.query(`create unique index if not exists ux_business_hours_weekday on business_hours (weekday)`);
+    for (const row of DEFAULT_HOURS) {
+        const slot = Number(row.slotIntervalMinutes ?? row.slot ?? 30) || 30;
+        const openVal = row.isOpen ? row.open : null;
+        const closeVal = row.isOpen ? row.close : null;
+        await pool.query(
+            `insert into business_hours (weekday, open, close, slot_interval_minutes)
+             values ($1,$2,$3,$4)
+             on conflict (weekday) do nothing`,
+            [row.weekday, openVal, closeVal, slot]
+        );
+    }
+    await pool.query(`update business_hours set slot_interval_minutes = 30 where slot_interval_minutes is null`);
+}
+
+async function getBusinessHours() {
+    await ensureBusinessHoursDefaults();
+    const q = await pool.query('select weekday, open, close, slot_interval_minutes from business_hours order by weekday');
+    const byDay = new Map();
+    for (const row of q.rows) {
+        const weekday = Number(row.weekday);
+        if (!Number.isInteger(weekday)) continue;
+        const slot = Number(row.slot_interval_minutes ?? row.slot ?? 30) || 30;
+        const open = sanitizeBusinessTime(row.open);
+        const close = sanitizeBusinessTime(row.close);
+        const isOpen = Boolean(open && close && open !== close);
+        byDay.set(weekday, { weekday, open: open ?? null, close: close ?? null, slotIntervalMinutes: slot, isOpen });
+    }
+    const hours = [];
+    for (let day = 0; day < 7; day += 1) {
+        const fallback = DEFAULT_HOURS.find((h) => h.weekday === day) || { weekday: day, open: null, close: null, slotIntervalMinutes: 30, isOpen: false };
+        const current = byDay.get(day) || fallback;
+        const slot = Number(current.slotIntervalMinutes ?? current.slot ?? fallback.slotIntervalMinutes ?? fallback.slot ?? 30) || 30;
+        const open = current.isOpen ? sanitizeBusinessTime(current.open ?? fallback.open) : null;
+        const close = current.isOpen ? sanitizeBusinessTime(current.close ?? fallback.close) : null;
+        const isOpen = current.isOpen ?? Boolean(open && close && open !== close);
+        hours.push({
+            weekday: day,
+            open: isOpen ? open : null,
+            close: isOpen ? close : null,
+            slotIntervalMinutes: slot,
+            isOpen,
+        });
+    }
+    return hours;
+}
+
+function presentBusinessHours(hours) {
+    return hours.map((row) => ({
+        weekday: row.weekday,
+        open: row.isOpen ? row.open : null,
+        close: row.isOpen ? row.close : null,
+        slotIntervalMinutes: row.slotIntervalMinutes,
+        slot_interval_minutes: row.slotIntervalMinutes,
+        slot: row.slotIntervalMinutes,
+        isOpen: row.isOpen,
+        is_open: row.isOpen,
+        isClosed: !row.isOpen,
+        is_closed: !row.isOpen,
+        open_time: row.isOpen ? row.open : null,
+        close_time: row.isOpen ? row.close : null,
+    }));
+}
+
+let recurringTableEnsured = false;
+async function ensureRecurringTable() {
+    if (recurringTableEnsured) return;
+    await pool.query(`create table if not exists recurring_appointments (
+        id serial primary key,
+        client_id int not null references clients(id) on delete cascade,
+        service_id int not null references services(id) on delete cascade,
+        weekday int not null,
+        start_time varchar(8) not null,
+        interval_weeks int not null default 1,
+        created_at timestamptz not null default now()
+    )`);
+    await pool.query(`create unique index if not exists ux_recurring_unique on recurring_appointments (client_id, service_id, weekday, start_time)`);
+    recurringTableEnsured = true;
 }
 
 function normalizeBookingRulesValue(raw) {
@@ -873,12 +996,126 @@ async function router(req, res) {
         return json(res, 200, rows);
     }
 
+    if (req.method === 'GET' && (pathname === '/business-hours' || pathname === '/admin/business-hours')) {
+        try {
+            const hours = await getBusinessHours();
+            return json(res, 200, presentBusinessHours(hours));
+        } catch (error) {
+            console.error('Failed to load business hours', error);
+            return json(res, 500, { error: 'FAILED_TO_LOAD_BUSINESS_HOURS' });
+        }
+    }
+
+    if (req.method === 'PUT' && pathname === '/admin/business-hours') {
+        const body = await readBody(req).catch(() => ({}));
+        const candidate = Array.isArray(body?.hours)
+            ? body.hours
+            : Array.isArray(body)
+                ? body
+                : Array.isArray(body?.data)
+                    ? body.data
+                    : [];
+
+        const normalizedByDay = new Map();
+        for (const row of candidate) {
+            if (!row) continue;
+            const weekdayRaw = row.weekday ?? row.day ?? row.day_of_week ?? row.dayOfWeek;
+            const weekday = Number(weekdayRaw);
+            if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) continue;
+            const slot = Number(row.slotIntervalMinutes ?? row.slot_interval_minutes ?? row.slot ?? row.slotMinutes ?? row.interval ?? 30) || 30;
+            const openCandidate = sanitizeBusinessTime(row.open ?? row.open_time ?? row.openTime);
+            const closeCandidate = sanitizeBusinessTime(row.close ?? row.close_time ?? row.closeTime);
+            const isOpenFlag = row.isOpen ?? row.is_open ?? (row.isClosed !== undefined ? !row.isClosed : undefined);
+            const entry = {
+                weekday,
+                open: openCandidate,
+                close: closeCandidate,
+                slotIntervalMinutes: slot,
+                explicitIsOpen: isOpenFlag,
+            };
+            normalizedByDay.set(weekday, entry);
+        }
+
+        const rowsToPersist = [];
+        for (let day = 0; day < 7; day += 1) {
+            const candidateRow = normalizedByDay.get(day) || null;
+            const fallback = DEFAULT_HOURS.find((h) => h.weekday === day) || { open: null, close: null, slotIntervalMinutes: 30, isOpen: false };
+            const slot = Number(candidateRow?.slotIntervalMinutes ?? fallback.slotIntervalMinutes ?? fallback.slot ?? 30) || 30;
+            const resolvedIsOpen = candidateRow?.explicitIsOpen !== undefined
+                ? Boolean(candidateRow.explicitIsOpen)
+                : Boolean(candidateRow?.open && candidateRow?.close && candidateRow.open !== candidateRow.close);
+            const open = resolvedIsOpen ? sanitizeBusinessTime(candidateRow?.open ?? fallback.open) : null;
+            const close = resolvedIsOpen ? sanitizeBusinessTime(candidateRow?.close ?? fallback.close) : null;
+
+            if (resolvedIsOpen) {
+                const openMin = timeToMinutes(open);
+                const closeMin = timeToMinutes(close);
+                if (openMin == null || closeMin == null) {
+                    return json(res, 400, { error: 'INVALID_HOUR_VALUE', message: `אנא הזינו שעות תקינות עבור ${WEEKDAY_LABELS[day]}.` });
+                }
+                if (closeMin <= openMin) {
+                    return json(res, 400, { error: 'INVALID_HOUR_RANGE', message: `שעת הסגירה חייבת להיות מאוחרת משעת הפתיחה עבור ${WEEKDAY_LABELS[day]}.` });
+                }
+            }
+
+            rowsToPersist.push({
+                weekday: day,
+                open: resolvedIsOpen ? open : null,
+                close: resolvedIsOpen ? close : null,
+                slotIntervalMinutes: slot,
+                isOpen: resolvedIsOpen,
+            });
+        }
+
+        await ensureBusinessHoursDefaults();
+        await pool.query('begin');
+        try {
+            for (const row of rowsToPersist) {
+                await pool.query(
+                    `insert into business_hours (weekday, open, close, slot_interval_minutes)
+                     values ($1,$2,$3,$4)
+                     on conflict (weekday) do update set
+                        open = excluded.open,
+                        close = excluded.close,
+                        slot_interval_minutes = excluded.slot_interval_minutes`,
+                    [row.weekday, row.open, row.close, row.slotIntervalMinutes]
+                );
+            }
+            await pool.query('commit');
+        } catch (error) {
+            await pool.query('rollback');
+            console.error('Failed to save business hours', error);
+            return json(res, 500, { error: 'FAILED_TO_SAVE_BUSINESS_HOURS' });
+        }
+
+        const fresh = await getBusinessHours();
+        return json(res, 200, presentBusinessHours(fresh));
+    }
+
     // GET /clients – כל הלקוחות + תאריך תור אחרון
     if (req.method === 'GET' && pathname === '/clients') {
+        await ensureRecurringTable();
         const q = await pool.query(`
-          select c.id, c.first_name, c.last_name, c.phone, coalesce(c.is_member,false) as is_member,
-                 (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at
+          select c.id,
+                 c.first_name,
+                 c.last_name,
+                 c.phone,
+                 coalesce(c.is_member,false) as is_member,
+                 (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
+                 coalesce(json_agg(
+                     json_build_object(
+                       'id', r.id,
+                       'weekday', r.weekday,
+                       'start_time', r.start_time,
+                       'interval_weeks', r.interval_weeks,
+                       'service_id', r.service_id,
+                       'service_name', s.name
+                     )
+                 ) filter (where r.id is not null), '[]') as recurring
           from clients c
+          left join recurring_appointments r on r.client_id = c.id
+          left join services s on s.id = r.service_id
+          group by c.id
           order by c.id desc
            `);
         const rows = q.rows.map(r => ({
@@ -891,6 +1128,8 @@ async function router(req, res) {
             is_member:  !!r.is_member,
             isMember:   !!r.is_member,
             lastAppointmentAt: r.last_appointment_at || null,
+            recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
+            recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
         }));
         return json(res, 200, rows);
     }
@@ -1224,10 +1463,15 @@ async function router(req, res) {
         }
 
         const weekday = start.getDay();
-        const bh = DEFAULT_HOURS.find((x) => x.weekday === weekday);
-        const hasBaseWindow = bh?.isOpen && bh?.open && bh?.close;
-        const baseOpen = hasBaseWindow ? toLocalDateTime(date, bh.open) : null;
-        const baseClose = hasBaseWindow ? toLocalDateTime(date, bh.close) : null;
+        const hoursList = await getBusinessHours();
+        const dayConfig = hoursList.find((row) => Number(row.weekday) === weekday) || null;
+        const fallbackConfig = DEFAULT_HOURS.find((row) => row.weekday === weekday) || { open: null, close: null, isOpen: false, slotIntervalMinutes: 30 };
+        const isOpenForPublic = dayConfig ? Boolean(dayConfig.isOpen) : Boolean(fallbackConfig.isOpen);
+        const openStr = isOpenForPublic ? (dayConfig?.open ?? fallbackConfig.open) : null;
+        const closeStr = isOpenForPublic ? (dayConfig?.close ?? fallbackConfig.close) : null;
+        const hasBaseWindow = Boolean(isOpenForPublic && openStr && closeStr && openStr !== closeStr);
+        const baseOpen = hasBaseWindow && openStr ? toLocalDateTime(date, openStr) : null;
+        const baseClose = hasBaseWindow && closeStr ? toLocalDateTime(date, closeStr) : null;
         const memberWindowsForDay = (rules.memberOnlyWindows || [])
             .filter((win) => Number(win.weekday) === weekday)
             .map((win) => ({ start: toLocalDateTime(date, win.start), end: toLocalDateTime(date, win.end) }))
@@ -1278,6 +1522,7 @@ async function router(req, res) {
             return json(res, 400, { error: 'INVALID_INTERVAL', message: 'ניתן לבחור כל שבוע, כל שבועיים או כל שלושה שבועות.' });
         }
 
+        await ensureRecurringTable();
         const { sql, param } = idWhere('appointments', parsed);
         const baseRes = await pool.query(
             `select id, client_id, service_id, starts_at, ends_at, status, note from appointments where ${sql} limit 1`,
@@ -1297,11 +1542,24 @@ async function router(req, res) {
         const durationMs = Math.max(end.getTime() - start.getTime(), 15 * 60 * 1000);
         const intervalWeeks = Number(interval);
         const clientId = base.client_id;
-        let clientIsMember = false;
-        if (clientId != null) {
-            const clientRes = await pool.query('select coalesce(is_member, false) as is_member from clients where id=$1 limit 1', [clientId]);
-            clientIsMember = Boolean(clientRes.rows[0]?.is_member);
+        if (clientId == null) {
+            return json(res, 400, { error: 'APPOINTMENT_HAS_NO_CLIENT', message: 'לא ניתן ליצור תור קבוע ללא לקוח משויך.' });
         }
+        const scheduleWeekday = start.getDay();
+        const scheduleTime = formatHHmm(start);
+        let clientIsMember = false;
+        const clientRes = await pool.query('select coalesce(is_member, false) as is_member from clients where id=$1 limit 1', [clientId]);
+        clientIsMember = Boolean(clientRes.rows[0]?.is_member);
+
+        const scheduleRes = await pool.query(
+            `insert into recurring_appointments (client_id, service_id, weekday, start_time, interval_weeks)
+             values ($1,$2,$3,$4,$5)
+             on conflict (client_id, service_id, weekday, start_time)
+             do update set interval_weeks = excluded.interval_weeks
+             returning id`,
+            [clientId, base.service_id, scheduleWeekday, scheduleTime, intervalWeeks]
+        );
+        const recurringScheduleId = scheduleRes.rows[0]?.id ?? null;
 
         const createdIds = [];
         const skippedDates = [];
@@ -1346,7 +1604,56 @@ async function router(req, res) {
             createdCount: createdIds.length,
             skippedDates,
             createdAppointmentIds: createdIds,
+            recurringScheduleId,
+            schedule: {
+                id: recurringScheduleId,
+                client_id: clientId,
+                service_id: base.service_id,
+                weekday: scheduleWeekday,
+                start_time: scheduleTime,
+                interval_weeks: intervalWeeks,
+            },
         });
+    }
+
+    if (req.method === 'DELETE' && pathname.startsWith('/admin/recurring-appointments/')) {
+        const idRaw = pathname.split('/').pop();
+        const idNum = Number(idRaw);
+        if (!Number.isInteger(idNum) || idNum <= 0) {
+            return json(res, 400, { error: 'INVALID_RECURRING_ID' });
+        }
+
+        await ensureRecurringTable();
+        const scheduleRes = await pool.query(
+            `select id, client_id, service_id, weekday, start_time, interval_weeks from recurring_appointments where id=$1 limit 1`,
+            [idNum]
+        );
+        const schedule = scheduleRes.rows[0];
+        if (!schedule) {
+            return json(res, 404, { error: 'RECURRING_NOT_FOUND' });
+        }
+
+        await pool.query(`delete from recurring_appointments where id=$1`, [schedule.id]);
+
+        const upcoming = await pool.query(
+            `select id, starts_at from appointments where client_id=$1 and service_id=$2 and starts_at >= now()` ,
+            [schedule.client_id, schedule.service_id]
+        );
+        const scheduleTime = sanitizeBusinessTime(schedule.start_time ?? schedule.startTime ?? schedule.start ?? '');
+        const idsToCancel = upcoming.rows
+            .filter((row) => {
+                const startAt = new Date(row.starts_at);
+                if (!Number.isFinite(startAt.getTime())) return false;
+                if (startAt.getDay() !== Number(schedule.weekday)) return false;
+                return scheduleTime ? formatHHmm(startAt) === scheduleTime : false;
+            })
+            .map((row) => row.id);
+
+        if (idsToCancel.length > 0) {
+            await pool.query(`update appointments set status='canceled' where id = any($1::int[])`, [idsToCancel]);
+        }
+
+        return json(res, 200, { ok: true, canceledCount: idsToCancel.length });
     }
 
     if (req.method === 'POST' && pathname === '/admin/appointments/reschedule') {
@@ -1430,11 +1737,16 @@ async function router(req, res) {
         const s = await pool.query(`select duration_minutes from services where id=$1`, [serviceId]);
         if (s.rows[0]?.duration_minutes) duration = Number(s.rows[0].duration_minutes) || 30;
 
+        const hoursList = await getBusinessHours();
         const weekday = d.getDay();
-        const bh = DEFAULT_HOURS.find(x => x.weekday === weekday);
-        const hasBaseWindow = bh?.isOpen && bh?.open && bh?.close;
-        const open = hasBaseWindow ? toLocalDateTime(date, bh.open) : null;
-        const close = hasBaseWindow ? toLocalDateTime(date, bh.close) : null;
+        const dayConfig = hoursList.find((row) => Number(row.weekday) === weekday) || null;
+        const fallbackConfig = DEFAULT_HOURS.find((row) => row.weekday === weekday) || { open: null, close: null, isOpen: false, slotIntervalMinutes: 30 };
+        const isOpenForPublic = dayConfig ? Boolean(dayConfig.isOpen) : Boolean(fallbackConfig.isOpen);
+        const openStr = isOpenForPublic ? (dayConfig?.open ?? fallbackConfig.open) : null;
+        const closeStr = isOpenForPublic ? (dayConfig?.close ?? fallbackConfig.close) : null;
+        const hasBaseWindow = Boolean(isOpenForPublic && openStr && closeStr && openStr !== closeStr);
+        const open = hasBaseWindow && openStr ? toLocalDateTime(date, openStr) : null;
+        const close = hasBaseWindow && closeStr ? toLocalDateTime(date, closeStr) : null;
         const memberWindowsForDay = (rules.memberOnlyWindows || [])
             .filter((win) => Number(win.weekday) === weekday)
             .map((win) => ({ start: toLocalDateTime(date, win.start), end: toLocalDateTime(date, win.end) }))
@@ -1463,7 +1775,7 @@ async function router(req, res) {
         const apBusy = ap.rows.map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
         const busy = [...apBusy, ...blockBusy];
 
-        const stepMinutes = Number(bh?.slot || 30) || 30;
+        const stepMinutes = Number(dayConfig?.slotIntervalMinutes ?? dayConfig?.slot ?? fallbackConfig.slotIntervalMinutes ?? fallbackConfig.slot ?? 30) || 30;
         const durationMs = duration * 60000;
         const baseWindows = hasBaseWindow && open && close ? [{ start: open, end: close }] : [];
         const candidateWindows = isMember

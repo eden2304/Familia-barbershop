@@ -363,6 +363,8 @@ const DEFAULT_HOURS = [
     { weekday: 6, open: null,     close: null,    slot: 30, isOpen: false },
 ];
 
+const MAX_RECURRING_OCCURRENCES = 26;
+
 const BOOKING_RULE_DEFAULTS = {
     publicMaxAdvanceDays: 7,
     memberMaxAdvanceDays: 14,
@@ -1259,6 +1261,92 @@ async function router(req, res) {
             [serviceId, clientId, start, end, 'booked', note]
         );
         return json(res, 200, { id: ins.rows[0].id });
+    }
+
+    if (req.method === 'POST' && /^\/admin\/appointments\/.+\/recurring$/.test(pathname)) {
+        const parts = pathname.split('/').filter(Boolean);
+        const idRaw = parts.length >= 3 ? parts[2] : null;
+        const parsed = parseId(idRaw);
+        if (!parsed.raw) {
+            return json(res, 400, { error: 'MISSING_APPOINTMENT_ID' });
+        }
+
+        const body = await readBody(req).catch(() => ({}));
+        const intervalCandidate = body?.intervalWeeks ?? body?.interval ?? body?.every ?? body?.frequency;
+        const interval = Number(intervalCandidate);
+        if (!Number.isFinite(interval) || ![1, 2, 3].includes(Number(interval))) {
+            return json(res, 400, { error: 'INVALID_INTERVAL', message: 'ניתן לבחור כל שבוע, כל שבועיים או כל שלושה שבועות.' });
+        }
+
+        const { sql, param } = idWhere('appointments', parsed);
+        const baseRes = await pool.query(
+            `select id, client_id, service_id, starts_at, ends_at, status, note from appointments where ${sql} limit 1`,
+            [param]
+        );
+        const base = baseRes.rows[0];
+        if (!base) {
+            return json(res, 404, { error: 'APPOINTMENT_NOT_FOUND' });
+        }
+
+        const start = new Date(base.starts_at);
+        const end = new Date(base.ends_at);
+        if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+            return json(res, 400, { error: 'INVALID_APPOINTMENT_TIME', message: 'לא ניתן ליצור תור קבוע עבור תור עם שעה שגויה.' });
+        }
+
+        const durationMs = Math.max(end.getTime() - start.getTime(), 15 * 60 * 1000);
+        const intervalWeeks = Number(interval);
+        const clientId = base.client_id;
+        let clientIsMember = false;
+        if (clientId != null) {
+            const clientRes = await pool.query('select coalesce(is_member, false) as is_member from clients where id=$1 limit 1', [clientId]);
+            clientIsMember = Boolean(clientRes.rows[0]?.is_member);
+        }
+
+        const createdIds = [];
+        const skippedDates = [];
+        const baseStatus = base.status || 'booked';
+        const baseNote = base.note ?? null;
+
+        for (let occurrence = 1; occurrence <= MAX_RECURRING_OCCURRENCES; occurrence += 1) {
+            const offsetWeeks = occurrence * intervalWeeks;
+            const candidateStart = new Date(start.getTime() + offsetWeeks * 7 * 24 * 60 * 60 * 1000);
+            const candidateEnd = new Date(candidateStart.getTime() + durationMs);
+
+            const conflict = await pool.query(
+                `select 1 from appointments where starts_at < $2 and ends_at > $1 and coalesce(status, 'booked') <> 'canceled' limit 1`,
+                [candidateStart, candidateEnd]
+            );
+            if (conflict.rows.length > 0) {
+                skippedDates.push(candidateStart.toISOString());
+                continue;
+            }
+
+            const blockRows = await pool.query(
+                `select coalesce(members_only,false) as members_only from blocked_times where start_at < $2 and end_at > $1`,
+                [candidateStart, candidateEnd]
+            );
+            const hasBlocking = blockRows.rows.some((row) => !(row.members_only && clientIsMember));
+            if (hasBlocking) {
+                skippedDates.push(candidateStart.toISOString());
+                continue;
+            }
+
+            const ins = await pool.query(
+                `insert into appointments (service_id, client_id, starts_at, ends_at, status, note)
+                 values ($1, $2, $3, $4, $5, $6) returning id`,
+                [base.service_id, clientId, candidateStart, candidateEnd, baseStatus, baseNote]
+            );
+            if (ins.rows[0]?.id != null) {
+                createdIds.push(ins.rows[0].id);
+            }
+        }
+
+        return json(res, 200, {
+            createdCount: createdIds.length,
+            skippedDates,
+            createdAppointmentIds: createdIds,
+        });
     }
 
     if (req.method === 'POST' && pathname === '/admin/appointments/reschedule') {

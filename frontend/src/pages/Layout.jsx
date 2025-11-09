@@ -103,23 +103,35 @@ function MainLayout({ children, currentPageName }) {
       </AnimatePresence>
 
       <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl">
-        <div className="flex items-center justify-between max-w-7xl mx-auto h-12">
-          <div className="w-10 h-10 flex items-center justify-center">
+        <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
+          <div className="w-10 h-10 flex items-center justify-center relative z-20">
             {isAdmin && currentPageName === 'Admin' ? (
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(prev => !prev)} className="text-white hover:text-gray-300">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(prev => !prev)}
+                className="text-white hover:text-gray-300 relative z-20"
+              >
                 <Menu className="w-6 h-6" />
               </Button>
             ) : isAdmin ? (
-              <Link to={createPageUrl("Admin")} className="p-2 text-white hover:text-gray-300 rounded-full transition-colors">
+              <Link
+                to={createPageUrl("Admin")}
+                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20"
+              >
                 <User className="w-6 h-6" />
               </Link>
             ) : (
               <div />
             )}
           </div>
-          
-          <Link to={createPageUrl("Home")} onClick={handleLogoClick} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <img 
+
+          <Link
+            to={createPageUrl("Home")}
+            onClick={handleLogoClick}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center"
+          >
+            <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
               alt="Familia Logo"
               className="h-10 w-auto max-w-[200px] object-contain"

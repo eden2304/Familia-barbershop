@@ -7,10 +7,11 @@ import { format, addMinutes } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
 
-export default function AppointmentActionsModal({ appointment, service, isOpen, onClose, onDelete, onRescheduleRequest }) {
-  const [view, setView] = useState('main'); // 'main' or 'delay'
+export default function AppointmentActionsModal({ appointment, service, isOpen, onClose, onDelete, onRescheduleRequest, onCreateRecurring }) {
+  const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring'
   const [deleting, setDeleting] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('10');
+  const [creatingRecurring, setCreatingRecurring] = useState(false);
 
 // ממיר למספר בינ״ל ל-wa.me / api.whatsapp.com (ללא פלוס)
   const toWaMsisdn = (raw) => {
@@ -27,7 +28,20 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
 
   const handleClose = () => {
     setView('main'); // Reset view on close
+    setCreatingRecurring(false);
     onClose();
+  };
+
+  const handleCreateRecurring = async (interval) => {
+    if (!onCreateRecurring) return;
+    try {
+      setCreatingRecurring(true);
+      await onCreateRecurring(interval);
+      setCreatingRecurring(false);
+      handleClose();
+    } catch (error) {
+      setCreatingRecurring(false);
+    }
   };
 
   const handleCall = () => {
@@ -137,7 +151,7 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
         <Button onClick={handleCall} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Phone className="w-5 h-5"/><span className="text-xs font-medium">התקשר</span></Button>
         <Button onClick={() => setView('delay')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><MessageCircle className="w-5 h-5"/><span className="text-xs font-medium">הודעת עיכוב</span></Button>
         <Button onClick={onRescheduleRequest} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Replace className="w-5 h-5"/><span className="text-xs font-medium">החלף תור</span></Button>
-        <Button onClick={() => alert('תכונה זו תהיה זמינה בקרוב')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Repeat className="w-5 h-5"/><span className="text-xs font-medium">תור קבוע</span></Button>
+        <Button onClick={() => setView('recurring')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Repeat className="w-5 h-5"/><span className="text-xs font-medium">תור קבוע</span></Button>
       </div>
 
       <DialogFooter className="mt-6">
@@ -180,13 +194,50 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
     </>
   );
 
+  const renderRecurringView = () => (
+    <>
+      <DialogHeader className="text-center mb-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setView('main')} className="rounded-full">
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+          <div className="flex-1 text-center">
+            <DialogTitle className="text-xl font-bold text-gray-900">קביעת תור קבוע</DialogTitle>
+            <p className="text-sm text-gray-600">בחר את תדירות החזרה של התור</p>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="space-y-4">
+        {[{ label: 'כל שבוע', value: 1 }, { label: 'כל שבועיים', value: 2 }, { label: 'כל שלושה שבועות', value: 3 }].map(({ label, value }) => (
+          <Button
+            key={value}
+            onClick={() => handleCreateRecurring(value)}
+            className="w-full rounded-full py-3"
+            disabled={creatingRecurring}
+          >
+            {label}
+          </Button>
+        ))}
+        <Button
+          variant="outline"
+          className="w-full rounded-full py-3"
+          onClick={() => setView('main')}
+          disabled={creatingRecurring}
+        >
+          ביטול
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent
           className="bg-white rounded-3xl p-6 max-w-sm mx-auto"
           aria-describedby={undefined}
       >
-        {view === 'main' ? renderMainView() : renderDelayView()}
+        {view === 'main' ? renderMainView() : view === 'delay' ? renderDelayView() : renderRecurringView()}
       </DialogContent>
     </Dialog>
   );

@@ -11,6 +11,7 @@ import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import VerificationModal from "../components/VerificationModal.jsx";
 import WaitingListModal from "../components/WaitingListModal.jsx";
+import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
 import api from "@/api/base44Client";
@@ -119,6 +120,7 @@ export default function Book() {
   const [businessHours, setBusinessHours] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [blockedTimes, setBlockedTimes] = useState([]);
+  const [bookingRules, setBookingRules] = useState(() => ({ ...DEFAULT_BOOKING_RULES }));
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
@@ -141,7 +143,14 @@ export default function Book() {
   const [aptsLoading, setAptsLoading] = useState(false);
 
   const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
-  const maxAdvanceDays = clientIsMember ? 14 : 7;
+  const maxAdvanceDays = clientIsMember
+      ? bookingRules.memberMaxAdvanceDays
+      : bookingRules.publicMaxAdvanceDays;
+  const membersOnlyIds = useMemo(
+      () => (bookingRules.memberOnlyServiceIds || []).map((id) => String(id)),
+      [bookingRules.memberOnlyServiceIds]
+  );
+  const membersOnlySet = useMemo(() => new Set(membersOnlyIds), [membersOnlyIds]);
 
   const isWithinBookingWindow = useCallback((date) => {
     if (!date) return false;
@@ -180,6 +189,20 @@ export default function Book() {
     }
   }, [selectedDate, isWithinBookingWindow]);
 
+  useEffect(() => {
+    if (!clientIsMember && selectedService) {
+      const currentId = String(selectedService.id ?? "");
+      if (membersOnlySet.has(currentId)) {
+        setSelectedService(null);
+        setSelectedDate(null);
+        setSelectedTimeSlot(null);
+        setShowForm(false);
+        setStep(1);
+        setError("השירות שנבחר פתוח כעת לחברי מועדון בלבד.");
+      }
+    }
+  }, [clientIsMember, selectedService, membersOnlySet]);
+
   /* -------- init: client + services -------- */
   useEffect(() => {
     const stored = localStorage.getItem("familiaClient");
@@ -195,12 +218,19 @@ export default function Book() {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const servicesData = await api.Service.list().catch(() => []);
+      const [servicesData, bookingRulesSetting, bh] = await Promise.all([
+        api.Service.list().catch(() => []),
+        api.Setting?.get ? api.Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
+        api.BusinessHours?.list?.().catch(() => []),
+      ]);
+
       // אל תסנן לפי .active (לא קיים בבאק); אם יש isActive=false – נסיר
       setServices((servicesData || []).filter((s) => s.isActive !== false));
 
+      const normalizedRules = normalizeBookingRules(bookingRulesSetting?.value);
+      setBookingRules(normalizedRules);
+
       // לשימוש עתידי במודלים אחרים – משאירים ריק כאן
-      const bh = await api.BusinessHours?.list?.().catch(() => []);
       setBusinessHours(Array.isArray(bh) ? bh : []);
       setAppointments([]);
       setBlockedTimes([]);
@@ -543,21 +573,44 @@ export default function Book() {
                     </div>
 
                     <div className="space-y-3">
-                      {services.map((service) => (
-                          <motion.div
-                              key={service.id}
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => handleServiceSelect(service)}
-                              className="relative bg-white rounded-2xl p-4 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-all"
-                          >
-                            <div className="absolute top-2 left-2 bg-black text-white px-2 py-1 rounded-md font-bold text-xs">₪{service.price}</div>
-                            <div className="text-center">
-                              <h3 className="text-base font-bold text-gray-900">{service.name}</h3>
-                            </div>
-                          </motion.div>
-                      ))}
+                      {services.map((service) => {
+                        const serviceId = String(service.id ?? "");
+                        const memberOnly = membersOnlySet.has(serviceId);
+                        const disabled = memberOnly && !clientIsMember;
+                        return (
+                            <motion.div
+                                key={service.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                whileTap={{ scale: disabled ? 1 : 0.98 }}
+                                onClick={() => {
+                                  if (disabled) {
+                                    setError("השירות פתוח לחברי מועדון בלבד.");
+                                    return;
+                                  }
+                                  handleServiceSelect(service);
+                                }}
+                                className={`relative bg-white rounded-2xl p-4 shadow-sm border transition-all ${
+                                    disabled
+                                        ? "border-gray-200 cursor-not-allowed opacity-60"
+                                        : "border-gray-200 cursor-pointer hover:shadow-md"
+                                }`}
+                            >
+                              <div className="absolute top-2 left-2 bg-black text-white px-2 py-1 rounded-md font-bold text-xs">₪{service.price}</div>
+                              {memberOnly && (
+                                  <div className="absolute top-2 right-2 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-semibold">
+                                    חברי מועדון
+                                  </div>
+                              )}
+                              <div className="text-center">
+                                <h3 className="text-base font-bold text-gray-900">{service.name}</h3>
+                                {disabled && (
+                                    <p className="mt-2 text-xs font-medium text-red-600">פתוח לחברי מועדון בלבד</p>
+                                )}
+                              </div>
+                            </motion.div>
+                        );
+                      })}
                     </div>
                   </motion.div>
               )}
@@ -606,8 +659,8 @@ export default function Book() {
                     </div>
                     <div className="text-xs text-gray-500 mb-4">
                       {clientIsMember
-                          ? "חברי מועדון יכולים להזמין עד 14 ימים קדימה"
-                          : "לקוחות רגילים יכולים להזמין עד 7 ימים קדימה – לחברי מועדון יש טווח ארוך יותר"}
+                          ? `חברי מועדון יכולים להזמין עד ${bookingRules.memberMaxAdvanceDays} ימים קדימה`
+                          : `לקוחות רגילים יכולים להזמין עד ${bookingRules.publicMaxAdvanceDays} ימים קדימה – לחברי מועדון יש טווח ארוך יותר`}
                     </div>
 
                     <div className="space-y-3 flex-1 max-h-none">

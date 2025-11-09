@@ -8,9 +8,10 @@ import { BusinessHour } from '../../entities/business-hour.entity';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsController } from './appointments.controller';
 import { ClientsController } from './clients.controller';
+import { Setting } from '../../entities/setting.entity';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour])],
+    imports: [TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour, Setting])],
     providers: [AppointmentsService],
     controllers: [AppointmentsController, ClientsController],
 })

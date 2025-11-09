@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -11,6 +11,7 @@ import { WaitingList } from "@/api/entities";
 import { Client } from "@/api/entities";
 import { BackgroundVideo } from "@/api/entities";
 import { Product } from "@/api/entities";
+import { Setting } from "@/api/entities";
 import { UploadFile } from "@/api/integrations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ import {
   Replace,
   Repeat,
   GripVertical,
+  Crown,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -68,12 +70,14 @@ import { useSidebar } from "../components/SidebarContext.jsx"; // Import the con
 import { fullName, serviceName, isPast, phone } from '@/lib/apt-utils';
 import { Admin as AdminApi } from "@/api/entities";
 import api from "@/api/base44Client";
+import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
 
 
 const navItems = [
   { id: 'appointments', label: 'תורים', icon: Calendar },
   //{ id: 'statistics', label: 'סטטיסטיקות', icon: BarChart3 },
   { id: 'clients', label: 'לקוחות', icon: Users },
+  { id: 'member-settings', label: 'חברי מועדון', icon: Crown },
   { id: 'services', label: 'שירותים', icon: Settings },
   { id: 'products', label: 'מוצרים', icon: Package },
   { id: 'stories', label: 'סטוריז', icon: Video },
@@ -116,6 +120,10 @@ export default function Admin() { // Removed props
   const [backgroundVideos, setBackgroundVideos] = useState([]);
   const [products, setProducts] = useState([]);
   const [waitingList, setWaitingList] = useState([]);
+  const [memberSettings, setMemberSettings] = useState(() => ({ ...DEFAULT_BOOKING_RULES }));
+  const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
+  const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
+  const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -149,7 +157,7 @@ export default function Admin() { // Removed props
   const [blocks, setBlocks] = useState([]);
 
 // תאריך היום הנבחר כמחרוזת YYYY-MM-DD
-  const selectedDateStr = React.useMemo(
+  const selectedDateStr = useMemo(
       () => format(startOfDay(selectedDate), "yyyy-MM-dd"),
       [selectedDate]
   );
@@ -224,7 +232,7 @@ export default function Admin() { // Removed props
 // יומיים אחורה מימין ל"היום", ואז הימים קדימה
   const DAYS_FORWARD = 14;
 
-  const daysForPicker = React.useMemo(() => {
+  const daysForPicker = useMemo(() => {
     const today = startOfDay(new Date());
 
     // סדר כך שהקרוב להיום מופיע ראשון (ימין קרוב להיום), ואז שלשום
@@ -357,7 +365,7 @@ export default function Admin() { // Removed props
       const [
         allAppointmentsData, servicesData, testimonialsData,
         galleryData, hoursData, clientsData, backgroundVideosData,
-        productsData, waitingListData
+        productsData, waitingListData, bookingRulesSetting
       ] = await Promise.all([
         listAny(Appointment, "-starts_at").catch(() => []),
         listAny(Service, "order_index").catch(() => []),
@@ -370,7 +378,8 @@ export default function Admin() { // Removed props
         (WaitingList.filter
                 ? WaitingList.filter({ status: 'waiting' }, '-desired_starts_at')
                 : listAny(WaitingList, '-desired_starts_at')
-        ).catch(() => [])
+        ).catch(() => []),
+        Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
       ]);
 
       const processedAppointments = [];
@@ -396,12 +405,85 @@ export default function Admin() { // Removed props
       setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
       setWaitingList(waitingListData || []);
+
+      const normalizedBookingRules = normalizeBookingRules(bookingRulesSetting?.value);
+      setMemberSettings(normalizedBookingRules);
+      setMemberSettingsDirty(false);
+      setMemberSettingsFeedback(null);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  const memberOnlyServiceSet = useMemo(
+      () => new Set((memberSettings.memberOnlyServiceIds || []).map((id) => String(id))),
+      [memberSettings.memberOnlyServiceIds]
+  );
+
+  const updateAdvanceDays = (field, rawValue, fallback) => {
+    const sanitized = clampAdvanceDays(rawValue, fallback);
+    setMemberSettings((prev) => ({ ...prev, [field]: sanitized }));
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  };
+
+  const handlePublicAdvanceChange = (value) => {
+    updateAdvanceDays('publicMaxAdvanceDays', value, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
+  };
+
+  const handleMemberAdvanceChange = (value) => {
+    updateAdvanceDays('memberMaxAdvanceDays', value, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
+  };
+
+  const toggleMemberOnlyService = (serviceId, checked) => {
+    const idStr = String(serviceId ?? '');
+    if (!idStr) return;
+    setMemberSettings((prev) => {
+      const current = new Set((prev.memberOnlyServiceIds || []).map((id) => String(id)));
+      if (checked) {
+        current.add(idStr);
+      } else {
+        current.delete(idStr);
+      }
+      return { ...prev, memberOnlyServiceIds: Array.from(current) };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  };
+
+  const handleSaveMemberSettings = async () => {
+    try {
+      setMemberSettingsSaving(true);
+      setMemberSettingsFeedback(null);
+      const payload = sanitizeBookingRulesForSave(memberSettings);
+      await Setting.set('booking.rules', payload);
+      const normalized = normalizeBookingRules(payload);
+      setMemberSettings(normalized);
+      setMemberSettingsDirty(false);
+      setMemberSettingsFeedback({ type: 'success', message: 'ההגדרות נשמרו בהצלחה.' });
+    } catch (err) {
+      console.error('Failed to save member settings', err);
+      setMemberSettingsFeedback({ type: 'error', message: 'שמירת ההגדרות נכשלה. נסה שוב.' });
+    } finally {
+      setMemberSettingsSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const availableIds = new Set((services || []).map((svc) => String(svc.id ?? '')));
+    const currentIds = (memberSettings.memberOnlyServiceIds || []).map((id) => String(id));
+    const filtered = currentIds.filter((id) => availableIds.has(id));
+    const changed =
+        filtered.length !== currentIds.length ||
+        filtered.some((id, index) => id !== currentIds[index]);
+    if (changed) {
+      setMemberSettings((prev) => ({ ...prev, memberOnlyServiceIds: filtered }));
+      setMemberSettingsDirty(true);
+      setMemberSettingsFeedback(null);
+    }
+  }, [services, memberSettings.memberOnlyServiceIds]);
 
   const getAppointmentsForDay = (date) => {
     return appointments
@@ -677,7 +759,7 @@ export default function Admin() { // Removed props
     };
   };
 
-  const clientDataWithAppointments = React.useMemo(() => {
+  const clientDataWithAppointments = useMemo(() => {
     const now = new Date();
     return (allClients || []).map(c => {
       // לא מסננים לקוחות בלי טלפון – פשוט לא תהיה להם היסטוריה תורים
@@ -702,7 +784,7 @@ export default function Admin() { // Removed props
     });
   }, [allClients, appointments]);
 
-  const blocksForSelectedDay = React.useMemo(() => {
+  const blocksForSelectedDay = useMemo(() => {
     return (blocks || []).filter((b) => {
       const s = new Date(b.start_at || b.startAt);
       return !Number.isNaN(s.getTime()) && isSameDay(s, selectedDate);
@@ -1194,6 +1276,116 @@ export default function Admin() { // Removed props
                         >
                           <Plus className="w-6 h-6" />
                         </Button>
+                      </div>
+                    </div>
+                )}
+
+                {activeTab === 'member-settings' && (
+                    <div className="space-y-6">
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader>
+                          <CardTitle>הגדרת טווח הזמנות</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <Label className="text-sm font-semibold text-gray-800">לקוחות רגילים</Label>
+                              <Input
+                                  type="number"
+                                  min={0}
+                                  max={365}
+                                  value={memberSettings.publicMaxAdvanceDays}
+                                  onChange={(e) => handlePublicAdvanceChange(e.target.value)}
+                                  className="mt-2"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                מספר הימים קדימה שלקוח שאינו חבר מועדון יכול להזמין.
+                              </p>
+                            </div>
+                            <div>
+                              <Label className="text-sm font-semibold text-gray-800">חברי מועדון</Label>
+                              <Input
+                                  type="number"
+                                  min={0}
+                                  max={365}
+                                  value={memberSettings.memberMaxAdvanceDays}
+                                  onChange={(e) => handleMemberAdvanceChange(e.target.value)}
+                                  className="mt-2"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                מספר הימים קדימה שחבר מועדון יכול להזמין תור.
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader>
+                          <CardTitle>שירותים בלעדיים לחברי מועדון</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 mb-4">
+                            בחר אילו שירותים זמינים רק לחברי מועדון. לקוחות רגילים לא יראו אפשרות להזמין אותם.
+                          </p>
+                          <div className="space-y-3">
+                            {services.length === 0 ? (
+                                <p className="text-sm text-gray-500">אין שירותים להצגה כרגע.</p>
+                            ) : (
+                                services.map((service) => {
+                                  const idStr = String(service.id ?? "");
+                                  const checked = memberOnlyServiceSet.has(idStr);
+                                  return (
+                                      <div
+                                          key={service.id}
+                                          className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3"
+                                      >
+                                        <div>
+                                          <p className="font-semibold text-gray-900">{service.name}</p>
+                                          <p className="text-xs text-gray-500">
+                                            {service.duration_minutes ?? service.durationMinutes} דקות · ₪{service.price}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs text-gray-500">{checked ? 'חברי מועדון בלבד' : 'פתוח לכולם'}</span>
+                                          <Switch checked={checked} onCheckedChange={(val) => toggleMemberOnlyService(service.id, val)} />
+                                        </div>
+                                      </div>
+                                  );
+                                })
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        {memberSettingsFeedback && (
+                            <Alert
+                                className={memberSettingsFeedback.type === 'error'
+                                    ? 'border-red-200 bg-red-50'
+                                    : 'border-emerald-200 bg-emerald-50'}
+                            >
+                              <AlertDescription
+                                  className={memberSettingsFeedback.type === 'error'
+                                      ? 'text-red-700'
+                                      : 'text-emerald-700'}
+                              >
+                                {memberSettingsFeedback.message}
+                              </AlertDescription>
+                            </Alert>
+                        )}
+                        <div className="flex items-center gap-3 sm:ml-auto">
+                          {memberSettingsDirty && !memberSettingsSaving && (
+                              <span className="text-xs text-gray-500">יש שינויים שלא נשמרו</span>
+                          )}
+                          <Button
+                              onClick={handleSaveMemberSettings}
+                              disabled={!memberSettingsDirty || memberSettingsSaving}
+                              className="rounded-full bg-black text-white hover:bg-gray-800"
+                          >
+                            {memberSettingsSaving ? 'שומר…' : 'שמירת הגדרות'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                 )}

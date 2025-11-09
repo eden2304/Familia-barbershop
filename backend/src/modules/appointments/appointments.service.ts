@@ -19,6 +19,7 @@ import { ServiceEntity } from '../../entities/service.entity';
 import { Client } from '../../clients/client.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
+import { Setting } from '../../entities/setting.entity';
 
 export interface CreateAppointmentDto {
     clientPhone: string;
@@ -29,6 +30,18 @@ export interface CreateAppointmentDto {
     note?: string;
 }
 
+interface BookingRules {
+    publicMaxAdvanceDays: number;
+    memberMaxAdvanceDays: number;
+    memberOnlyServiceIds: string[];
+}
+
+const DEFAULT_BOOKING_RULES: BookingRules = {
+    publicMaxAdvanceDays: 7,
+    memberMaxAdvanceDays: 14,
+    memberOnlyServiceIds: [],
+};
+
 @Injectable()
 export class AppointmentsService {
     constructor(
@@ -37,7 +50,94 @@ export class AppointmentsService {
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
+        @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
     ) {}
+
+    private clampAdvanceDays(value: any, fallback: number): number {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return fallback;
+        const intVal = Math.floor(num);
+        if (intVal < 0) return 0;
+        if (intVal > 365) return 365;
+        return intVal;
+    }
+
+    private normalizeBookingRules(raw: any): BookingRules {
+        if (!raw || typeof raw !== 'object') {
+            return { ...DEFAULT_BOOKING_RULES };
+        }
+        const source = raw as Record<string, any>;
+        const publicCandidate =
+            source.publicMaxAdvanceDays ??
+            source.public ??
+            source.publicDays ??
+            source.public_days ??
+            source.regular ??
+            source.nonMember ??
+            source.non_member;
+        const memberCandidate =
+            source.memberMaxAdvanceDays ??
+            source.member ??
+            source.members ??
+            source.memberDays ??
+            source.member_days ??
+            source.vip ??
+            source.memberAdvanceDays ??
+            source.member_advance_days;
+        const listCandidate =
+            source.memberOnlyServiceIds ??
+            source.membersOnlyServiceIds ??
+            source.memberServices ??
+            source.member_services ??
+            source.member_only_services ??
+            source.members_only_services ??
+            [];
+
+        const publicMaxAdvanceDays = this.clampAdvanceDays(publicCandidate, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
+        const memberMaxAdvanceDays = this.clampAdvanceDays(memberCandidate, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
+        const ids = Array.isArray(listCandidate)
+            ? Array.from(
+                  new Set(
+                      listCandidate
+                          .map(value => {
+                              if (value === undefined || value === null) return null;
+                              const str = String(value).trim();
+                              return str.length > 0 ? str : null;
+                          })
+                          .filter((val): val is string => Boolean(val)),
+                  ),
+              )
+            : [];
+
+        return {
+            publicMaxAdvanceDays,
+            memberMaxAdvanceDays,
+            memberOnlyServiceIds: ids,
+        };
+    }
+
+    private async getBookingRules(): Promise<BookingRules> {
+        const row = await this.settingsRepo.findOne({ where: { key: 'booking.rules' } });
+        if (!row) return { ...DEFAULT_BOOKING_RULES };
+        try {
+            return this.normalizeBookingRules(row.value);
+        } catch {
+            return { ...DEFAULT_BOOKING_RULES };
+        }
+    }
+
+    private isServiceAllowedForClient(service: ServiceEntity, isMember: boolean, rules: BookingRules): boolean {
+        if (isMember) return true;
+        const serviceId = String(service?.id ?? '').trim();
+        if (!serviceId) return true;
+        return !rules.memberOnlyServiceIds.includes(serviceId);
+    }
+
+    private ensureServiceAllowedForClient(service: ServiceEntity, isMember: boolean, rules: BookingRules) {
+        if (!this.isServiceAllowedForClient(service, isMember, rules)) {
+            throw new ForbiddenException('MEMBERS_ONLY_SERVICE');
+        }
+    }
 
     private normalizePhone(raw: string) {
         if (!raw) return '';
@@ -60,14 +160,14 @@ export class AppointmentsService {
         }
     }
 
-    private ensureWithinAdvanceWindow(startAt: Date, isMember: boolean) {
+    private ensureWithinAdvanceWindow(startAt: Date, isMember: boolean, rules: BookingRules) {
         const windowBase = new Date();
         const todayUTC = Date.UTC(windowBase.getFullYear(), windowBase.getMonth(), windowBase.getDate());
         const startIso = startAt.toISOString().slice(0, 10);
         const [y, m, d] = startIso.split('-').map(Number);
         const startUTC = Date.UTC(y, m - 1, d);
         const diffDays = Math.floor((startUTC - todayUTC) / 86_400_000);
-        const maxDays = isMember ? 14 : 7;
+        const maxDays = isMember ? rules.memberMaxAdvanceDays : rules.publicMaxAdvanceDays;
         if (diffDays > maxDays) {
             throw new ForbiddenException(isMember ? 'MEMBER_ADVANCE_LIMIT' : 'PUBLIC_ADVANCE_LIMIT');
         }
@@ -106,6 +206,8 @@ export class AppointmentsService {
 
         // 3) לא להזמין לעבר
         this.ensureNotPast(startAt);
+
+        const bookingRules = await this.getBookingRules();
 
         // 4) קליינט
         const phone = this.normalizePhone(dto.clientPhone);
@@ -154,7 +256,8 @@ export class AppointmentsService {
         const clientAny = client as any;
         const isMember = Boolean(clientAny?.isMember ?? clientAny?.is_member ?? false);
 
-        this.ensureWithinAdvanceWindow(startAt, isMember);
+        this.ensureServiceAllowedForClient(service, isMember, bookingRules);
+        this.ensureWithinAdvanceWindow(startAt, isMember, bookingRules);
 
         // 5) שעות פעילות + אינטרוול
         const dateStr = startAt.toISOString().slice(0, 10);
@@ -190,12 +293,17 @@ export class AppointmentsService {
         if (!service) throw new NotFoundException('Service not found');
 
         const isMember = Boolean(opts.isMember);
+        const bookingRules = await this.getBookingRules();
+        if (!this.isServiceAllowedForClient(service, isMember, bookingRules)) {
+            return [];
+        }
+
         const now = new Date();
         const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
         const [yearStr, monthStr, dayStr] = dateStr.split('-');
         const targetUTC = Date.UTC(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
         const diffDays = Math.floor((targetUTC - todayUTC) / 86_400_000);
-        const maxDays = isMember ? 14 : 7;
+        const maxDays = isMember ? bookingRules.memberMaxAdvanceDays : bookingRules.publicMaxAdvanceDays;
         if (diffDays > maxDays) {
             return [];
         }

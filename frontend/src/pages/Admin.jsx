@@ -18,12 +18,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectValue, SelectTrigger } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "@/components/ui/use-toast";
 import {
   Calendar,
   Clock,
@@ -98,6 +107,16 @@ const DEFAULT_MEMBER_DAY_HOURS = [
   { weekday: 5, open: '08:00', close: '15:00', slotMinutes: 30 },
   { weekday: 6, open: '08:00', close: '14:00', slotMinutes: 30 },
 ];
+
+const RECURRING_CANCEL_INITIAL = {
+  isOpen: false,
+  schedule: null,
+  scheduleId: null,
+  clientName: '',
+  scheduleLabel: '',
+  intervalLabel: '',
+  serviceLabel: '',
+};
 
 const toMinutes = (time) => {
   if (!time && time !== 0) return null;
@@ -231,6 +250,7 @@ export default function Admin() { // Removed props
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
+  const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -691,34 +711,78 @@ export default function Admin() { // Removed props
     return null;
   };
 
-  const describeRecurringSchedule = (recurring, clientId) => {
-    if (!recurring) return null;
-    const weekdayIndex = Number(recurring.weekday ?? recurring.day ?? 0);
-    const boundedWeekday = Number.isInteger(weekdayIndex) && weekdayIndex >= 0 && weekdayIndex < WEEKDAY_LABELS.length
-        ? weekdayIndex
-        : 0;
-    const dayLabel = WEEKDAY_LABELS[boundedWeekday];
-    const timeLabel = recurring.start_time ?? recurring.startTime ?? '';
-    const intervalWeeks = Number(recurring.intervalWeeks ?? recurring.interval_weeks ?? recurring.every ?? 1) || 1;
-    const intervalLabel = intervalWeeks === 1
-        ? 'כל שבוע'
-        : intervalWeeks === 2
-            ? 'כל שבועיים'
-            : `כל ${intervalWeeks} שבועות`;
-    const serviceLabel = recurring.service_name ?? recurring.serviceName ?? '';
-    const id = getRecurringScheduleId(recurring);
-    const scheduleKey = id ?? `${clientId}-${boundedWeekday}-${timeLabel || '00:00'}`;
-    return {
-      id,
-      dayLabel,
-      timeLabel,
-      intervalWeeks,
-      intervalLabel,
-      serviceLabel,
-      scheduleKey,
-      recurring,
-    };
+const describeRecurringSchedule = (recurring, clientId) => {
+  if (!recurring) return null;
+  const weekdayIndex = Number(recurring.weekday ?? recurring.day ?? 0);
+  const boundedWeekday = Number.isInteger(weekdayIndex) && weekdayIndex >= 0 && weekdayIndex < WEEKDAY_LABELS.length
+      ? weekdayIndex
+      : 0;
+  const dayLabel = WEEKDAY_LABELS[boundedWeekday];
+  const timeLabel = recurring.start_time ?? recurring.startTime ?? '';
+  const intervalWeeks = Number(recurring.intervalWeeks ?? recurring.interval_weeks ?? recurring.every ?? 1) || 1;
+  const intervalLabel = intervalWeeks === 1
+      ? 'כל שבוע'
+      : intervalWeeks === 2
+          ? 'כל שבועיים'
+          : `כל ${intervalWeeks} שבועות`;
+  const serviceLabel = recurring.service_name ?? recurring.serviceName ?? '';
+  const id = getRecurringScheduleId(recurring);
+  const scheduleKey = id ?? `${clientId}-${boundedWeekday}-${timeLabel || '00:00'}`;
+  return {
+    id,
+    dayLabel,
+    timeLabel,
+    intervalWeeks,
+    intervalLabel,
+    serviceLabel,
+    scheduleKey,
+    recurring,
   };
+};
+
+const normalizeRecurringSource = (source) => {
+  if (!source) return [];
+  if (Array.isArray(source)) return source.filter(Boolean);
+  if (typeof source === 'string') {
+    try {
+      const parsed = JSON.parse(source);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  if (typeof source === 'object') {
+    if (Array.isArray(source.data)) return source.data.filter(Boolean);
+    if (Array.isArray(source.items)) return source.items.filter(Boolean);
+    return Object.values(source).filter((value) => {
+      if (!value || typeof value !== 'object') return false;
+      return (
+          value.weekday !== undefined ||
+          value.day !== undefined ||
+          value.start_time !== undefined ||
+          value.startTime !== undefined
+      );
+    });
+  }
+  return [];
+};
+
+const extractRecurringSchedules = (client) => {
+  const sources = [
+    client?.recurringAppointments,
+    client?.recurring_appointments,
+    client?.recurring,
+    client?.recurringSchedules,
+    client?.recurring_schedules,
+  ];
+  for (const source of sources) {
+    const parsed = normalizeRecurringSource(source);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+  }
+  return [];
+};
 
   const memberOnlyServiceSet = useMemo(
       () => new Set((memberSettings.memberOnlyServiceIds || []).map((id) => String(id))),
@@ -829,6 +893,63 @@ export default function Admin() { // Removed props
     setRecurringSuccessModal({ isOpen: false, message: '', skippedDates: [] });
   };
 
+  const closeRecurringCancelModal = () => {
+    setRecurringCancelModal({ ...RECURRING_CANCEL_INITIAL });
+  };
+
+  const startRecurringCancelFlow = (recurringMeta, clientName) => {
+    if (!recurringMeta) return;
+    const schedule = recurringMeta.recurring ?? recurringMeta;
+    const scheduleId = recurringMeta.id ?? getRecurringScheduleId(schedule);
+    if (!scheduleId) {
+      toast({
+        title: 'לא ניתן לבטל את התור הקבוע',
+        description: 'לא נמצא מזהה תקין לתור הקבוע. נסה לרענן את העמוד.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setRecurringCancelModal({
+      isOpen: true,
+      schedule,
+      scheduleId,
+      clientName: clientName || 'לקוח',
+      scheduleLabel: recurringMeta.dayLabel
+          ? `${recurringMeta.dayLabel}${recurringMeta.timeLabel ? ` ${recurringMeta.timeLabel}` : ''}`
+          : '',
+      intervalLabel: recurringMeta.intervalLabel || '',
+      serviceLabel: recurringMeta.serviceLabel || '',
+    });
+  };
+
+  const handleConfirmRecurringCancellation = async () => {
+    if (!recurringCancelModal.schedule || !recurringCancelModal.scheduleId) {
+      toast({
+        title: 'לא ניתן לבטל את התור הקבוע',
+        description: 'לא נמצאו נתונים לביטול התור הקבוע. נסה שוב.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const scheduleId = recurringCancelModal.scheduleId;
+    try {
+      setCancelingRecurringId(scheduleId);
+      await AdminApi.appointments.cancelRecurring(scheduleId);
+      toast({
+        title: 'התור הקבוע בוטל',
+        description: `${recurringCancelModal.clientName}${recurringCancelModal.scheduleLabel ? ` · ${recurringCancelModal.scheduleLabel}` : ''} הוסר מהלו"ז וכל התורים העתידיים נמחקו.`,
+      });
+      closeRecurringCancelModal();
+      await loadData();
+    } catch (error) {
+      console.error('Failed to cancel recurring appointment', error);
+      const message = error?.payload?.message || error?.payload?.error || 'ביטול התור הקבוע נכשל. נסה שוב.';
+      toast({ title: 'ביטול נכשל', description: message, variant: 'destructive' });
+    } finally {
+      setCancelingRecurringId(null);
+    }
+  };
+
   const handleCreateRecurringAppointment = React.useCallback(async (appointment, intervalWeeks) => {
     if (!appointment?.id) return;
     try {
@@ -862,26 +983,6 @@ export default function Admin() { // Removed props
       throw error;
     }
   }, [loadData]);
-
-  const handleCancelRecurringSchedule = async (recurring) => {
-    const scheduleId = getRecurringScheduleId(recurring);
-    if (!scheduleId) {
-      alert('לא נמצא מזהה תקין לתור הקבוע. נסה לרענן את העמוד.');
-      return;
-    }
-    if (!confirm('האם לבטל את התור הקבוע ולמחוק את כל התורים העתידיים שלו?')) return;
-    try {
-      setCancelingRecurringId(scheduleId);
-      await AdminApi.appointments.cancelRecurring(scheduleId);
-      alert('התור הקבוע בוטל וכל התורים העתידיים הוסרו.');
-      await loadData();
-    } catch (error) {
-      console.error('Failed to cancel recurring appointment', error);
-      alert('ביטול התור הקבוע נכשל. נסה שוב.');
-    } finally {
-      setCancelingRecurringId(null);
-    }
-  };
 
   const handleRescheduleRequest = (appointment, service) => {
     setSelectedAppointment(null);
@@ -1712,78 +1813,117 @@ export default function Admin() { // Removed props
                           {filteredClients.length === 0 ? (
                               <p className="text-sm text-gray-500">לא נמצאו לקוחות תואמים.</p>
                           ) : (
-                              <div className="divide-y divide-gray-200">
+                              <div className="grid gap-4 lg:grid-cols-2">
                                 {filteredClients.map((client) => {
                                   const memberFlag = Boolean(client.isMember ?? client.is_member);
                                   const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
                                   const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
                                   const phoneDisplay = client.phone ?? client.client_phone ?? '';
+                                  const clientDisplayName = [first, last].filter(Boolean).join(' ').trim() || phoneDisplay || 'לקוח';
                                   const lastAppointment = client.lastAppointmentDate ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', { locale: he }) : 'אין היסטוריה';
                                   const lastClass = client.lastAppointmentDate
                                       ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
                                       : 'text-gray-800';
-                                  const recurringRaw = client.recurringAppointments ?? client.recurring_appointments ?? [];
-                                  const recurringList = Array.isArray(recurringRaw) ? recurringRaw : [];
+                                  const recurringList = extractRecurringSchedules(client);
                                   const recurringMeta = recurringList
                                       .map((recurring) => describeRecurringSchedule(recurring, client.id))
                                       .filter(Boolean);
                                   const primaryRecurring = recurringMeta[0] || null;
                                   return (
-                                      <div key={client.id} className="py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                        <div>
-                                          <p className="font-bold text-gray-900 flex flex-wrap items-center gap-2">
-                                            {[first, last].filter(Boolean).join(' ')}
-                                            {primaryRecurring && (
-                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold px-2 py-0.5">
-                                                  <span>{`${primaryRecurring.dayLabel}${primaryRecurring.timeLabel ? ` ${primaryRecurring.timeLabel}` : ''}`}</span>
-                                                  <span className="text-emerald-600">· {primaryRecurring.intervalLabel}</span>
-                                                </span>
-                                            )}
-                                          </p>
-                                          <p className="text-sm text-gray-600">{phoneDisplay}</p>
-                                          {memberFlag && (
-                                              <span className="mt-2 inline-block rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold px-3 py-1">
-                                                חבר מועדון
-                                              </span>
-                                          )}
-                                          {recurringMeta.length > 0 && (
-                                              <div className="mt-2 space-y-1">
-                                                {recurringMeta.map((item) => (
-                                                    <div key={item.scheduleKey} className="flex flex-col sm:flex-row sm:items-center sm:gap-2 text-xs text-gray-600">
-                                                      <span className="font-semibold text-emerald-700">
-                                                        {`תור קבוע: ${item.dayLabel}${item.timeLabel ? ` ${item.timeLabel}` : ''}`}
-                                                      </span>
-                                                      <span className="text-gray-500">
-                                                        {item.intervalLabel}
-                                                        {item.serviceLabel ? ` · ${item.serviceLabel}` : ''}
-                                                      </span>
-                                                      <Button
-                                                          variant="ghost"
-                                                          size="sm"
-                                                          className="text-red-600 hover:text-red-700 h-auto px-2 py-1"
-                                                          onClick={() => handleCancelRecurringSchedule(item.recurring)}
-                                                          disabled={cancelingRecurringId === (item.id ?? getRecurringScheduleId(item.recurring))}
-                                                      >
-                                                        {cancelingRecurringId === (item.id ?? getRecurringScheduleId(item.recurring)) ? 'מבטל…' : 'ביטול'}
-                                                      </Button>
-                                                    </div>
-                                                ))}
+                                      <div
+                                          key={client.id}
+                                          className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 shadow-sm transition hover:shadow-md"
+                                      >
+                                        <div className="flex flex-col gap-4">
+                                          <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <p className="text-lg font-semibold text-gray-900">{clientDisplayName}</p>
+                                                {memberFlag && (
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="flex items-center gap-1 bg-amber-100 text-amber-700"
+                                                    >
+                                                      <Crown className="w-3.5 h-3.5" />
+                                                      <span>חבר מועדון</span>
+                                                    </Badge>
+                                                )}
+                                                {primaryRecurring && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="flex items-center gap-1 border-emerald-100 bg-emerald-50 text-emerald-700"
+                                                    >
+                                                      <Repeat className="w-3.5 h-3.5" />
+                                                      <span>{`${primaryRecurring.dayLabel}${primaryRecurring.timeLabel ? ` ${primaryRecurring.timeLabel}` : ''}`}</span>
+                                                    </Badge>
+                                                )}
                                               </div>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                          <div className="text-left md:text-right">
-                                            <p className="text-sm text-gray-500">תור אחרון:</p>
-                                            <p className={`font-medium ${lastClass}`}>{lastAppointment}</p>
+                                              <p className="mt-1 flex items-center gap-1 text-sm text-gray-600">
+                                                <Phone className="w-4 h-4 text-gray-400" />
+                                                <span>{phoneDisplay || 'ללא מספר'}</span>
+                                              </p>
+                                            </div>
+                                            <div className="text-left">
+                                              <p className="text-xs text-gray-500">תור אחרון</p>
+                                              <p className={`text-sm font-semibold ${lastClass}`}>{lastAppointment}</p>
+                                            </div>
                                           </div>
-                                          <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => toggleClientMembership(client)}
-                                              className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
-                                          >
-                                            {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
-                                          </Button>
+
+                                          <div className="space-y-2">
+                                            {recurringMeta.length > 0 ? (
+                                                recurringMeta.map((item) => {
+                                                  const scheduleId = item.id ?? getRecurringScheduleId(item.recurring);
+                                                  const isCancelling = cancelingRecurringId === scheduleId;
+                                                  return (
+                                                      <div
+                                                          key={item.scheduleKey}
+                                                          className="rounded-2xl border border-emerald-100 bg-white/90 p-3 text-sm text-gray-700"
+                                                      >
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                          <div className="flex items-center gap-2 font-semibold text-emerald-700">
+                                                            <Repeat className="w-4 h-4" />
+                                                            <span>{`${item.dayLabel}${item.timeLabel ? ` ${item.timeLabel}` : ''}`}</span>
+                                                          </div>
+                                                          <span className="text-xs text-emerald-600">{item.intervalLabel}</span>
+                                                        </div>
+                                                        {item.serviceLabel && (
+                                                            <p className="mt-1 text-xs text-gray-500">{item.serviceLabel}</p>
+                                                        )}
+                                                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                                                          <span>ביטול ימחוק את כל התורים העתידיים</span>
+                                                          <Button
+                                                              variant="ghost"
+                                                              size="sm"
+                                                              className="text-red-600 hover:text-red-700 px-2 py-1"
+                                                              onClick={() => startRecurringCancelFlow(item, clientDisplayName)}
+                                                              disabled={isCancelling}
+                                                          >
+                                                            {isCancelling ? 'מבטל…' : 'בטל תור קבוע'}
+                                                          </Button>
+                                                        </div>
+                                                      </div>
+                                                  );
+                                                })
+                                            ) : (
+                                                <div className="rounded-2xl border border-dashed border-gray-200 bg-white/70 px-3 py-2 text-sm text-gray-500">
+                                                  אין תור קבוע ללקוח זה.
+                                                </div>
+                                            )}
+                                          </div>
+
+                                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3">
+                                            <p className="text-sm text-gray-600">
+                                              {memberFlag ? 'הלקוח חבר במועדון' : 'הלקוח אינו חבר מועדון'}
+                                            </p>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => toggleClientMembership(client)}
+                                                className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
+                                            >
+                                              {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
+                                            </Button>
+                                          </div>
                                         </div>
                                       </div>
                                   );
@@ -2596,6 +2736,51 @@ export default function Admin() { // Removed props
               </motion.div>
             </div>
         )}
+
+        <Dialog
+            open={recurringCancelModal.isOpen}
+            onOpenChange={(open) => {
+              if (!open) closeRecurringCancelModal();
+            }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>ביטול תור קבוע</DialogTitle>
+              <DialogDescription>
+                פעולה זו תבטל את התור הקבוע של {recurringCancelModal.clientName} ותמחק את כל התורים העתידיים שלו.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-800 space-y-1">
+              <p className="font-semibold">{recurringCancelModal.clientName}</p>
+              {recurringCancelModal.scheduleLabel && (
+                  <p>תור: {recurringCancelModal.scheduleLabel}</p>
+              )}
+              {recurringCancelModal.intervalLabel && (
+                  <p>{recurringCancelModal.intervalLabel}</p>
+              )}
+              {recurringCancelModal.serviceLabel && (
+                  <p>{recurringCancelModal.serviceLabel}</p>
+              )}
+            </div>
+            <p className="text-sm text-gray-600">הביטול ייכנס לתוקף מיד ולא ניתן לשחזר את התורים שנמחקו.</p>
+            <DialogFooter className="gap-2">
+              <Button
+                  variant="outline"
+                  onClick={closeRecurringCancelModal}
+                  disabled={cancelingRecurringId === recurringCancelModal.scheduleId}
+              >
+                חזרה
+              </Button>
+              <Button
+                  variant="destructive"
+                  onClick={handleConfirmRecurringCancellation}
+                  disabled={cancelingRecurringId === recurringCancelModal.scheduleId}
+              >
+                {cancelingRecurringId === recurringCancelModal.scheduleId ? 'מבטל…' : 'בטל את התור הקבוע'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {recurringSuccessModal.isOpen && (
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[110] p-4" onClick={closeRecurringSuccessModal}>

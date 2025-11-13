@@ -90,6 +90,26 @@ async function createIndexIfColumnExists(table, column, indexName) {
     await pool.query(`create index if not exists ${indexName} on ${table} (${column})`);
 }
 
+async function getColumnUdtName(table, column) {
+    const q = await pool.query(
+        `select udt_name
+         from information_schema.columns
+         where table_schema = current_schema()
+           and table_name = $1
+           and column_name = $2
+         limit 1`,
+        [table, column]
+    );
+    return q.rows[0]?.udt_name || null; // e.g. 'uuid', 'int4', 'int8'
+}
+
+function udtToDDL(udt) {
+    if (!udt) return 'int';
+    if (udt === 'uuid') return 'uuid';
+    if (udt === 'int8') return 'bigint';
+    return 'int';
+}
+
 /* ---------- Migrate (idempotent & forgiving) ---------- */
 async function migrate() {
     // --- טבלאות בסיס ---
@@ -182,22 +202,6 @@ async function migrate() {
 
     `);
 
-    // --- helper to read a column type from information_schema ---
-    async function getColumnUdtName(table, column) {
-        const q = await pool.query(`
-            select udt_name
-            from information_schema.columns
-            where table_schema = current_schema()
-              and table_name = $1
-              and column_name = $2
-                limit 1
-        `, [table, column]);
-        return q.rows[0]?.udt_name || null; // e.g. 'uuid', 'int4', 'int8'
-    }
-    function udtToDDL(udt) {
-        return udt === 'uuid' ? 'uuid' : udt === 'int8' ? 'bigint' : 'int';
-    }
-
 // ---- detect id types of clients/services and recreate waiting_list accordingly ----
     const clientsIdUdt  = await getColumnUdtName('clients',  'id');   // uuid / int4 / int8
     const servicesIdUdt = await getColumnUdtName('services', 'id');   // uuid / int4 / int8
@@ -248,15 +252,18 @@ async function migrate() {
   `);
 
   await pool.query(`
-    create table if not exists recurring_appointments (
+    drop table if exists recurring_appointments cascade;
+
+    create table recurring_appointments (
       id serial primary key,
-      client_id int not null references clients(id) on delete cascade,
-      service_id int not null references services(id) on delete cascade,
+      client_id ${clientIdTypeDDL} not null references clients(id) on delete cascade,
+      service_id ${serviceIdTypeDDL} not null references services(id) on delete cascade,
       weekday int not null,
       start_time varchar(8) not null,
       interval_weeks int not null default 1,
       created_at timestamptz not null default now()
     );
+    create unique index if not exists ux_recurring_unique on recurring_appointments (client_id, service_id, weekday, start_time);
   `);
 
 
@@ -555,15 +562,42 @@ function presentBusinessHours(hours) {
 let recurringTableEnsured = false;
 async function ensureRecurringTable() {
     if (recurringTableEnsured) return;
-    await pool.query(`create table if not exists recurring_appointments (
-        id serial primary key,
-        client_id int not null references clients(id) on delete cascade,
-        service_id int not null references services(id) on delete cascade,
-        weekday int not null,
-        start_time varchar(8) not null,
-        interval_weeks int not null default 1,
-        created_at timestamptz not null default now()
-    )`);
+
+    const clientsIdUdt = (await getColumnUdtName('clients', 'id')) || 'int4';
+    const servicesIdUdt = (await getColumnUdtName('services', 'id')) || 'int4';
+    const clientIdDDL = udtToDDL(clientsIdUdt);
+    const serviceIdDDL = udtToDDL(servicesIdUdt);
+
+    const columnsInfo = await pool.query(
+        `select column_name, udt_name
+         from information_schema.columns
+         where table_schema = current_schema()
+           and table_name = 'recurring_appointments'`
+    );
+
+    let needsRecreate = columnsInfo.rowCount === 0;
+    if (!needsRecreate) {
+        const clientCol = columnsInfo.rows.find((row) => row.column_name === 'client_id');
+        const serviceCol = columnsInfo.rows.find((row) => row.column_name === 'service_id');
+        if (!clientCol || clientCol.udt_name !== clientsIdUdt) needsRecreate = true;
+        if (!serviceCol || serviceCol.udt_name !== servicesIdUdt) needsRecreate = true;
+    }
+
+    if (needsRecreate) {
+        await pool.query(`drop table if exists recurring_appointments cascade`);
+        await pool.query(`
+            create table recurring_appointments (
+                id serial primary key,
+                client_id ${clientIdDDL} not null references clients(id) on delete cascade,
+                service_id ${serviceIdDDL} not null references services(id) on delete cascade,
+                weekday int not null,
+                start_time varchar(8) not null,
+                interval_weeks int not null default 1,
+                created_at timestamptz not null default now()
+            )
+        `);
+    }
+
     await pool.query(`create unique index if not exists ux_recurring_unique on recurring_appointments (client_id, service_id, weekday, start_time)`);
     recurringTableEnsured = true;
 }

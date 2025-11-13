@@ -244,6 +244,7 @@ export default function Admin() { // Removed props
 
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
 
   const [rescheduleData, setRescheduleData] = useState({ isOpen: false, appointment: null, service: null });
 
@@ -661,6 +662,35 @@ export default function Admin() { // Removed props
     }
   };
 
+  const getRecurringScheduleId = (recurring) => {
+    if (!recurring) return null;
+    const candidates = [
+      recurring.schedule_id,
+      recurring.scheduleId,
+      recurring.recurring_schedule_id,
+      recurring.recurringScheduleId,
+      recurring.recurring_id,
+      recurring.recurringId,
+      recurring.recurring_uuid,
+      recurring.recurringUuid,
+      recurring.uuid,
+      recurring.id,
+    ];
+    for (const candidate of candidates) {
+      if (candidate === null || candidate === undefined) continue;
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+        return String(candidate);
+      }
+    }
+    return null;
+  };
+
   const describeRecurringSchedule = (recurring, clientId) => {
     if (!recurring) return null;
     const weekdayIndex = Number(recurring.weekday ?? recurring.day ?? 0);
@@ -676,7 +706,7 @@ export default function Admin() { // Removed props
             ? 'כל שבועיים'
             : `כל ${intervalWeeks} שבועות`;
     const serviceLabel = recurring.service_name ?? recurring.serviceName ?? '';
-    const id = recurring.id ?? recurring.recurring_id ?? null;
+    const id = getRecurringScheduleId(recurring);
     const scheduleKey = id ?? `${clientId}-${boundedWeekday}-${timeLabel || '00:00'}`;
     return {
       id,
@@ -795,6 +825,10 @@ export default function Admin() { // Removed props
     }
   };
 
+  const closeRecurringSuccessModal = () => {
+    setRecurringSuccessModal({ isOpen: false, message: '', skippedDates: [] });
+  };
+
   const handleCreateRecurringAppointment = React.useCallback(async (appointment, intervalWeeks) => {
     if (!appointment?.id) return;
     try {
@@ -809,9 +843,17 @@ export default function Admin() { // Removed props
             return iso;
           }
         });
-        alert(`התורים נקבעו, אך התאריכים הבאים כבר תפוסים: ${formatted.join(', ')}`);
+        setRecurringSuccessModal({
+          isOpen: true,
+          message: 'התור הקבוע נשמר, אך חלק מהתאריכים כבר תפוסים:',
+          skippedDates: formatted,
+        });
       } else {
-        alert('תורים קבועים נקבעו בהצלחה!');
+        setRecurringSuccessModal({
+          isOpen: true,
+          message: 'תורים קבועים נקבעו בהצלחה!',
+          skippedDates: [],
+        });
       }
     } catch (error) {
       console.error('Failed to create recurring appointment', error);
@@ -822,11 +864,15 @@ export default function Admin() { // Removed props
   }, [loadData]);
 
   const handleCancelRecurringSchedule = async (recurring) => {
-    if (!recurring?.id) return;
+    const scheduleId = getRecurringScheduleId(recurring);
+    if (!scheduleId) {
+      alert('לא נמצא מזהה תקין לתור הקבוע. נסה לרענן את העמוד.');
+      return;
+    }
     if (!confirm('האם לבטל את התור הקבוע ולמחוק את כל התורים העתידיים שלו?')) return;
     try {
-      setCancelingRecurringId(recurring.id);
-      await AdminApi.appointments.cancelRecurring(recurring.id);
+      setCancelingRecurringId(scheduleId);
+      await AdminApi.appointments.cancelRecurring(scheduleId);
       alert('התור הקבוע בוטל וכל התורים העתידיים הוסרו.');
       await loadData();
     } catch (error) {
@@ -1212,41 +1258,6 @@ export default function Admin() { // Removed props
   }, [blocks, selectedDate]);
 
 
-  if (loading) {
-    return (
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center" dir="rtl">
-          <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              className="text-white flex flex-col items-center space-y-4"
-          >
-            <svg
-                className="animate-spin h-16 w-16 text-blue-400"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-            >
-              <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-              ></circle>
-              <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <p className="text-xl font-semibold">טוען נתונים...</p>
-          </motion.div>
-        </div>
-    );
-  }
-
   // אם אין עדיין אישור אדמין מהguard, אפשר להחזיר null/ספינר קצר
   if (!canAccessAdmin) {
     return null; // או ספינר קל אם תרצה
@@ -1295,6 +1306,41 @@ export default function Admin() { // Removed props
                 כניסה
               </Button>
             </form>
+          </motion.div>
+        </div>
+    );
+  }
+
+  if (loading) {
+    return (
+        <div className="min-h-screen bg-gray-900 flex items-center justify-center" dir="rtl">
+          <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="text-white flex flex-col items-center space-y-4"
+          >
+            <svg
+                className="animate-spin h-16 w-16 text-blue-400"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+            >
+              <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+              ></circle>
+              <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <p className="text-xl font-semibold">טוען נתונים...</p>
           </motion.div>
         </div>
     );
@@ -1716,9 +1762,9 @@ export default function Admin() { // Removed props
                                                           size="sm"
                                                           className="text-red-600 hover:text-red-700 h-auto px-2 py-1"
                                                           onClick={() => handleCancelRecurringSchedule(item.recurring)}
-                                                          disabled={cancelingRecurringId === (item.id ?? item.recurring?.id)}
+                                                          disabled={cancelingRecurringId === (item.id ?? getRecurringScheduleId(item.recurring))}
                                                       >
-                                                        {cancelingRecurringId === (item.id ?? item.recurring?.id) ? 'מבטל…' : 'ביטול'}
+                                                        {cancelingRecurringId === (item.id ?? getRecurringScheduleId(item.recurring)) ? 'מבטל…' : 'ביטול'}
                                                       </Button>
                                                     </div>
                                                 ))}
@@ -2547,6 +2593,44 @@ export default function Admin() { // Removed props
                     </Button>
                   </div>
                 </div>
+              </motion.div>
+            </div>
+        )}
+
+        {recurringSuccessModal.isOpen && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[110] p-4" onClick={closeRecurringSuccessModal}>
+              <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">תורים קבועים</h3>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={closeRecurringSuccessModal} className="rounded-full">
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+                <p className="text-gray-700 text-sm leading-relaxed">{recurringSuccessModal.message}</p>
+                {Array.isArray(recurringSuccessModal.skippedDates) && recurringSuccessModal.skippedDates.length > 0 && (
+                    <div className="mt-4 bg-gray-50 rounded-2xl p-4">
+                      <p className="text-sm font-semibold text-gray-800 mb-2">תאריכים שלא נקבעו:</p>
+                      <ul className="text-sm text-gray-600 list-disc pr-5 space-y-1">
+                        {recurringSuccessModal.skippedDates.map((date) => (
+                            <li key={date}>{date}</li>
+                        ))}
+                      </ul>
+                    </div>
+                )}
+                <Button className="w-full mt-6 rounded-full" onClick={closeRecurringSuccessModal}>
+                  סגור
+                </Button>
               </motion.div>
             </div>
         )}

@@ -402,7 +402,7 @@ const DEFAULT_HOURS = [
 ];
 const WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
-const MAX_RECURRING_OCCURRENCES = 26;
+const MAX_RECURRING_OCCURRENCES = 60;
 
 const BOOKING_RULE_DEFAULTS = {
     publicMaxAdvanceDays: 7,
@@ -1600,10 +1600,17 @@ async function router(req, res) {
         const baseStatus = base.status || 'booked';
         const baseNote = base.note ?? null;
 
+        const recurrenceEndDate = new Date(start.getTime());
+        recurrenceEndDate.setFullYear(recurrenceEndDate.getFullYear() + 1);
+
         for (let occurrence = 1; occurrence <= MAX_RECURRING_OCCURRENCES; occurrence += 1) {
             const offsetWeeks = occurrence * intervalWeeks;
             const candidateStart = new Date(start.getTime() + offsetWeeks * 7 * 24 * 60 * 60 * 1000);
             const candidateEnd = new Date(candidateStart.getTime() + durationMs);
+
+            if (candidateStart >= recurrenceEndDate) {
+                break;
+            }
 
             const conflict = await pool.query(
                 `select 1 from appointments where starts_at < $2 and ends_at > $1 and coalesce(status, 'booked') <> 'canceled' limit 1`,
@@ -1689,6 +1696,10 @@ async function router(req, res) {
         if (idsToCancel.length > 0) {
             await pool.query(
                 `update appointments set status='canceled' where CAST(id AS text) = any($1::text[])`,
+                [idsToCancel]
+            );
+            await pool.query(
+                `delete from appointments where CAST(id AS text) = any($1::text[])`,
                 [idsToCancel]
             );
         }

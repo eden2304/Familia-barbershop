@@ -21,13 +21,24 @@ const normalizePhone = (phone = "") => {
 
 const normalizeClientObject = (raw) => {
   if (!raw) return null;
+  const firstName = raw.first_name ?? raw.firstName ?? "";
+  const lastName = raw.last_name ?? raw.lastName ?? "";
+  const memberFlag = Boolean(raw.isMember ?? raw.is_member ?? false);
+  const adminFlag = Boolean(raw.isAdmin ?? raw.is_admin ?? false);
+  const fullName = `${firstName} ${lastName}`.trim();
   return {
     id: raw.id,
     phone: raw.phone,
-    first_name: raw.first_name ?? raw.firstName ?? "",
-    last_name:  raw.last_name  ?? raw.lastName  ?? "",
-    isMember: Boolean(raw.isMember ?? raw.is_member ?? false),
-    is_member: Boolean(raw.is_member ?? raw.isMember ?? false),
+    first_name: firstName,
+    last_name: lastName,
+    firstName,
+    lastName,
+    name: raw.name ?? fullName,
+    client_name: raw.client_name ?? fullName,
+    isMember: memberFlag,
+    is_member: memberFlag,
+    isAdmin: adminFlag,
+    is_admin: adminFlag,
   };
 };
 

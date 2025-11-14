@@ -11,6 +11,39 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
+const FALLBACK_TESTIMONIALS = [
+  {
+    id: "fallback-ron",
+    author: "רון א.",
+    rating: 5,
+    text: "השירות הכי מקצועי שחוויתי. תמיד יוצא מרוצה והאווירה פשוט מושלמת.",
+  },
+  {
+    id: "fallback-or",
+    author: "אורית ל.",
+    rating: 5,
+    text: "הצוות מעניק יחס אישי וחם, מרגישים שהם באמת אוהבים את מה שהם עושים.",
+  },
+  {
+    id: "fallback-nati",
+    author: "נתי ר.",
+    rating: 5,
+    text: "כל תור הוא חוויה. מספרה נקייה, נעימה ותמיד עומדים בזמנים.",
+  },
+  {
+    id: "fallback-aviv",
+    author: "אביב ש.",
+    rating: 5,
+    text: "ממליץ בחום! מקצועיות ברמה גבוהה ותוצאה מדויקת בכל פעם מחדש.",
+  },
+  {
+    id: "fallback-shir",
+    author: "שיר פ.",
+    rating: 5,
+    text: "כיף להגיע לפמיליה. מרגיש כמו בית עם שירות איכותי וחיוך.",
+  },
+];
+
 const normalizePhone = (phone) => {
   const digits = String(phone || '').replace(/\D/g, '');
   if (digits.startsWith('972')) return '0' + digits.slice(3);
@@ -62,16 +95,33 @@ export default function Home() {
           .then((r) => r.json())
           .catch(() => []);
 
-      const testi = Array.isArray(raw)
-          ? raw.map(t => ({
-            ...t,
-            // תמיד יהיה טקסט להצגה:
+      const testiFromApi = Array.isArray(raw)
+          ? raw.map((t, idx) => ({
+            id: t?.id ?? `testimonial-${idx}`,
+            author: t?.author || "לקוח מרוצה",
+            rating: Number.isFinite(Number(t?.rating)) ? Number(t.rating) : 5,
             text: (t?.text ?? t?.content ?? '').toString(),
             content: (t?.content ?? t?.text ?? '').toString(),
           }))
           : [];
 
-      setTestimonials(testi);
+      const fallbackTestimonials = FALLBACK_TESTIMONIALS.map((t, idx) => ({
+        ...t,
+        id: t.id ?? `fallback-${idx}`,
+        content: t.text,
+      }));
+
+      const mergedTestimonials = [...testiFromApi];
+      fallbackTestimonials.forEach((fb) => {
+        const exists = mergedTestimonials.some((row) =>
+            row.author === fb.author && row.text === fb.text
+        );
+        if (!exists) {
+          mergedTestimonials.push(fb);
+        }
+      });
+
+      setTestimonials(mergedTestimonials);
 
       // Background videos
       const bg = await fetch(`${API_URL}/background-videos`).then((r) => r.json()).catch(() => []);
@@ -96,6 +146,7 @@ export default function Home() {
       const fn = c.firstName || c.first_name || "";
       const ln = c.lastName  || c.last_name  || "";
       const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
+      const adminFlag = Boolean(c.isAdmin ?? c.is_admin ?? false);
       const payload = {
         ...c,
         phone: (c.phone || "").toString(),
@@ -105,6 +156,8 @@ export default function Home() {
         last_name:  ln,
         isMember: memberFlag,
         is_member: memberFlag,
+        isAdmin: adminFlag,
+        is_admin: adminFlag,
         client_name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || ""),
         name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || "")
       };

@@ -1061,9 +1061,14 @@ const extractRecurringSchedules = (client) => {
     setList(reorderedList);
 
     try {
-      const updatePromises = reorderedList.map((item, index) =>
-          entity.update(item.id, { ...item, order_index: index })
-      );
+      const updatePromises = reorderedList.map((item, index) => {
+        const payload = {
+          ...item,
+          orderIndex: index,
+          order_index: index,
+        };
+        return entity.update(item.id, payload);
+      });
       await Promise.all(updatePromises);
     } catch (error) {
       console.error("Failed to update order:", error);

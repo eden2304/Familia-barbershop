@@ -30,14 +30,24 @@ const normalizePhone = (phone) => {
 
 const normalizeClientObject = (raw) => {
   if (!raw) return null;
+  const firstName = raw.first_name ?? raw.firstName ?? "";
+  const lastName = raw.last_name ?? raw.lastName ?? "";
+  const memberFlag = Boolean(raw.isMember ?? raw.is_member ?? false);
+  const adminFlag = Boolean(raw.isAdmin ?? raw.is_admin ?? false);
+  const fullName = `${firstName} ${lastName}`.trim();
   return {
     id: raw.id,
     phone: raw.phone,
-    // לתמוך בשני הסגנונות
-    first_name: raw.first_name ?? raw.firstName ?? "",
-    last_name:  raw.last_name  ?? raw.lastName  ?? "",
-    isMember: Boolean(raw.isMember ?? raw.is_member ?? false),
-    is_member: Boolean(raw.is_member ?? raw.isMember ?? false),
+    first_name: firstName,
+    last_name: lastName,
+    firstName,
+    lastName,
+    name: raw.name ?? fullName,
+    client_name: raw.client_name ?? fullName,
+    isMember: memberFlag,
+    is_member: memberFlag,
+    isAdmin: adminFlag,
+    is_admin: adminFlag,
   };
 };
 
@@ -222,7 +232,18 @@ export default function Book() {
     try {
       const res = await api.get(`/clients/lookup?phone=${encodeURIComponent(normalizedPhone)}`);
       if (res && (res.phone || res.client_phone)) {
-        const normalized = normalizeClientObject({ ...res, phone: res.phone ?? res.client_phone ?? normalizedPhone });
+        const stored = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("familiaClient") || "null");
+          } catch {
+            return null;
+          }
+        })();
+        const normalized = normalizeClientObject({
+          ...res,
+          phone: res.phone ?? res.client_phone ?? normalizedPhone,
+          isAdmin: stored?.isAdmin ?? stored?.is_admin ?? res.isAdmin ?? res.is_admin,
+        });
         if (normalized) {
           setClient(normalized);
           localStorage.setItem("familiaClient", JSON.stringify(normalized));
@@ -831,7 +852,10 @@ export default function Book() {
                       <div className="w-10"/>
                     </div>
 
-                    <div className="flex flex-col gap-3 flex-1 overflow-y-auto px-2" style={{scrollbarWidth: "thin"}}>
+                    <div
+                        className="flex flex-wrap gap-3 justify-center flex-1 overflow-y-auto px-2"
+                        style={{ scrollbarWidth: "thin" }}
+                    >
                       {availableSlots.length > 0 ? (
                           availableSlots.map((slot) => {
                             const key = `${slot.hhmm}-${slot.memberOnly ? "member" : "all"}`;
@@ -846,16 +870,14 @@ export default function Book() {
                                     onClick={() => handleTimeSelect(slot)}
                                     variant="outline"
                                     disabled={blockedForClient}
-                                    className={`w-full h-14 rounded-2xl font-medium text-base transition-colors disabled:opacity-100 disabled:cursor-not-allowed ${buttonClasses}`}
+                                    className={`min-w-[120px] w-[45%] sm:w-[140px] h-12 rounded-2xl font-semibold text-base transition-colors disabled:opacity-100 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1 text-center ${buttonClasses}`}
                                 >
-                                  <div className="flex w-full items-center justify-between">
-                                    <span>{slot.formatted}</span>
-                                    {isMemberOnly && (
-                                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[11px] font-semibold px-2 py-0.5">
-                                          חברי מועדון
-                                        </Badge>
-                                    )}
-                                  </div>
+                                  <span className="text-sm">{slot.formatted}</span>
+                                  {isMemberOnly && (
+                                      <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px] font-semibold px-2 py-0.5">
+                                        חברי מועדון
+                                      </Badge>
+                                  )}
                                   {blockedForClient && (
                                       <span className="block w-full text-[11px] text-emerald-700 mt-1">
                                         פתוח לחברי מועדון בלבד

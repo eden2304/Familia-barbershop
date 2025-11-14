@@ -1651,23 +1651,24 @@ async function router(req, res) {
     }
 
     if (req.method === 'DELETE' && pathname.startsWith('/admin/recurring-appointments/')) {
-        const idRaw = pathname.split('/').pop();
-        const idNum = Number(idRaw);
-        if (!Number.isInteger(idNum) || idNum <= 0) {
+        const idRaw = pathname.split('/').filter(Boolean).pop();
+        const parsed = parseId(idRaw);
+        if (!parsed.raw) {
             return json(res, 400, { error: 'INVALID_RECURRING_ID' });
         }
 
         await ensureRecurringTable();
+        const { sql, param } = idWhere('recurring_appointments', parsed);
         const scheduleRes = await pool.query(
-            `select id, client_id, service_id, weekday, start_time, interval_weeks from recurring_appointments where id=$1 limit 1`,
-            [idNum]
+            `select id, client_id, service_id, weekday, start_time, interval_weeks from recurring_appointments where ${sql} limit 1`,
+            [param]
         );
         const schedule = scheduleRes.rows[0];
         if (!schedule) {
             return json(res, 404, { error: 'RECURRING_NOT_FOUND' });
         }
 
-        await pool.query(`delete from recurring_appointments where id=$1`, [schedule.id]);
+        await pool.query(`delete from recurring_appointments where ${sql}`, [param]);
 
         const upcoming = await pool.query(
             `select id, starts_at from appointments where client_id=$1 and service_id=$2 and starts_at >= now()` ,
@@ -1681,10 +1682,15 @@ async function router(req, res) {
                 if (startAt.getDay() !== Number(schedule.weekday)) return false;
                 return scheduleTime ? formatHHmm(startAt) === scheduleTime : false;
             })
-            .map((row) => row.id);
+            .map((row) => row.id)
+            .map((value) => (value == null ? null : String(value)))
+            .filter(Boolean);
 
         if (idsToCancel.length > 0) {
-            await pool.query(`update appointments set status='canceled' where id = any($1::int[])`, [idsToCancel]);
+            await pool.query(
+                `update appointments set status='canceled' where CAST(id AS text) = any($1::text[])`,
+                [idsToCancel]
+            );
         }
 
         return json(res, 200, { ok: true, canceledCount: idsToCancel.length });

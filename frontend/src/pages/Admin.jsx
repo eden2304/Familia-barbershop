@@ -118,6 +118,12 @@ const RECURRING_CANCEL_INITIAL = {
   serviceLabel: '',
 };
 
+const APPOINTMENT_STATUS_STYLES = {
+  booked: { label: 'תור עתידי', className: 'bg-blue-100 text-blue-700' },
+  completed: { label: 'הושלם', className: 'bg-emerald-100 text-emerald-700' },
+  canceled: { label: 'בוטל', className: 'bg-gray-200 text-gray-600' },
+};
+
 const toMinutes = (time) => {
   if (!time && time !== 0) return null;
   const [hh, mm] = String(time).split(':');
@@ -251,6 +257,8 @@ export default function Admin() { // Removed props
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
+  const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
+  const [cancelingAppointmentId, setCancelingAppointmentId] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -1156,6 +1164,53 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const openClientDetails = (client) => {
+    if (!client) return;
+    setClientDetailsModal({ isOpen: true, client });
+  };
+
+  const closeClientDetailsModal = () => {
+    setClientDetailsModal({ isOpen: false, client: null });
+  };
+
+  const handleClientCardKeyDown = (event, client) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openClientDetails(client);
+    }
+  };
+
+  const handleCancelSingleAppointment = async (appointment) => {
+    if (!appointment?.id) return;
+    const service = serviceById(appointment.service_id);
+    const serviceLabel = service?.name ?? service?.title ?? '';
+    const startsLabel = (() => {
+      if (!appointment?.starts_at) return '';
+      try {
+        return format(new Date(appointment.starts_at), 'dd/MM/yyyy · HH:mm', { locale: he });
+      } catch (_) {
+        return appointment.starts_at;
+      }
+    })();
+    const confirmMessage = `האם לבטל את התור${startsLabel ? ` ב-${startsLabel}` : ''}${serviceLabel ? ` (${serviceLabel})` : ''}?`;
+    if (!window.confirm(confirmMessage)) return;
+    try {
+      setCancelingAppointmentId(appointment.id);
+      await AdminApi.appointments.delete(appointment.id);
+      toast({
+        title: 'התור בוטל',
+        description: startsLabel ? `התור ל-${startsLabel} בוטל בהצלחה.` : 'התור בוטל בהצלחה.',
+      });
+      await loadData();
+    } catch (error) {
+      console.error('Failed to cancel appointment', error);
+      const description = error?.payload?.message || error?.payload?.error || error?.message || 'ביטול התור נכשל. נסה שוב.';
+      toast({ title: 'שגיאה בביטול התור', description, variant: 'destructive' });
+    } finally {
+      setCancelingAppointmentId(null);
+    }
+  };
+
   // Admin.jsx – ליד שאר העזרים, מעל handleAddAppointment
   const safeCreateClient = async ({ first_name = "", last_name = "", phone = "" }) => {
     const payload = { first_name, last_name, phone: normalizePhone(phone) };
@@ -1255,6 +1310,39 @@ const extractRecurringSchedules = (client) => {
       return { ...c, lastAppointmentDate: lastDate, lastAppointmentRecent: isRecent };
     });
   }, [allClients, appointments]);
+
+  const getClientAppointments = React.useCallback((client) => {
+    if (!client) return [];
+    const clientId = client.id ?? client.client_id ?? null;
+    const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
+    return (appointments || [])
+        .filter((apt) => {
+          if (!apt) return false;
+          const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
+          if (clientId && aptClientId && String(aptClientId) === String(clientId)) {
+            return true;
+          }
+          const aptPhone = normalizePhone(apt.client_phone ?? apt.phone ?? apt.client?.phone ?? "");
+          return Boolean(normalizedPhone && aptPhone && aptPhone === normalizedPhone);
+        })
+        .sort((a, b) => {
+          const timeA = a?.starts_at ? new Date(a.starts_at).getTime() : 0;
+          const timeB = b?.starts_at ? new Date(b.starts_at).getTime() : 0;
+          return timeB - timeA;
+        });
+  }, [appointments]);
+
+  const clientDetailsAppointments = React.useMemo(() => {
+    if (!clientDetailsModal.client) return [];
+    return getClientAppointments(clientDetailsModal.client);
+  }, [clientDetailsModal.client, getClientAppointments]);
+
+  const clientDetailsRecurringMeta = React.useMemo(() => {
+    if (!clientDetailsModal.client) return [];
+    return extractRecurringSchedules(clientDetailsModal.client)
+        .map((recurring) => describeRecurringSchedule(recurring, clientDetailsModal.client.id))
+        .filter(Boolean);
+  }, [clientDetailsModal.client]);
 
   const filteredClients = useMemo(() => {
     const term = clientSearchTerm.trim().toLowerCase();
@@ -1832,7 +1920,12 @@ const extractRecurringSchedules = (client) => {
                                   return (
                                       <div
                                           key={client.id}
-                                          className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 shadow-sm transition hover:shadow-md"
+                                          role="button"
+                                          tabIndex={0}
+                                          aria-label={`פרטי ${clientDisplayName}`}
+                                          onClick={() => openClientDetails(client)}
+                                          onKeyDown={(event) => handleClientCardKeyDown(event, client)}
+                                          className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 shadow-sm transition hover:shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/40"
                                       >
                                         <div className="flex flex-col gap-4">
                                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1895,7 +1988,10 @@ const extractRecurringSchedules = (client) => {
                                                               variant="ghost"
                                                               size="sm"
                                                               className="text-red-600 hover:text-red-700 px-2 py-1"
-                                                              onClick={() => startRecurringCancelFlow(item, clientDisplayName)}
+                                                              onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                startRecurringCancelFlow(item, clientDisplayName);
+                                                              }}
                                                               disabled={isCancelling}
                                                           >
                                                             {isCancelling ? 'מבטל…' : 'בטל תור קבוע'}
@@ -1905,8 +2001,9 @@ const extractRecurringSchedules = (client) => {
                                                   );
                                                 })
                                             ) : (
-                                                <div className="rounded-2xl border border-dashed border-gray-200 bg-white/70 px-3 py-2 text-sm text-gray-500">
-                                                  אין תור קבוע ללקוח זה.
+                                                <div className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white/70 px-3 py-1 text-xs text-gray-500 w-fit">
+                                                  <Repeat className="w-3 h-3 text-gray-400" />
+                                                  <span>אין תור קבוע ללקוח זה</span>
                                                 </div>
                                             )}
                                           </div>
@@ -1918,7 +2015,10 @@ const extractRecurringSchedules = (client) => {
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() => toggleClientMembership(client)}
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  toggleClientMembership(client);
+                                                }}
                                                 className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
                                             >
                                               {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
@@ -2738,10 +2838,141 @@ const extractRecurringSchedules = (client) => {
         )}
 
         <Dialog
-            open={recurringCancelModal.isOpen}
-            onOpenChange={(open) => {
-              if (!open) closeRecurringCancelModal();
-            }}
+          open={clientDetailsModal.isOpen}
+          onOpenChange={(open) => {
+            if (!open) closeClientDetailsModal();
+          }}
+        >
+          <DialogContent className="max-w-3xl" aria-describedby={undefined}>
+            {clientDetailsModal.client && (() => {
+              const client = clientDetailsModal.client;
+              const memberFlag = Boolean(client.isMember ?? client.is_member);
+              const first = client.first_name ?? client.firstName ?? '';
+              const last = client.last_name ?? client.lastName ?? '';
+              const clientDisplayName = [first, last].filter(Boolean).join(' ').trim() || 'לקוח';
+              const phoneDisplay = client.phone ?? client.client_phone ?? '';
+              const upcomingCount = clientDetailsAppointments.filter((apt) => {
+                if (!apt?.starts_at) return false;
+                try {
+                  return new Date(apt.starts_at) > new Date() && apt.status !== 'canceled';
+                } catch (_) {
+                  return false;
+                }
+              }).length;
+              return (
+                  <div className="space-y-5">
+                    <DialogHeader>
+                      <DialogTitle>פרטי לקוח</DialogTitle>
+                      <DialogDescription>
+                        כל המידע וההיסטוריה של {clientDisplayName}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="rounded-2xl bg-gray-50 p-4 space-y-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="text-xl font-semibold text-gray-900">{clientDisplayName}</p>
+                        {memberFlag && (
+                            <Badge variant="secondary" className="flex items-center gap-1 bg-amber-100 text-amber-700">
+                              <Crown className="w-4 h-4" />
+                              <span>חבר מועדון</span>
+                            </Badge>
+                        )}
+                      </div>
+                      <p className="flex items-center gap-2 text-sm text-gray-600">
+                        <Phone className="w-4 h-4 text-gray-400" />
+                        <span>{phoneDisplay || 'ללא מספר טלפון'}</span>
+                      </p>
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                        <span>סה"כ תורים: {clientDetailsAppointments.length}</span>
+                        <span>תורים עתידיים: {upcomingCount}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                        <Repeat className="w-4 h-4 text-emerald-600" />
+                        <span>תורים קבועים</span>
+                      </div>
+                      {clientDetailsRecurringMeta.length > 0 ? (
+                          <div className="space-y-2">
+                            {clientDetailsRecurringMeta.map((item) => (
+                                <div key={item.scheduleKey} className="rounded-2xl border border-emerald-100 bg-white p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="font-semibold text-emerald-700">
+                                      {item.dayLabel}{item.timeLabel ? ` · ${item.timeLabel}` : ''}
+                                    </div>
+                                    <span className="text-xs text-emerald-600">{item.intervalLabel}</span>
+                                  </div>
+                                  {item.serviceLabel && (
+                                      <p className="text-xs text-gray-500 mt-1">{item.serviceLabel}</p>
+                                  )}
+                                </div>
+                            ))}
+                          </div>
+                      ) : (
+                          <div className="inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white/70 px-3 py-1 text-xs text-gray-500 w-fit">
+                            <Repeat className="w-3 h-3 text-gray-400" />
+                            <span>אין תור קבוע</span>
+                          </div>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-800">כל התורים</h4>
+                      {clientDetailsAppointments.length === 0 ? (
+                          <p className="text-sm text-gray-500">אין תורים להצגה.</p>
+                      ) : (
+                          <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+                            {clientDetailsAppointments.map((apt) => {
+                              const service = serviceById(apt.service_id);
+                              const serviceLabel = service?.name ?? service?.title ?? 'ללא שירות';
+                              let dateLabel = apt.starts_at || '';
+                              try {
+                                dateLabel = format(new Date(apt.starts_at), 'dd/MM/yyyy · HH:mm', { locale: he });
+                              } catch (_) {}
+                              const status = apt.status ?? 'booked';
+                              const statusConfig = APPOINTMENT_STATUS_STYLES[status] || { label: status, className: 'bg-gray-100 text-gray-600' };
+                              const isCanceled = status === 'canceled';
+                              const isProcessing = cancelingAppointmentId === apt.id;
+                              return (
+                                  <div key={`${apt.id}-${apt.starts_at}`} className="rounded-2xl border border-gray-200 bg-white p-3 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-base font-semibold text-gray-900">{dateLabel}</p>
+                                        <p className="text-sm text-gray-500">{serviceLabel}</p>
+                                      </div>
+                                      <Badge className={statusConfig.className}>{statusConfig.label}</Badge>
+                                    </div>
+                                    {apt.note && (
+                                        <p className="text-xs text-gray-500">הערה: {apt.note}</p>
+                                    )}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                                      <span>מזהה תור: {apt.id}</span>
+                                      <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`flex items-center gap-1 text-sm ${isCanceled ? 'text-gray-400' : 'text-red-600 hover:text-red-700'}`}
+                                          onClick={() => handleCancelSingleAppointment(apt)}
+                                          disabled={isCanceled || isProcessing}
+                                      >
+                                        <span role="img" aria-label="בטל">🗑️</span>
+                                        <span>{isProcessing ? 'מבטל…' : isCanceled ? 'בוטל' : 'בטל תור'}</span>
+                                      </Button>
+                                    </div>
+                                  </div>
+                              );
+                            })}
+                          </div>
+                      )}
+                    </div>
+                  </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={recurringCancelModal.isOpen}
+          onOpenChange={(open) => {
+            if (!open) closeRecurringCancelModal();
+          }}
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

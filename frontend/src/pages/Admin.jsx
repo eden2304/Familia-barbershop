@@ -563,9 +563,20 @@ export default function Admin() { // Removed props
         }
       }
 
+      const normalizedTestimonials = (testimonialsData || []).map((row) => {
+        const rating = Number.isFinite(Number(row?.rating)) ? Number(row.rating) : 5;
+        const content = (row?.content ?? row?.text ?? "").toString();
+        return {
+          ...row,
+          rating,
+          content,
+          text: row?.text ?? content,
+        };
+      });
+
       setAppointments(processedAppointments);
       setServices(servicesData || []);
-      setTestimonials(testimonialsData || []);
+      setTestimonials(normalizedTestimonials);
       setGalleryImages(galleryData || []);
       setBusinessHours(hoursData || []);
       setBusinessHoursDirty(false);
@@ -1093,11 +1104,19 @@ const extractRecurringSchedules = (client) => {
   };
 
   const handleTestimonialSubmit = async (testimonialData) => {
+    const contentValue = (testimonialData.content ?? testimonialData.text ?? "").toString();
+    const payload = {
+      author: testimonialData.author?.trim() || "",
+      rating: Number.isFinite(Number(testimonialData.rating)) ? Number(testimonialData.rating) : 5,
+      content: contentValue.trim(),
+      text: (testimonialData.text ?? testimonialData.content ?? "").toString().trim(),
+    };
+
     try {
       if (editingTestimonial) {
-        await Testimonial.update(editingTestimonial.id, testimonialData);
+        await Testimonial.update(editingTestimonial.id, payload);
       } else {
-        await Testimonial.create(testimonialData);
+        await Testimonial.create(payload);
       }
       loadData();
       setShowTestimonialForm(false);
@@ -2646,7 +2665,7 @@ const extractRecurringSchedules = (client) => {
                                                   </div>
                                                 </div>
 
-                                                <p className="text-gray-700 mb-4">"{testimonial.text}"</p>
+                                                <p className="text-gray-700 mb-4">"{testimonial.content ?? testimonial.text}"</p>
                                                 <p className="font-semibold text-gray-900">— {testimonial.author}</p>
                                               </CardContent>
                                             </Card>
@@ -3400,13 +3419,18 @@ function ServiceForm({ service, onSubmit, onCancel }) {
 function TestimonialForm({ testimonial, onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
     author: testimonial?.author || "",
-    text: testimonial?.text || "",
+    text: testimonial?.text ?? testimonial?.content ?? "",
+    content: testimonial?.content ?? testimonial?.text ?? "",
     rating: testimonial?.rating || 5
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit(formData);
+    onSubmit({
+      ...formData,
+      text: formData.text?.toString() ?? "",
+      content: formData.content?.toString() ?? formData.text ?? "",
+    });
   };
 
   return (
@@ -3424,7 +3448,10 @@ function TestimonialForm({ testimonial, onSubmit, onCancel }) {
           <Label>תוכן התגובה</Label>
           <Textarea
               value={formData.text}
-              onChange={(e) => setFormData({ ...formData, text: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFormData({ ...formData, text: value, content: value });
+              }}
               required
           />
         </div>

@@ -290,6 +290,15 @@ function normOrdAct(x) {
 }
 var normOrdActArr = function (a) { return mapArr(a, normOrdAct); };
 
+function normTestimonialRow(x) {
+  const base = normOrdAct(x);
+  const content = (x?.content ?? x?.text ?? '').toString();
+  const text = x?.text ?? content;
+  const rating = Number.isFinite(Number(base.rating)) ? Number(base.rating) : 5;
+  return { ...base, content, text, rating };
+}
+const normTestimonialArr = (a) => Array.isArray(a) ? a.map(normTestimonialRow) : [];
+
 function normMedia(x) {
   x = x || {};
   var image = pick(x, 'image_url', 'imageUrl', undefined);
@@ -359,8 +368,12 @@ function toProductBody(b) {
 }
 function toTestimonialBody(b) {
   b = b || {};
+  const content = (b.content ?? b.text ?? '').toString();
   return {
-    author: b.author, rating: b.rating, content: b.content,
+    author: b.author,
+    rating: b.rating,
+    content,
+    text: content,
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
   };
@@ -617,19 +630,19 @@ const api = {
     list: async () => {
       try {
         const admin = await httpGet('/admin/testimonials');
-        if (Array.isArray(admin)) return normOrdActArr(admin);
+        if (Array.isArray(admin)) return normTestimonialArr(admin);
         const pub = await httpGet('/testimonials');
-        return normOrdActArr(pub || []);
+        return normTestimonialArr(pub || []);
       } catch (e) {
         if (e && e.status === 404) {
           const pub = await httpGet('/testimonials');
-          return normOrdActArr(pub || []);
+          return normTestimonialArr(pub || []);
         }
         return [];
       }
     },
-    create: async (data) => normOrdAct(await httpPost('/admin/testimonials', toTestimonialBody(data))),
-    update: async (id, data) => normOrdAct(await httpPut('/admin/testimonials/' + encodeURIComponent(id), toTestimonialBody(data))),
+    create: async (data) => normTestimonialRow(await httpPost('/admin/testimonials', toTestimonialBody(data))),
+    update: async (id, data) => normTestimonialRow(await httpPut('/admin/testimonials/' + encodeURIComponent(id), toTestimonialBody(data))),
     remove: (id) => httpDelete('/admin/testimonials/' + encodeURIComponent(id)),
   },
 

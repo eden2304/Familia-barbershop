@@ -273,6 +273,8 @@ async function migrate() {
     await pool.query(`alter table clients alter column is_member set default false`);
     await pool.query(`alter table clients alter column is_member set not null`);
 
+    await ensureColumn('appointments', 'recurring_id', 'int');
+
     await ensureSnakeFromCamel('products', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('gallery_videos', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('gallery_videos', 'video_url', 'videoUrl', 'text');
@@ -1595,6 +1597,10 @@ async function router(req, res) {
         );
         const recurringScheduleId = scheduleRes.rows[0]?.id ?? null;
 
+        if (recurringScheduleId && base.id != null) {
+            await pool.query(`update appointments set recurring_id = $1 where id = $2`, [recurringScheduleId, base.id]);
+        }
+
         const createdIds = [];
         const skippedDates = [];
         const baseStatus = base.status || 'booked';
@@ -1632,9 +1638,9 @@ async function router(req, res) {
             }
 
             const ins = await pool.query(
-                `insert into appointments (service_id, client_id, starts_at, ends_at, status, note)
-                 values ($1, $2, $3, $4, $5, $6) returning id`,
-                [base.service_id, clientId, candidateStart, candidateEnd, baseStatus, baseNote]
+                `insert into appointments (service_id, client_id, starts_at, ends_at, status, note, recurring_id)
+                 values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+                [base.service_id, clientId, candidateStart, candidateEnd, baseStatus, baseNote, recurringScheduleId]
             );
             if (ins.rows[0]?.id != null) {
                 createdIds.push(ins.rows[0].id);
@@ -1677,21 +1683,41 @@ async function router(req, res) {
 
         await pool.query(`delete from recurring_appointments where ${sql}`, [param]);
 
-        const upcoming = await pool.query(
-            `select id, starts_at from appointments where client_id=$1 and service_id=$2 and starts_at >= now()` ,
-            [schedule.client_id, schedule.service_id]
-        );
         const scheduleTime = sanitizeBusinessTime(schedule.start_time ?? schedule.startTime ?? schedule.start ?? '');
-        const idsToCancel = upcoming.rows
-            .filter((row) => {
-                const startAt = new Date(row.starts_at);
-                if (!Number.isFinite(startAt.getTime())) return false;
-                if (startAt.getDay() !== Number(schedule.weekday)) return false;
-                return scheduleTime ? formatHHmm(startAt) === scheduleTime : false;
-            })
-            .map((row) => row.id)
-            .map((value) => (value == null ? null : String(value)))
-            .filter(Boolean);
+        let idsToCancel = [];
+
+        if (schedule.id != null) {
+            const linked = await pool.query(
+                `select id from appointments where recurring_id = $1 and coalesce(status,'booked') <> 'canceled'`,
+                [schedule.id]
+            );
+            idsToCancel = linked.rows
+                .map((row) => (row.id == null ? null : String(row.id)))
+                .filter(Boolean);
+        }
+
+        if (idsToCancel.length === 0) {
+            const fallback = await pool.query(
+                `select id from appointments
+                 where client_id=$1
+                   and service_id=$2
+                   and starts_at >= now()
+                   and extract(dow from starts_at at time zone 'Asia/Jerusalem') = $3
+                   and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4
+                   and coalesce(status,'booked') <> 'canceled'`,
+                [schedule.client_id, schedule.service_id, schedule.weekday, scheduleTime]
+            );
+            idsToCancel = fallback.rows
+                .map((row) => (row.id == null ? null : String(row.id)))
+                .filter(Boolean);
+
+            if (idsToCancel.length > 0 && schedule.id != null) {
+                await pool.query(
+                    `update appointments set recurring_id = $1 where CAST(id AS text) = any($2::text[])`,
+                    [schedule.id, idsToCancel]
+                );
+            }
+        }
 
         if (idsToCancel.length > 0) {
             await pool.query(

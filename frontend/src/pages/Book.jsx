@@ -2,10 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, ChevronRight, AlertCircle, Scissors, Calendar,
-  CheckCircle2, Clock, Clock4, Zap, Tag
+  CheckCircle2, Clock, Clock4, Zap, Tag, Lock
 } from "lucide-react";
 import { format, addDays, startOfWeek, startOfDay, isBefore, isSameDay, differenceInCalendarDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -862,26 +861,28 @@ export default function Book() {
                             const isMemberOnly = Boolean(slot.memberOnly);
                             const blockedForClient = isMemberOnly && !clientIsMember;
                             const buttonClasses = blockedForClient
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50 cursor-not-allowed"
-                                : "border-gray-300 bg-white text-gray-800 hover:border-black hover:bg-gray-50";
+                                ? "border-emerald-200 bg-white text-emerald-700 cursor-not-allowed"
+                                : "border-gray-200 bg-white text-gray-900 hover:border-black hover:bg-gray-50";
+                            const showLockedIndicator = isMemberOnly && !clientIsMember;
                             return (
                                 <Button
                                     key={key}
                                     onClick={() => handleTimeSelect(slot)}
                                     variant="outline"
                                     disabled={blockedForClient}
-                                    className={`min-w-[120px] w-[45%] sm:w-[140px] h-12 rounded-2xl font-semibold text-base transition-colors disabled:opacity-100 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1 text-center ${buttonClasses}`}
+                                    className={`min-w-[120px] w-[45%] sm:w-[140px] min-h-[64px] rounded-2xl font-semibold text-base transition-colors disabled:opacity-100 disabled:cursor-not-allowed flex flex-col items-center justify-center gap-1 text-center ${buttonClasses}`}
                                 >
-                                  <span className="text-sm">{slot.formatted}</span>
-                                  {isMemberOnly && (
-                                      <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px] font-semibold px-2 py-0.5">
-                                        חברי מועדון
-                                      </Badge>
-                                  )}
-                                  {blockedForClient && (
-                                      <span className="block w-full text-[11px] text-emerald-700 mt-1">
-                                        פתוח לחברי מועדון בלבד
-                                      </span>
+                                  <span className="text-sm leading-tight">{slot.formatted}</span>
+                                  {showLockedIndicator && (
+                                      <div className="flex flex-col items-center gap-1 w-full">
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-semibold">
+                                          <Lock className="w-3 h-3" />
+                                          חברי מועדון בלבד
+                                        </span>
+                                        <span className="text-[10px] text-emerald-600 leading-tight">
+                                          הצטרפו למועדון כדי לפתוח שעה זו
+                                        </span>
+                                      </div>
                                   )}
                                 </Button>
                             );

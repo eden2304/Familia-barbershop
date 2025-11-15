@@ -85,11 +85,15 @@ export default function WaitingListModal({
       const normalizedPhone = normalizePhone05(client.phone ?? client.client_phone ?? client.clientPhone ?? '');
       const client_name = `${first} ${last}`.trim() || normalizedPhone;
 
+      const rawServiceId = service?.id ?? service?.service_id ?? service?.serviceId ?? null;
+      const serviceId = rawServiceId ? String(rawServiceId) : null;
+      if (!serviceId) throw new Error('serviceId is required');
+
       await WaitingList.create({
         client_id: client.id ?? null,
         client_name,
         phone: normalizedPhone,
-        service_id: Number(service.id),
+        service_id: serviceId,
         desired_starts_at: selectedSlot.time.toISOString(),
         status: 'waiting',
       });

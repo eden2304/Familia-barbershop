@@ -11,16 +11,25 @@ import { AuthRole, AuthTokenPayload } from './auth.types';
 function normalizePhone(phone: string): string {
     if (!phone) return '';
     const digits = phone.replace(/\D/g, '');
-    if (digits.startsWith('0')) return digits;            // 05XXXXXXXX
+    if (digits.startsWith('0')) return digits; // 05XXXXXXXX
     if (digits.startsWith('972')) return '0' + digits.slice(3); // 9725XXXX → 05XXXX
     return digits;
 }
 
-// מחזיר את כל הוריאנטים הסבירים לשאילתה
+// מחזיר את כל הוריאנטים הסבירים לשאילתה (כולל ייצוג עם +972 למספרים ישנים במסד)
 function phoneVariants(phone: string): string[] {
-    const norm = normalizePhone(phone); // 05XXXXXXXX
+    if (!phone) return [];
+    const raw = phone.toString().trim();
+    const norm = normalizePhone(raw); // 05XXXXXXXX
     const e164 = norm && norm.startsWith('0') ? `972${norm.slice(1)}` : norm; // 9725XXXXXXXX
-    return Array.from(new Set([norm, e164].filter(Boolean)));
+    const plusE164 = e164 ? `+${e164}` : '';
+    const plusNorm = norm ? `+${norm}` : '';
+    const digitsOnly = raw.replace(/\D/g, '');
+    const plusDigits = digitsOnly ? `+${digitsOnly}` : '';
+
+    return Array.from(
+        new Set([norm, e164, plusE164, plusNorm, plusDigits, raw].filter(Boolean)),
+    );
 }
 
 @Injectable()

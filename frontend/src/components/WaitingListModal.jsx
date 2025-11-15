@@ -82,12 +82,13 @@ export default function WaitingListModal({
     try {
       const first = (client.first_name ?? client.firstName ?? '').trim();
       const last  = (client.last_name  ?? client.lastName  ?? '').trim();
-      const client_name = `${first} ${last}`.trim() || normalizePhone05(client.phone);
+      const normalizedPhone = normalizePhone05(client.phone ?? client.client_phone ?? client.clientPhone ?? '');
+      const client_name = `${first} ${last}`.trim() || normalizedPhone;
 
       await WaitingList.create({
         client_id: client.id ?? null,
         client_name,
-        phone: normalizePhone05(client.phone),
+        phone: normalizedPhone,
         service_id: Number(service.id),
         desired_starts_at: selectedSlot.time.toISOString(),
         status: 'waiting',

@@ -114,14 +114,17 @@ function MainLayout({ children, currentPageName }) {
             )}
           </div>
 
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center select-none">
+          <Link
+            to={createPageUrl('Home')}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center select-none pointer-events-auto"
+          >
             <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
               alt="Familia Logo"
               className="h-10 w-auto max-w-[200px] object-contain"
               draggable={false}
             />
-          </div>
+          </Link>
 
           <div className="w-10 h-10" /> 
         </div>

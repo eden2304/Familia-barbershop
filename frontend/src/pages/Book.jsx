@@ -33,10 +33,13 @@ const normalizeClientObject = (raw) => {
   const lastName = raw.last_name ?? raw.lastName ?? "";
   const memberFlag = Boolean(raw.isMember ?? raw.is_member ?? false);
   const adminFlag = Boolean(raw.isAdmin ?? raw.is_admin ?? false);
+  const phoneRaw = raw.phone ?? raw.client_phone ?? raw.clientPhone ?? raw.clientPhoneNumber ?? "";
+  const phone = normalizePhone(phoneRaw);
   const fullName = `${firstName} ${lastName}`.trim();
   return {
     id: raw.id,
-    phone: raw.phone,
+    phone,
+    client_phone: phone,
     first_name: firstName,
     last_name: lastName,
     firstName,

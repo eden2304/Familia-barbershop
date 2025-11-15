@@ -10,7 +10,6 @@ import { ServiceEntity } from './entities/service.entity';
 import { BusinessHour } from './entities/business-hour.entity';
 import { Appointment } from './entities/appointment.entity';
 import { BlockedTime } from './entities/blocked-time.entity';
-import { WaitingList } from './entities/waiting-list.entity';
 import { Testimonial } from './entities/testimonial.entity';
 import { Product } from './entities/product.entity';
 import { GalleryVideo } from './entities/gallery-video.entity';
@@ -26,6 +25,7 @@ import { SeedModule } from './seeds/seed.module';
 import {SnakeNamingStrategy} from "typeorm-naming-strategies";
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
+import { WaitingListModule } from './modules/waiting-list/waiting-list.module';
 
 @Module({
     imports: [
@@ -60,6 +60,7 @@ import { ClientsModule } from './clients/clients.module';
         SeedModule,
         AuthModule,
         ClientsModule,
+        WaitingListModule,
     ],
 })
 export class AppModule {}

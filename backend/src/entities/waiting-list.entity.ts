@@ -1,26 +1,37 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Client } from '../clients/client.entity';
 import { ServiceEntity } from './service.entity';
 
-export type WaitingStatus = 'open' | 'matched' | 'closed';
+export type WaitingStatus = 'waiting' | 'notified' | 'booked' | 'canceled';
 
-@Entity('waiting_list')
-export class WaitingList {
+@Entity({ name: 'waiting_list' })
+export class WaitingListEntry {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @ManyToOne(() => Client, { eager: true })
-    client: Client;
+    @ManyToOne(() => Client, { nullable: true, eager: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'client_id' })
+    client?: Client | null;
 
-    @ManyToOne(() => ServiceEntity, { eager: true, nullable: true })
-    service?: ServiceEntity;
+    @ManyToOne(() => ServiceEntity, { nullable: true, eager: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'service_id' })
+    service?: ServiceEntity | null;
 
-    @Column({ type: 'date' })
-    date: string; // YYYY-MM-DD
+    @Column({ name: 'client_name', type: 'varchar', length: 255, default: '' })
+    clientName: string;
 
-    @Column({ length: 5 }) // "14:00"
-    time: string;
+    @Column({ type: 'varchar', length: 32 })
+    phone: string;
 
-    @Column({ type: 'varchar', length: 16, default: 'open' })
+    @Column({ name: 'desired_starts_at', type: 'timestamptz' })
+    desiredStartsAt: Date;
+
+    @Column({ type: 'varchar', length: 32, default: 'waiting' })
     status: WaitingStatus;
+
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+    createdAt: Date;
+
+    @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+    updatedAt: Date;
 }

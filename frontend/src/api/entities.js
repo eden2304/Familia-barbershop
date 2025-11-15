@@ -349,6 +349,10 @@ export const WaitingList = {
         return getJson(`/admin/waiting-list${qs}`);
     },
 
+    async filter(filters = {}) {
+        return this.listAdmin(filters);
+    },
+
     /** עדכון סטטוס/זמן (אדמין) */
     async update(id, patch) {
         return putJson(`/admin/waiting-list/${id}`, patch);

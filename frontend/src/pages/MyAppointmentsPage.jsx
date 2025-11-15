@@ -9,16 +9,9 @@ import { he } from "date-fns/locale";
 import VerificationModal from "../components/VerificationModal.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
 import api from "@/api/base44Client";
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 /* ---------------- utils ---------------- */
-const normalizePhone = (phone = "") => {
-  const cleaned = String(phone).replace(/\D/g, "");
-  if (cleaned.startsWith("972")) return `0${cleaned.slice(3)}`;
-  if (cleaned.length === 9 && cleaned.startsWith("5")) return `0${cleaned}`;
-  if (cleaned.length === 10 && cleaned.startsWith("0")) return cleaned;
-  return cleaned.startsWith("0") ? cleaned : `0${cleaned}`;
-};
-
 const normalizeClientObject = (raw) => {
   if (!raw) return null;
   const firstName = raw.first_name ?? raw.firstName ?? "";
@@ -104,26 +97,32 @@ export default function MyAppointmentsPage() {
 
   useEffect(() => {
     const raw = localStorage.getItem("familiaClient");
-    if (!raw) {
-      setLoading(false); // נציג מסך התחברות
+    const token = getStoredAuthToken();
+    if (!raw || !token) {
+      localStorage.removeItem("familiaClient");
+      clearStoredAuth();
+      setClient(null);
+      setLoading(false);
       return;
     }
     try {
       const parsed = normalizeClientObject(JSON.parse(raw));
       setClient(parsed);
-      fetchMine(parsed.phone);
+      fetchMine();
     } catch (e) {
       console.error("bad client in storage", e);
+      localStorage.removeItem("familiaClient");
+      clearStoredAuth();
+      setClient(null);
       setLoading(false);
     }
   }, []);
 
-  const fetchMine = async (phoneRaw) => {
+  const fetchMine = async () => {
     setLoading(true);
     setErr("");
     try {
-      const phone = normalizePhone(phoneRaw);
-      const arr = (await api.Appointment.listMine(phone)) || [];
+      const arr = (await api.Appointment.listMine()) || [];
       const normalized = arr.map(normAppt).filter((x) => x.startsAt);
       normalized.sort((a, b) => compareAsc(a.startsAt, b.startsAt)); // מהקרוב לרחוק
       setItems(normalized);
@@ -151,7 +150,7 @@ export default function MyAppointmentsPage() {
     localStorage.setItem("familiaClient", JSON.stringify(norm));
     setClient(norm);
     setShowVerification(false);
-    fetchMine(norm.phone);
+    fetchMine();
   };
 
   const handleCancelRequest = (appt) => {

@@ -9,11 +9,12 @@ import { Setting } from '../../entities/setting.entity';
 import { AdminContentController } from './admin-content.controller';
 import { BlockedTimesController } from './blocked-times.controller';
 import { SettingsController } from './settings.controller';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
     imports: [TypeOrmModule.forFeature([
         Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting
-    ])],
+    ]), AuthModule],
     controllers: [AdminContentController, BlockedTimesController, SettingsController],
 })
 export class AdminModule {}

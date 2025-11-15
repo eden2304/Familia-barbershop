@@ -1,9 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ServiceEntity } from '../../entities/service.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('admin/services')
+@UseGuards(JwtAuthGuard)
+@Roles('admin')
 export class AdminServicesController {
     constructor(@InjectRepository(ServiceEntity) private repo: Repository<ServiceEntity>) {}
 

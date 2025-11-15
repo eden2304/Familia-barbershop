@@ -1,9 +1,13 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BlockedTime } from '../../entities/blocked-time.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('admin/blocked-times')
+@UseGuards(JwtAuthGuard)
+@Roles('admin')
 export class BlockedTimesController {
     constructor(@InjectRepository(BlockedTime) private repo: Repository<BlockedTime>) {}
 

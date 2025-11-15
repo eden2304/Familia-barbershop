@@ -1,10 +1,14 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { Repository } from 'typeorm';
 import { AddBlockDto } from '../appointments/dtos';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard)
+@Roles('admin')
 export class AdminController {
     constructor(
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,

@@ -4,10 +4,13 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { Client } from '../../clients/client.entity';
 import { Setting } from '../../entities/setting.entity';
+import { AdminPhone } from '../../entities/admin-phone.entity';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Client, Setting])],
+    imports: [TypeOrmModule.forFeature([Client, Setting, AdminPhone])],
     controllers: [AuthController],
-    providers: [AuthService],
+    providers: [AuthService, JwtAuthGuard],
+    exports: [AuthService, JwtAuthGuard],
 })
 export class AuthModule {}

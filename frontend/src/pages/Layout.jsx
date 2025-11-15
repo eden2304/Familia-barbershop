@@ -6,18 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence } from "framer-motion";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
-// Admin phone numbers - only these users will see the admin button
-const ADMIN_PHONE_NUMBERS = ['0537002171', '0523767851'];
-
-// Phone normalization function
-const normalizePhone = (phone) => {
-  if (!phone) return "";
-  const cleaned = phone.toString().replace(/\D/g, '');
-  if (cleaned.startsWith('972')) return `0${cleaned.substring(3)}`;
-  if (cleaned.length === 9 && cleaned.startsWith('5')) return `0${cleaned}`;
-  if (cleaned.length === 10 && cleaned.startsWith('0')) return cleaned;
-  return cleaned.startsWith('0') ? cleaned : `0${cleaned}`;
-};
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -36,14 +25,17 @@ function MainLayout({ children, currentPageName }) {
         }
         else if (storedClient === "undefined") {
           localStorage.removeItem('familiaClient');
+          clearStoredAuth();
         }
       } catch {
         localStorage.removeItem('familiaClient');
+        clearStoredAuth();
       }
-      if (parsedClient) {
+      const token = getStoredAuthToken();
+      if (parsedClient && token) {
         setClient(parsedClient);
-        const clientPhone = normalizePhone(parsedClient.phone);
-        setIsAdmin(ADMIN_PHONE_NUMBERS.includes(clientPhone));
+        const adminFlag = Boolean(parsedClient.isAdmin || parsedClient.is_admin || parsedClient.roles?.includes('admin'));
+        setIsAdmin(adminFlag);
         if (sessionStorage.getItem('justLoggedIn') === 'true') {
           setShowWelcomeBanner(true);
           sessionStorage.removeItem('justLoggedIn');
@@ -51,6 +43,7 @@ function MainLayout({ children, currentPageName }) {
       } else {
         setClient(null);
         setIsAdmin(false);
+        if (!token) clearStoredAuth();
       }
     };
 

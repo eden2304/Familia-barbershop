@@ -1,9 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
+import { Roles } from '../modules/auth/roles.decorator';
 
 @Controller('clients')
+@UseGuards(JwtAuthGuard)
+@Roles('admin')
 export class ClientsController {
     constructor(private readonly service: ClientsService) {}
 

@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, UserPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { setStoredAuthToken } from '@/utils/authStorage';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -24,18 +25,6 @@ async function checkPhoneExists(phoneRaw) {
   // השרת כבר בודק גם 05… וגם 972… אז אין צורך בתחכומים כאן
   return !!res?.exists;
 }
-
-// מצב פיתוח (Vite)
-const IS_DEV = import.meta.env?.DEV === true;
-
-// נשמור את isAdminLocal (אם כבר קיים—השאר; אם לא, הוסף):
-function isAdminLocal(phone) {
-  const d = String(phone || "").replace(/\D/g, "");
-  const norm = d.startsWith("972") ? ("0" + d.slice(3)) : (d.startsWith("0") ? d : d);
-  return ["0537002171", "0523767851"].includes(norm); // אותם מספרים כמו בשרת
-}
-
-
 
 async function postJson(path, body) {
   const res = await fetch(`${API_URL}${path}`, {
@@ -199,18 +188,21 @@ export default function VerificationModal({ onVerify, onCancel }) {
       const c = res?.client || res?.user;
       if (!res?.ok || !c) throw new Error("UNREGISTERED_CLIENT");
       const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
+      const adminFlag = Boolean(res?.roles?.includes('admin') || c.isAdmin || c.is_admin);
       const payload = {
         ...c,
         phone: (c.phone || phoneToSend || "").toString(),
         firstName: c.firstName || c.first_name || "",
         lastName:  c.lastName  || c.last_name  || "",
-        isAdmin: Boolean(c.isAdmin || (IS_DEV && isAdminLocal(c.phone || phoneToSend))),
+        isAdmin: adminFlag,
+        is_admin: adminFlag,
         isMember: memberFlag,
         is_member: memberFlag,
+        roles: Array.isArray(res?.roles) ? res.roles : undefined,
       };
 
       localStorage.setItem("familiaClient", JSON.stringify(payload));
-      if (res.token) localStorage.setItem("token", res.token);
+      if (res.token) setStoredAuthToken(res.token);
       onVerify(payload);
     }
 
@@ -309,17 +301,20 @@ export default function VerificationModal({ onVerify, onCancel }) {
         const fn = c.firstName || c.first_name || firstName || "";
         const ln = c.lastName  || c.last_name  || lastName  || "";
         const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
+        const adminFlag = Boolean(res?.roles?.includes('admin') || c.isAdmin || c.is_admin);
         const payload = {
           ...c,
           phone: (c.phone || normalizedPhone || "").toString(),
           firstName: fn,
           lastName:  ln,
-          isAdmin: c.isAdmin ?? isAdminLocal(c.phone || normalizedPhone), // 👈
+          isAdmin: adminFlag,
+          is_admin: adminFlag,
           isMember: memberFlag,
           is_member: memberFlag,
+          roles: Array.isArray(res?.roles) ? res.roles : undefined,
         };
         localStorage.setItem("familiaClient", JSON.stringify(payload));
-        if (res.token) localStorage.setItem("token", res.token);
+        if (res.token) setStoredAuthToken(res.token);
         onVerify(payload);
       } else {
         setError("שגיאה ביצירת המשתמש. נסה שוב.");

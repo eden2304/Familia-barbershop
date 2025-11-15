@@ -8,6 +8,7 @@ import VideoGallery from "../components/VideoGallery.jsx";
 import ProductGallery from "../components/ProductGallery.jsx";
 import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -44,15 +45,6 @@ const FALLBACK_TESTIMONIALS = [
   },
 ];
 
-const normalizePhone = (phone) => {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (digits.startsWith('972')) return '0' + digits.slice(3);
-  if (digits.length === 9 && digits.startsWith('5')) return '0' + digits;
-  if (digits.length === 10 && digits.startsWith('0')) return digits;
-  return digits.startsWith('0') ? digits : '0' + digits;
-};
-
-
 export default function Home() {
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
@@ -69,17 +61,20 @@ export default function Home() {
     const t = setTimeout(() => setShowLoadingScreen(false), 1500);
 
     const storedClient = localStorage.getItem("familiaClient");
+    const token = getStoredAuthToken();
     try {
-      if (storedClient && storedClient !== "undefined") {
+      if (storedClient && storedClient !== "undefined" && token) {
         const parsed = JSON.parse(storedClient);
         if (parsed && typeof parsed === "object") setClient(parsed);
-      }
-      else if (storedClient === "undefined") {
+      } else {
         localStorage.removeItem("familiaClient");
-        }
+        clearStoredAuth();
+        setClient(null);
+      }
     } catch {
-      // ערך לא תקין? מנקים כדי למנוע שגיאות הבאות
       localStorage.removeItem("familiaClient");
+      clearStoredAuth();
+      setClient(null);
     }
 
 
@@ -172,6 +167,7 @@ export default function Home() {
 
   const handleLogout = () => {
     localStorage.removeItem("familiaClient");
+    clearStoredAuth();
     setClient(null);
     window.location.reload();
   };

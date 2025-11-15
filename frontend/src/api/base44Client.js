@@ -1,48 +1,43 @@
 // src/api/base44Client.js
 
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+
 const BASE_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:3001';
 export const API_ROOT =
     (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_ROOT) ||
     (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
     'http://localhost:3001';
 
-// מחלץ את הטלפון של המשתמש מה-LocalStorage לצורך שליחת כותרת ל-Admin-Guard
-function getClientPhoneForHeader() {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem('familiaClient');
-    if (!raw) return null;
-    const c = JSON.parse(raw);
-    return (c && c.phone) ? String(c.phone) : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function shouldAttachAdminHeader(path) {
-  try {
-    // path מגיע אצלך בפורמט '/something'
-    return typeof path === 'string' && path.startsWith('/admin/');
-  } catch {
-    return false;
-  }
-}
-
-
 // האם יש ראוטי אדמין ל־appointments בשרת?
 const HAS_ADMIN_APPOINTMENTS =
     ((typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HAS_ADMIN_APPOINTMENTS) || 'false')
         .toString().toLowerCase() === 'true';
 
+function authHeaders(base = {}) {
+  const headers = { ...(base || {}) };
+  const token = getStoredAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function handleUnauthorized(status) {
+  if (status !== 401) return;
+  clearStoredAuth();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('familiaClient');
+    }
+  } catch {
+    // ignore
+  }
+}
+
 
 /* ---------------- low-level HTTP (GET tolerates 404) ---------------- */
 async function httpGet(path) {
-  const headers = {};
-  if (shouldAttachAdminHeader(path)) {
-    const phone = getClientPhoneForHeader();
-    if (phone) headers['X-Client-Phone'] = phone;
-  }
-
+  const headers = authHeaders();
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'GET',
     headers,
@@ -54,6 +49,7 @@ async function httpGet(path) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('GET', path, res.status, payload);
     console.error('[API GET ' + path + ']', err);
     throw err;
@@ -62,12 +58,7 @@ async function httpGet(path) {
 }
 
 async function httpPost(path, body) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (shouldAttachAdminHeader(path)) {
-    const phone = getClientPhoneForHeader();
-    if (phone) headers['X-Client-Phone'] = phone;
-  }
-
+  const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'POST',
     headers,
@@ -79,6 +70,7 @@ async function httpPost(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('POST', path, res.status, payload);
     console.error('[API POST ' + path + ']', err);
     throw err;
@@ -87,12 +79,7 @@ async function httpPost(path, body) {
 }
 
 async function httpPut(path, body) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (shouldAttachAdminHeader(path)) {
-    const phone = getClientPhoneForHeader();
-    if (phone) headers['X-Client-Phone'] = phone;
-  }
-
+  const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'PUT',
     headers,
@@ -104,6 +91,7 @@ async function httpPut(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('PUT', path, res.status, payload);
     console.error('[API PUT ' + path + ']', err);
     throw err;
@@ -112,12 +100,7 @@ async function httpPut(path, body) {
 }
 
 async function httpDelete(path) {
-  const headers = {};
-  if (shouldAttachAdminHeader(path)) {
-    const phone = getClientPhoneForHeader();
-    if (phone) headers['X-Client-Phone'] = phone;
-  }
-
+  const headers = authHeaders();
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'DELETE',
     headers,
@@ -128,6 +111,7 @@ async function httpDelete(path) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('DELETE', path, res.status, payload);
     console.error('[API DELETE ' + path + ']', err);
     throw err;
@@ -136,12 +120,7 @@ async function httpDelete(path) {
 }
 
 async function httpPatch(path, body) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (shouldAttachAdminHeader(path)) {
-    const phone = getClientPhoneForHeader();
-    if (phone) headers['X-Client-Phone'] = phone;
-  }
-
+  const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'PATCH',
     headers,
@@ -153,6 +132,7 @@ async function httpPatch(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('PATCH', path, res.status, payload);
     console.error('[API PATCH ' + path + ']', err);
     throw err;
@@ -168,9 +148,7 @@ async function httpFormPost(path, data) {
     if (v !== undefined && v !== null) params.append(k, String(v));
   });
 
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
-  const phone = getClientPhoneForHeader();
-  if (phone) headers['X-Client-Phone'] = phone;
+  const headers = authHeaders({ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' });
 
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'POST',
@@ -183,6 +161,7 @@ async function httpFormPost(path, data) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = buildHttpError('POST', path, res.status, payload);
     console.error('[API POST FORM ' + path + ']', err);
     throw err;
@@ -223,6 +202,8 @@ function buildHttpError(method, path, status, payload) {
     err.code = 'NAME_REQUIRED';
   } else if (status === 400 && (codeFromPayload === 'Invalid code' || (payload && payload.message === 'Invalid code'))) {
     err.code = 'INVALID_CODE';
+  } else if (status === 401) {
+    err.code = 'UNAUTHORIZED';
   } else {
     err.code = codeFromPayload || ('HTTP_' + String(status));
   }
@@ -530,8 +511,7 @@ const api = {
       }
     },
 
-    listMine: (phone) =>
-        httpGet('/clients/me/appointments?phone=' + encodeURIComponent(normalizePhone(phone || ''))),
+    listMine: () => httpGet('/clients/me/appointments'),
   },
 
   WaitingList: {

@@ -15,6 +15,7 @@ import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rule
 
 // ✅ API החדש
 import api from "@/api/base44Client";
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
 
@@ -290,16 +291,23 @@ export default function Book() {
   /* -------- init: client + services -------- */
   useEffect(() => {
     const stored = localStorage.getItem("familiaClient");
-    if (stored) {
+    const token = getStoredAuthToken();
+    if (stored && token) {
       try {
         const parsed = normalizeClientObject(JSON.parse(stored));
         setClient(parsed);
         refreshClientFromServer(parsed?.phone);
       } catch {
+        localStorage.removeItem("familiaClient");
+        clearStoredAuth();
+        setClient(null);
         navigate("/");
         return;
       }
     } else {
+      localStorage.removeItem("familiaClient");
+      clearStoredAuth();
+      setClient(null);
       navigate("/");
       return;
     }

@@ -1995,7 +1995,11 @@ async function router(req, res) {
     // POST /waiting-list – לקוח מצטרף לרשימת המתנה
     if (req.method === 'POST' && pathname === '/waiting-list') {
         const b = await readBody(req) || {};
-        const serviceId = Number(b.service_id ?? b.serviceId ?? null);
+        const serviceRaw = b.service_id ?? b.serviceId ?? b.service?.id ?? null;
+        const parsedServiceId = parseId(serviceRaw);
+        const serviceId = parsedServiceId.raw
+            ? (parsedServiceId.isNum ? parsedServiceId.num : parsedServiceId.raw)
+            : null;
         const desired = new Date(b.desired_starts_at ?? b.desiredStartsAt);
         const name = String(b.client_name ?? '').trim();
         const phone = normalizePhone(b.phone);

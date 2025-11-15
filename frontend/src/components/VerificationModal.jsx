@@ -9,6 +9,15 @@ import { setStoredAuthToken } from '@/utils/authStorage';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
+const notifyAuthChange = () => {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new Event("familia-auth-changed"));
+  } catch {
+    // ignore
+  }
+};
+
 /* ---------------- helpers ---------------- */
 const normalizePhone = (phone) => {
   if (!phone) return "";
@@ -203,6 +212,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
 
       localStorage.setItem("familiaClient", JSON.stringify(payload));
       if (res.token) setStoredAuthToken(res.token);
+      notifyAuthChange();
       onVerify(payload);
     }
 
@@ -315,6 +325,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         };
         localStorage.setItem("familiaClient", JSON.stringify(payload));
         if (res.token) setStoredAuthToken(res.token);
+        notifyAuthChange();
         onVerify(payload);
       } else {
         setError("שגיאה ביצירת המשתמש. נסה שוב.");

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, MessageCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -158,8 +157,9 @@ export default function Home() {
       };
       localStorage.setItem("familiaClient", JSON.stringify(payload));
       sessionStorage.setItem("justLoggedIn", "true");
-      window.location.href = createPageUrl("Home");
-
+      setClient(payload);
+      setShowVerification(false);
+      navigate("/");
     } catch (error) {
       console.error("Error handling login success:", error);
     }
@@ -169,6 +169,11 @@ export default function Home() {
     localStorage.removeItem("familiaClient");
     clearStoredAuth();
     setClient(null);
+    try {
+      window.dispatchEvent(new Event('familia-auth-changed'));
+    } catch {
+      // ignore
+    }
     window.location.reload();
   };
 

@@ -657,7 +657,7 @@ const api = {
   /* ---------------- AUTH ---------------- */
   Auth: {
     requestCodeForLogin: async (phone) => {
-      return httpPost('/auth/request-code', { phone: normalizePhone(phone) });
+      return httpPost('/auth/request-code-login', { phone: normalizePhone(phone) });
     },
 
     requestCodeForRegister: async (phone) => {

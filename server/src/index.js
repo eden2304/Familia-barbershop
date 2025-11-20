@@ -14,6 +14,7 @@ const Busboy = require('busboy');
 const UPLOAD_DIR = pathLib.resolve(__dirname, '..', 'uploads');
 
 const ADMIN_PANEL_CODE = process.env.ADMIN_PANEL_CODE || '12345';
+const AUTH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ימים
 
 function normalizePhone(raw = "") {
     const d = String(raw).replace(/\D/g, "");
@@ -26,6 +27,53 @@ const ADMIN_PHONES = ["0537002171", "0523767851"].map(normalizePhone);
 
 function isAdminPhone(phone) {
     return ADMIN_PHONES.includes(normalizePhone(phone));
+}
+
+function encodeBase64Url(value) {
+    return Buffer.from(String(value) || '', 'utf8')
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+}
+
+function issueDevToken(payload) {
+    try {
+        const data = JSON.stringify(payload || {});
+        return `familia-dev.${encodeBase64Url(data)}`;
+    } catch {
+        return 'familia-dev-token';
+    }
+}
+
+function buildClientAuthPayload(row) {
+    const client = {
+        id: row.id,
+        phone: row.phone,
+        firstName: row.first_name || row.firstName || '',
+        lastName: row.last_name || row.lastName || '',
+        first_name: row.first_name || row.firstName || '',
+        last_name: row.last_name || row.lastName || '',
+        isAdmin: isAdminPhone(row.phone),
+    };
+    const roles = client.isAdmin ? ['client', 'admin'] : ['client'];
+    const tokenPayload = {
+        sub: client.id,
+        phone: normalizePhone(client.phone),
+        roles,
+        isAdmin: client.isAdmin,
+        iat: Math.floor(Date.now() / 1000),
+    };
+    const token = issueDevToken(tokenPayload);
+    const expiresAt = new Date(Date.now() + AUTH_TOKEN_TTL_MS).toISOString();
+    return {
+        ok: true,
+        client,
+        user: client,
+        roles,
+        token,
+        expiresAt,
+    };
 }
 
 function getHeaderPhone(req) {
@@ -2436,19 +2484,8 @@ async function router(req, res) {
         if (!q.rows[0]) return json(res, 409, { ok: false, message: 'UNREGISTERED_CLIENT' });
 
         const c = q.rows[0];
-
-        return json(res, 200, {
-            ok: true,
-            client: {
-                id: c.id,
-                phone: c.phone,
-                firstName: c.first_name || '',
-                lastName:  c.last_name  || '',
-                first_name: c.first_name || '',
-                last_name:  c.last_name  || '',
-                isAdmin: isAdminPhone(c.phone)
-            }
-        });
+        const authPayload = buildClientAuthPayload(c);
+        return json(res, 200, authPayload);
 
     }
 // הרשמה: מאמת קוד 1111, בודק שאין לקוח קיים, ויוצר לקוח חדש
@@ -2488,19 +2525,13 @@ async function router(req, res) {
         }
 
         // מחזירים payload עקבי
-        return json(res, 200, {
-            ok: true,
-            client: {
-                id: newId,
-                phone: phone0,
-                firstName,
-                lastName,
-                first_name: firstName,
-                last_name: lastName,
-                isAdmin: isAdminPhone(phone0)
-            },
-            token: 'dev-token'
+        const authPayload = buildClientAuthPayload({
+            id: newId,
+            phone: phone0,
+            first_name: firstName,
+            last_name: lastName,
         });
+        return json(res, 200, authPayload);
 
     }
 

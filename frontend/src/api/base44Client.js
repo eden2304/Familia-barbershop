@@ -13,11 +13,27 @@ const HAS_ADMIN_APPOINTMENTS =
     ((typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_HAS_ADMIN_APPOINTMENTS) || 'false')
         .toString().toLowerCase() === 'true';
 
+function getStoredClientPhone() {
+  try {
+    if (typeof localStorage === 'undefined') return '';
+    const raw = localStorage.getItem('familiaClient');
+    const parsed = raw ? JSON.parse(raw) : null;
+    const phone = parsed?.phone || parsed?.client_phone || '';
+    return normalizePhone(phone);
+  } catch {
+    return '';
+  }
+}
+
 function authHeaders(base = {}) {
   const headers = { ...(base || {}) };
   const token = getStoredAuthToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  const phone = getStoredClientPhone();
+  if (phone) {
+    headers['X-Client-Phone'] = phone;
   }
   return headers;
 }
@@ -511,7 +527,11 @@ const api = {
       }
     },
 
-    listMine: () => httpGet('/clients/me/appointments'),
+    listMine: () => {
+      const phone = getStoredClientPhone();
+      const q = phone ? `?phone=${encodeURIComponent(phone)}` : '';
+      return httpGet('/clients/me/appointments' + q);
+    },
   },
 
   WaitingList: {

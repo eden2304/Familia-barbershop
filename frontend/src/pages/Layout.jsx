@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { User, Home as HomeIcon, History, Navigation, Phone, Menu } from "lucide-react";
@@ -6,18 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence } from "framer-motion";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
-// Admin phone numbers - only these users will see the admin button
-const ADMIN_PHONE_NUMBERS = ['0537002171', '0523767851'];
-
-// Phone normalization function
-const normalizePhone = (phone) => {
-  if (!phone) return "";
-  const cleaned = phone.toString().replace(/\D/g, '');
-  if (cleaned.startsWith('972')) return `0${cleaned.substring(3)}`;
-  if (cleaned.length === 9 && cleaned.startsWith('5')) return `0${cleaned}`;
-  if (cleaned.length === 10 && cleaned.startsWith('0')) return cleaned;
-  return cleaned.startsWith('0') ? cleaned : `0${cleaned}`;
-};
+import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -26,36 +15,46 @@ function MainLayout({ children, currentPageName }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
 
-  useEffect(() => {
-    const checkLoginState = () => {
-      const storedClient = localStorage.getItem('familiaClient');
-      let parsedClient = null;
-      try {
-        if (storedClient && storedClient !== "undefined") {
-          parsedClient = JSON.parse(storedClient);
-        }
-        else if (storedClient === "undefined") {
-          localStorage.removeItem('familiaClient');
-        }
-      } catch {
+  const checkLoginState = useCallback(() => {
+    const storedClient = localStorage.getItem('familiaClient');
+    let parsedClient = null;
+    try {
+      if (storedClient && storedClient !== "undefined") {
+        parsedClient = JSON.parse(storedClient);
+      }
+      else if (storedClient === "undefined") {
         localStorage.removeItem('familiaClient');
+        clearStoredAuth();
       }
-      if (parsedClient) {
-        setClient(parsedClient);
-        const clientPhone = normalizePhone(parsedClient.phone);
-        setIsAdmin(ADMIN_PHONE_NUMBERS.includes(clientPhone));
-        if (sessionStorage.getItem('justLoggedIn') === 'true') {
-          setShowWelcomeBanner(true);
-          sessionStorage.removeItem('justLoggedIn');
-        }
-      } else {
-        setClient(null);
-        setIsAdmin(false);
+    } catch {
+      localStorage.removeItem('familiaClient');
+      clearStoredAuth();
+    }
+    const token = getStoredAuthToken();
+    if (parsedClient && token) {
+      setClient(parsedClient);
+      const adminFlag = Boolean(parsedClient.isAdmin || parsedClient.is_admin || parsedClient.roles?.includes('admin'));
+      setIsAdmin(adminFlag);
+      if (sessionStorage.getItem('justLoggedIn') === 'true') {
+        setShowWelcomeBanner(true);
+        sessionStorage.removeItem('justLoggedIn');
       }
-    };
-
-    checkLoginState();
+    } else {
+      setClient(null);
+      setIsAdmin(false);
+      if (!token) clearStoredAuth();
+    }
   }, []);
+
+  useEffect(() => {
+    checkLoginState();
+    window.addEventListener('storage', checkLoginState);
+    window.addEventListener('familia-auth-changed', checkLoginState);
+    return () => {
+      window.removeEventListener('storage', checkLoginState);
+      window.removeEventListener('familia-auth-changed', checkLoginState);
+    };
+  }, [checkLoginState]);
 
   const handleCallClick = (e) => {
     e.preventDefault();

@@ -1,12 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../../entities/product.entity';
 import { Testimonial } from '../../entities/testimonial.entity';
 import { GalleryVideo } from '../../entities/gallery-video.entity';
 import { BackgroundVideo } from '../../entities/background-video.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard)
+@Roles('admin')
 export class AdminContentController {
     constructor(
         @InjectRepository(Product) private products: Repository<Product>,

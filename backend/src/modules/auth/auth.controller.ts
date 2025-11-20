@@ -39,9 +39,15 @@ export class AuthController {
         const res = await this.svc.verifyCode(this.mapVerifyBody(body));
         const c = res.client;
         return {
-            ok: true, success: true, user: c, client: c,
-            token: 'dev-token',
-            id: c.id, phone: c.phone,
+            ok: true,
+            success: true,
+            user: { ...c, isAdmin: res.roles?.includes('admin') },
+            client: { ...c, isAdmin: res.roles?.includes('admin') },
+            token: res.token,
+            expiresAt: res.expiresAt,
+            roles: res.roles,
+            id: c.id,
+            phone: c.phone,
             firstName: (c as any).firstName,
             lastName:  (c as any).lastName,
         };
@@ -52,9 +58,15 @@ export class AuthController {
         const res = await this.svc.register(this.mapVerifyBody(body));
         const c = res.client;
         return {
-            ok: true, success: true, user: c, client: c,
-            token: 'dev-token',
-            id: c.id, phone: c.phone,
+            ok: true,
+            success: true,
+            user: { ...c, isAdmin: res.roles?.includes('admin') },
+            client: { ...c, isAdmin: res.roles?.includes('admin') },
+            token: res.token,
+            expiresAt: res.expiresAt,
+            roles: res.roles,
+            id: c.id,
+            phone: c.phone,
             firstName: (c as any).firstName,
             lastName:  (c as any).lastName,
         };

@@ -4,9 +4,10 @@ import { Appointment } from '../entities/appointment.entity';
 import {Module} from "@nestjs/common";
 import {ClientsController} from "./clients.controller";
 import {ClientsService} from "./clients.service";
+import { AuthModule } from '../modules/auth/auth.module';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Client, Appointment])],
+    imports: [TypeOrmModule.forFeature([Client, Appointment]), AuthModule],
     controllers: [ClientsController],
     providers: [ClientsService],
     exports: [ClientsService],

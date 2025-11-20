@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from '../../entities/setting.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller()
 export class SettingsController {
@@ -14,6 +16,8 @@ export class SettingsController {
     }
 
     @Post('admin/settings/:key')
+    @UseGuards(JwtAuthGuard)
+    @Roles('admin')
     async setOne(@Param('key') key: string, @Body() body: { value?: string }) {
         const existing = await this.repo.findOne({ where: { key } });
         const value = body?.value ?? null;

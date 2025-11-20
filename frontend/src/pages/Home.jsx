@@ -11,39 +11,6 @@ import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
-const FALLBACK_TESTIMONIALS = [
-  {
-    id: "fallback-ron",
-    author: "רון א.",
-    rating: 5,
-    text: "השירות הכי מקצועי שחוויתי. תמיד יוצא מרוצה והאווירה פשוט מושלמת.",
-  },
-  {
-    id: "fallback-or",
-    author: "אורית ל.",
-    rating: 5,
-    text: "הצוות מעניק יחס אישי וחם, מרגישים שהם באמת אוהבים את מה שהם עושים.",
-  },
-  {
-    id: "fallback-nati",
-    author: "נתי ר.",
-    rating: 5,
-    text: "כל תור הוא חוויה. מספרה נקייה, נעימה ותמיד עומדים בזמנים.",
-  },
-  {
-    id: "fallback-aviv",
-    author: "אביב ש.",
-    rating: 5,
-    text: "ממליץ בחום! מקצועיות ברמה גבוהה ותוצאה מדויקת בכל פעם מחדש.",
-  },
-  {
-    id: "fallback-shir",
-    author: "שיר פ.",
-    rating: 5,
-    text: "כיף להגיע לפמיליה. מרגיש כמו בית עם שירות איכותי וחיוך.",
-  },
-];
-
 export default function Home() {
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
@@ -99,23 +66,7 @@ export default function Home() {
           }))
           : [];
 
-      const fallbackTestimonials = FALLBACK_TESTIMONIALS.map((t, idx) => ({
-        ...t,
-        id: t.id ?? `fallback-${idx}`,
-        content: t.text,
-      }));
-
-      const mergedTestimonials = [...testiFromApi];
-      fallbackTestimonials.forEach((fb) => {
-        const exists = mergedTestimonials.some((row) =>
-            row.author === fb.author && row.text === fb.text
-        );
-        if (!exists) {
-          mergedTestimonials.push(fb);
-        }
-      });
-
-      setTestimonials(mergedTestimonials);
+      setTestimonials(testiFromApi);
 
       // Background videos
       const bg = await fetch(`${API_URL}/background-videos`).then((r) => r.json()).catch(() => []);
@@ -159,7 +110,12 @@ export default function Home() {
       sessionStorage.setItem("justLoggedIn", "true");
       setClient(payload);
       setShowVerification(false);
-      navigate("/");
+      setShowLoadingScreen(true);
+
+      setTimeout(() => {
+        navigate("/");
+        setShowLoadingScreen(false);
+      }, 1200);
     } catch (error) {
       console.error("Error handling login success:", error);
     }

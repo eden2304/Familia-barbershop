@@ -11,6 +11,7 @@ import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import VerificationModal from "../components/VerificationModal.jsx";
 import WaitingListModal from "../components/WaitingListModal.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
@@ -193,6 +194,7 @@ export default function Book() {
   const [success, setSuccess] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [showWaitingList, setShowWaitingList] = useState(false);
+  const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
 
   const getInitialWeekOffset = () => (new Date().getDay() === 6 ? 1 : 0);
   const [selectedWeek, setSelectedWeek] = useState(getInitialWeekOffset());
@@ -461,11 +463,19 @@ export default function Book() {
     window.open(whatsappUrl, "_blank");
   };
 
+  if (showPostLoginLoading) {
+    return <LoadingScreen />;
+  }
+
   const handleLoginSuccess = (loggedInClient) => {
     const norm = normalizeClientObject(loggedInClient);
     setClient(norm);
     setShowVerification(false);
-    setShowWaitingList(true);
+    setShowPostLoginLoading(true);
+    setTimeout(() => {
+      navigate("/");
+      setShowPostLoginLoading(false);
+    }, 1200);
   };
 
   const handleJoinWaitingList = () => {

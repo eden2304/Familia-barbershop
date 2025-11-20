@@ -7,6 +7,7 @@ import { Calendar, Clock, Check, X, PlusCircle, History, User, AlertCircle } fro
 import { format, isAfter, compareAsc } from "date-fns";
 import { he } from "date-fns/locale";
 import VerificationModal from "../components/VerificationModal.jsx";
+import LoadingScreen from "../components/LoadingScreen.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
@@ -94,6 +95,11 @@ export default function MyAppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [showVerification, setShowVerification] = useState(false);
+  const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+
+  if (showPostLoginLoading) {
+    return <LoadingScreen />;
+  }
 
   useEffect(() => {
     const raw = localStorage.getItem("familiaClient");
@@ -150,7 +156,11 @@ export default function MyAppointmentsPage() {
     localStorage.setItem("familiaClient", JSON.stringify(norm));
     setClient(norm);
     setShowVerification(false);
-    fetchMine();
+    setShowPostLoginLoading(true);
+    setTimeout(() => {
+      navigate("/");
+      setShowPostLoginLoading(false);
+    }, 1200);
   };
 
   const handleCancelRequest = (appt) => {

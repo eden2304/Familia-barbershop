@@ -7,6 +7,7 @@ import { AdminPhone } from '../../entities/admin-phone.entity';
 import { ConfigService } from '@nestjs/config';
 import { sign, verify } from 'jsonwebtoken';
 import { AuthRole, AuthTokenPayload } from './auth.types';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 function normalizePhone(phone: string): string {
     if (!phone) return '';
@@ -38,12 +39,14 @@ export class AuthService {
     private readonly jwtSecret: string;
     private readonly jwtExpiresIn: string;
     private readonly jwtExpiresMs: number;
+    private readonly otpTtlMs = 10 * 60 * 1000;
 
     constructor(
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
         @InjectRepository(Setting) private readonly settingRepo: Repository<Setting>,
         @InjectRepository(AdminPhone) private readonly adminRepo: Repository<AdminPhone>,
         private readonly configService: ConfigService,
+        private readonly whatsappService: WhatsappService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'familia-dev-secret';
         const configuredExpires = this.configService.get<string>('JWT_EXPIRES_IN');
@@ -89,22 +92,32 @@ export class AuthService {
 
         // שומרים תמיד את ה־OTP לפי המפתח של ה־05XXX
         const key = `otp:${norm}`;
-        const existing = await this.settingRepo.findOne({ where: { key } });
-        if (existing) {
-            existing.value = this.DEV_CODE;
-            await this.settingRepo.save(existing);
-        } else {
-            const s = this.settingRepo.create({ key, value: this.DEV_CODE });
-            await this.settingRepo.save(s);
+        const config = await this.whatsappService.getConfig();
+        const usingDevCode = !this.whatsappService.isConfigured(config);
+        const code = usingDevCode ? this.DEV_CODE : this.generateOtp();
+        const payload = {
+            code,
+            expiresAt: new Date(Date.now() + this.otpTtlMs).toISOString(),
+            channel: 'whatsapp',
+            usingDevCode,
+        };
+
+        await this.settingRepo.save({ key, value: payload });
+
+        if (!usingDevCode) {
+            await this.whatsappService.sendOtp(norm, code);
         }
-        return { ok: true };
+
+        return { ok: true, devFallback: usingDevCode };
     }
 
     async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; }) {
         const variants = phoneVariants(body.phone);
         if (variants.length === 0) throw new BadRequestException('Phone required');
         if (!body.code) throw new BadRequestException('Code required');
-        if (body.code !== this.DEV_CODE) throw new BadRequestException('Invalid code');
+
+        const norm = normalizePhone(body.phone);
+        await this.ensureValidOtp(norm, body.code);
 
         // מוצאים לפי כל הוריאנטים
         const client = await this.clientRepo.findOne({ where: variants.map(p => ({ phone: p })) });
@@ -117,7 +130,8 @@ export class AuthService {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
         if (!body.code) throw new BadRequestException('Code required');
-        if (body.code !== this.DEV_CODE) throw new BadRequestException('Invalid code');
+
+        await this.ensureValidOtp(norm, body.code);
 
         const firstName = body.firstName?.trim();
         const lastName  = body.lastName?.trim();
@@ -147,6 +161,31 @@ export class AuthService {
         }
 
         return this.buildAuthResult(client);
+    }
+
+    private generateOtp(): string {
+        return String(Math.floor(1000 + Math.random() * 9000));
+    }
+
+    private async ensureValidOtp(normPhone: string, providedCode: string) {
+        const key = `otp:${normPhone}`;
+        const stored = await this.settingRepo.findOne({ where: { key } });
+        const value = stored?.value;
+        const storedCode = typeof value === 'string' ? value : value?.code;
+        const expiresAt = typeof value === 'object' ? value?.expiresAt : null;
+        const expires = expiresAt ? new Date(expiresAt).getTime() : null;
+
+        const config = await this.whatsappService.getConfig();
+        const allowDevFallback = !this.whatsappService.isConfigured(config);
+
+        if (expires && Date.now() > expires) {
+            throw new BadRequestException('EXPIRED_CODE');
+        }
+
+        if (storedCode && providedCode === storedCode) return true;
+        if (allowDevFallback && providedCode === this.DEV_CODE) return true;
+
+        throw new BadRequestException('Invalid code');
     }
 
     private async buildAuthResult(client: Client) {

@@ -4,6 +4,8 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    OnModuleDestroy,
+    OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -20,6 +22,8 @@ import { Client } from '../../clients/client.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { Setting } from '../../entities/setting.entity';
+import { AdminPhone } from '../../entities/admin-phone.entity';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 export interface CreateAppointmentDto {
     clientPhone: string;
@@ -43,7 +47,7 @@ const DEFAULT_BOOKING_RULES: BookingRules = {
 };
 
 @Injectable()
-export class AppointmentsService {
+export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     constructor(
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
         @InjectRepository(ServiceEntity) private readonly svcRepo: Repository<ServiceEntity>,
@@ -51,7 +55,22 @@ export class AppointmentsService {
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
+        @InjectRepository(AdminPhone) private readonly adminRepo: Repository<AdminPhone>,
+        private readonly whatsappService: WhatsappService,
     ) {}
+
+    private reminderTimer: NodeJS.Timeout | null = null;
+
+    onModuleInit() {
+        this.startReminderLoop();
+    }
+
+    onModuleDestroy() {
+        if (this.reminderTimer) {
+            clearInterval(this.reminderTimer);
+            this.reminderTimer = null;
+        }
+    }
 
     private clampAdvanceDays(value: any, fallback: number): number {
         const num = Number(value);
@@ -284,8 +303,10 @@ export class AppointmentsService {
             endsAt: endAt, // יש לך nullable: true בטבלה, אבל אנחנו ממלאים ערך
             // note: dto.note ?? null,
         });
+        const saved = await this.apptRepo.save(appt);
+        await this.notifyOnCreated(saved, client, service);
 
-        return this.apptRepo.save(appt);
+        return saved;
     }
 
     async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
@@ -367,6 +388,89 @@ export class AppointmentsService {
         }
 
         return slots;
+    }
+
+    private async notifyOnCreated(appt: Appointment, client: Client, service: ServiceEntity) {
+        const config = await this.whatsappService.getConfig();
+        if (!this.whatsappService.isConfigured(config)) return;
+
+        const clientPhone = (client as any)?.phone ?? client?.phone;
+        const clientName = this.buildClientName(client);
+        const serviceName = service?.name ?? 'תספורת';
+
+        if (clientPhone) {
+            await this.whatsappService.sendClientConfirmation(clientPhone, {
+                clientName,
+                serviceName,
+                startsAt: appt.startsAt,
+            });
+        }
+
+        const admins = await this.adminRepo.find();
+        await Promise.all(
+            admins.map(admin =>
+                this.whatsappService.sendBarberNotification(admin.phone, {
+                    clientName,
+                    serviceName,
+                    startsAt: appt.startsAt,
+                }),
+            ),
+        );
+    }
+
+    private buildClientName(client: Client) {
+        const first = (client as any).firstName ?? client.first_name ?? '';
+        const last = (client as any).lastName ?? client.last_name ?? '';
+        return `${first} ${last}`.trim() || 'לקוח';
+    }
+
+    private startReminderLoop() {
+        const intervalMs = 15 * 60 * 1000;
+        if (this.reminderTimer) {
+            clearInterval(this.reminderTimer);
+        }
+        this.reminderTimer = setInterval(() => {
+            this.sendDailyReminders().catch(err => console.error('Reminder loop failed', err));
+        }, intervalMs);
+
+        // run once on startup
+        this.sendDailyReminders().catch(err => console.error('Reminder loop bootstrap failed', err));
+    }
+
+    private async sendDailyReminders() {
+        const config = await this.whatsappService.getConfig();
+        if (!this.whatsappService.isConfigured(config)) return;
+
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10);
+        const dayStart = new Date(`${dateStr}T00:00:00+03:00`);
+        const dayEnd = new Date(`${dateStr}T23:59:59+03:00`);
+
+        const todaysAppts = await this.apptRepo.find({
+            where: { startsAt: MoreThanOrEqual(dayStart), endsAt: LessThanOrEqual(dayEnd) },
+            relations: ['client', 'service'],
+            order: { startsAt: 'ASC' },
+        });
+
+        for (const appt of todaysAppts) {
+            const reminderKey = `reminder.sent:${appt.id}`;
+            const alreadySent = await this.settingsRepo.findOne({ where: { key: reminderKey } });
+            if (alreadySent) continue;
+
+            const client = appt.client as Client;
+            const clientPhone = (client as any)?.phone ?? client?.phone;
+            if (!clientPhone) continue;
+
+            const res = await this.whatsappService.sendReminder(clientPhone, {
+                clientName: this.buildClientName(client),
+                serviceName: appt.service?.name ?? 'תספורת',
+                startsAt: appt.startsAt,
+            });
+
+            if (res?.sent) {
+                await this.settingsRepo.save({ key: reminderKey, value: { sentAt: new Date().toISOString() } });
+            }
+        }
     }
 
     async getMyAppointmentsByPhone(phoneRaw: string) {

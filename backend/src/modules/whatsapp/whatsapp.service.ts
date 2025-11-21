@@ -154,10 +154,15 @@ export class WhatsappService {
     }
 
     private formatLocal(date: Date) {
-        const iso = date.toISOString();
-        const [day, time] = iso.split('T');
-        const hhmm = time.slice(0, 5);
-        return `${day} ${hhmm}`;
+        return date
+            .toLocaleString('he-IL', {
+                timeZone: 'Asia/Jerusalem',
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            })
+            .replace(',', '');
     }
 
     private async sendTemplate(config: WhatsappConfig, toPhone: string, template: string, bodyParams: string[]) {
@@ -198,7 +203,7 @@ export class WhatsappService {
 
     private async dispatch(config: WhatsappConfig, payload: Record<string, any>) {
         try {
-            const res = await this.fetchFn(`https://graph.facebook.com/v17.0/${config.phoneNumberId}/messages`, {
+            const res = await this.fetchFn(`https://graph.facebook.com/v20.0/${config.phoneNumberId}/messages`, {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${config.accessToken}`,

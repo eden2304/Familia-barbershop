@@ -60,6 +60,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     ) {}
 
     private reminderTimer: NodeJS.Timeout | null = null;
+    private sentReminders = new Set<number>();
 
     onModuleInit() {
         this.startReminderLoop();
@@ -453,9 +454,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         });
 
         for (const appt of todaysAppts) {
+            if (this.sentReminders.has(appt.id)) continue;
+
             const reminderKey = `reminder.sent:${appt.id}`;
             const alreadySent = await this.settingsRepo.findOne({ where: { key: reminderKey } });
-            if (alreadySent) continue;
+            if (alreadySent) {
+                this.sentReminders.add(appt.id);
+                continue;
+            }
 
             const client = appt.client as Client;
             const clientPhone = (client as any)?.phone ?? client?.phone;
@@ -468,6 +474,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
             });
 
             if (res?.sent) {
+                this.sentReminders.add(appt.id);
                 await this.settingsRepo.save({ key: reminderKey, value: { sentAt: new Date().toISOString() } });
             }
         }

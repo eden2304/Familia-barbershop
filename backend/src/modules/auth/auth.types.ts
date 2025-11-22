@@ -10,3 +10,13 @@ export interface AuthTokenPayload {
     iat?: number;
     exp?: number;
 }
+
+export interface AuthTokens {
+    ok: boolean;
+    client: any;
+    roles: AuthRole[];
+    token: string;
+    expiresAt: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
+}

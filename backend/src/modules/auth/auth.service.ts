@@ -1,54 +1,59 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DeepPartial } from 'typeorm';
+import { sign, verify } from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
+
 import { Client } from '../../clients/client.entity';
 import { Setting } from '../../entities/setting.entity';
 import { AdminPhone } from '../../entities/admin-phone.entity';
 import { ConfigService } from '@nestjs/config';
-import { sign, verify } from 'jsonwebtoken';
-import { AuthRole, AuthTokenPayload } from './auth.types';
+import { AuthRole, AuthTokenPayload, AuthTokens } from './auth.types';
+import { RefreshToken } from '../../entities/refresh-token.entity';
+import { hashSecret, maskPhone, normalizePhone, phoneVariants, sanitizeString, verifySecret } from '../../common/security.utils';
 
-function normalizePhone(phone: string): string {
-    if (!phone) return '';
-    const digits = phone.replace(/\D/g, '');
-    if (digits.startsWith('0')) return digits; // 05XXXXXXXX
-    if (digits.startsWith('972')) return '0' + digits.slice(3); // 9725XXXX → 05XXXX
-    return digits;
+interface OtpRecord {
+    hashed: string;
+    expiresAt: string;
+    attempts: number;
 }
 
-// מחזיר את כל הוריאנטים הסבירים לשאילתה (כולל ייצוג עם +972 למספרים ישנים במסד)
-function phoneVariants(phone: string): string[] {
-    if (!phone) return [];
-    const raw = phone.toString().trim();
-    const norm = normalizePhone(raw); // 05XXXXXXXX
-    const e164 = norm && norm.startsWith('0') ? `972${norm.slice(1)}` : norm; // 9725XXXXXXXX
-    const plusE164 = e164 ? `+${e164}` : '';
-    const plusNorm = norm ? `+${norm}` : '';
-    const digitsOnly = raw.replace(/\D/g, '');
-    const plusDigits = digitsOnly ? `+${digitsOnly}` : '';
-
-    return Array.from(
-        new Set([norm, e164, plusE164, plusNorm, plusDigits, raw].filter(Boolean)),
-    );
+interface OtpMeta {
+    requests: number[];
+    failedAttempts: number;
+    lockedUntil?: number;
 }
 
 @Injectable()
 export class AuthService {
-    private DEV_CODE = '1111';
+    private readonly logger = new Logger(AuthService.name);
     private readonly jwtSecret: string;
-    private readonly jwtExpiresIn: string;
-    private readonly jwtExpiresMs: number;
+    private readonly accessTokenTtl: string;
+    private readonly accessTokenMs: number;
+    private readonly refreshTokenMs: number;
+    private readonly otpTtlMs = 3 * 60 * 1000;
+    private readonly otpRequestLimit = 3;
+    private readonly otpRequestWindowMs = 10 * 60 * 1000;
+    private readonly otpMaxAttempts = 5;
+    private readonly otpLockMs = 10 * 60 * 1000;
+    private readonly defaultRemember = false;
 
     constructor(
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
         @InjectRepository(Setting) private readonly settingRepo: Repository<Setting>,
         @InjectRepository(AdminPhone) private readonly adminRepo: Repository<AdminPhone>,
+        @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
         private readonly configService: ConfigService,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'familia-dev-secret';
-        const configuredExpires = this.configService.get<string>('JWT_EXPIRES_IN');
-        this.jwtExpiresIn = configuredExpires || '30d';
-        this.jwtExpiresMs = this.parseDurationToMs(this.jwtExpiresIn, 30 * 24 * 60 * 60 * 1000);
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
+        if (!this.jwtSecret || this.jwtSecret.length < 64) {
+            throw new Error('JWT_SECRET must be at least 64 characters long');
+        }
+        const configuredAccess = this.configService.get<string>('ACCESS_TOKEN_TTL') || '15m';
+        this.accessTokenTtl = configuredAccess;
+        this.accessTokenMs = this.parseDurationToMs(configuredAccess, 15 * 60 * 1000);
+        const configuredRefresh = this.configService.get<string>('REFRESH_TOKEN_TTL') || '30d';
+        this.refreshTokenMs = this.parseDurationToMs(configuredRefresh, 30 * 24 * 60 * 60 * 1000);
     }
 
     private parseDurationToMs(input: string | undefined, fallback: number): number {
@@ -58,17 +63,11 @@ export class AuthService {
         if (match) {
             const value = Number(match[1]);
             const unit = match[2].toLowerCase();
-            const multipliers: Record<string, number> = {
-                s: 1000,
-                m: 60 * 1000,
-                h: 60 * 60 * 1000,
-                d: 24 * 60 * 60 * 1000,
-            };
+            const multipliers: Record<string, number> = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
             return value * (multipliers[unit] ?? 1000);
         }
         const asNumber = Number(trimmed);
         if (!Number.isNaN(asNumber) && asNumber > 0) {
-            // treat as seconds
             return asNumber * 1000;
         }
         return fallback;
@@ -77,58 +76,162 @@ export class AuthService {
     async isRegistered(phone: string): Promise<boolean> {
         const variants = phoneVariants(phone);
         if (variants.length === 0) return false;
-
-        // יש התאמה אם קיים לקוח עם אחד הווריאנטים
-        const c = await this.clientRepo.findOne({ where: variants.map(p => ({ phone: p })) });
+        const c = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
         return !!c;
     }
 
-    async requestCode(phone: string) {
-        const norm = normalizePhone(phone);
-        if (!norm) throw new BadRequestException('Phone required');
+    private async getOtpMeta(phone: string): Promise<OtpMeta> {
+        const key = `otp:meta:${phone}`;
+        const meta = await this.settingRepo.findOne({ where: { key } });
+        if (!meta) return { requests: [], failedAttempts: 0 };
+        const value = meta.value as OtpMeta;
+        return {
+            requests: (value.requests || []).map((n) => Number(n)).filter((n) => Number.isFinite(n)),
+            failedAttempts: Number(value.failedAttempts) || 0,
+            lockedUntil: value.lockedUntil ? Number(value.lockedUntil) : undefined,
+        };
+    }
 
-        // שומרים תמיד את ה־OTP לפי המפתח של ה־05XXX
-        const key = `otp:${norm}`;
+    private async saveOtpMeta(phone: string, meta: OtpMeta) {
+        const key = `otp:meta:${phone}`;
         const existing = await this.settingRepo.findOne({ where: { key } });
+        const value = { ...meta, requests: meta.requests, failedAttempts: meta.failedAttempts, lockedUntil: meta.lockedUntil };
         if (existing) {
-            existing.value = this.DEV_CODE;
+            existing.value = value;
             await this.settingRepo.save(existing);
         } else {
-            const s = this.settingRepo.create({ key, value: this.DEV_CODE });
+            const s = this.settingRepo.create({ key, value });
             await this.settingRepo.save(s);
         }
+    }
+
+    private async clearOtpMeta(phone: string) {
+        const key = `otp:meta:${phone}`;
+        await this.settingRepo.delete({ key });
+    }
+
+    private async assertOtpRequestAllowance(phone: string) {
+        const meta = await this.getOtpMeta(phone);
+        const now = Date.now();
+        if (meta.lockedUntil && meta.lockedUntil > now) {
+            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        const recent = meta.requests.filter((ts) => now - ts < this.otpRequestWindowMs);
+        if (recent.length >= this.otpRequestLimit) {
+            await this.saveOtpMeta(phone, { ...meta, requests: recent, lockedUntil: meta.lockedUntil, failedAttempts: meta.failedAttempts });
+            throw new HttpException("OTP_RATE_LIMIT", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        recent.push(now);
+        await this.saveOtpMeta(phone, { ...meta, requests: recent });
+    }
+
+    private async recordFailedOtpAttempt(phone: string) {
+        const meta = await this.getOtpMeta(phone);
+        const failedAttempts = (meta.failedAttempts || 0) + 1;
+        const lockedUntil = failedAttempts >= this.otpMaxAttempts ? Date.now() + this.otpLockMs : meta.lockedUntil;
+        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil });
+        if (lockedUntil && failedAttempts >= this.otpMaxAttempts) {
+            this.logger.warn(`OTP locked for ${maskPhone(phone)} until ${new Date(lockedUntil).toISOString()}`);
+        }
+    }
+
+    private async storeOtp(phone: string, code: string) {
+        const key = `otp:${phone}`;
+        const hashed = hashSecret(code);
+        const expiresAt = new Date(Date.now() + this.otpTtlMs).toISOString();
+        const value: OtpRecord = { hashed: JSON.stringify(hashed), expiresAt, attempts: 0 };
+        const existing = await this.settingRepo.findOne({ where: { key } });
+        if (existing) {
+            existing.value = value;
+            await this.settingRepo.save(existing);
+        } else {
+            const s = this.settingRepo.create({ key, value });
+            await this.settingRepo.save(s);
+        }
+    }
+
+    private async loadOtp(phone: string): Promise<OtpRecord | null> {
+        const key = `otp:${phone}`;
+        const existing = await this.settingRepo.findOne({ where: { key } });
+        if (!existing) return null;
+        return existing.value as OtpRecord;
+    }
+
+    private async deleteOtp(phone: string) {
+        const key = `otp:${phone}`;
+        await this.settingRepo.delete({ key });
+    }
+
+    async requestCode(rawPhone: string) {
+        const norm = normalizePhone(rawPhone);
+        if (!norm) throw new BadRequestException('Phone required');
+        await this.assertOtpRequestAllowance(norm);
+        const code = this.generateOtpCode();
+        await this.storeOtp(norm, code);
+        this.logger.log(`OTP issued for ${maskPhone(norm)}`);
         return { ok: true };
     }
 
-    async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; }) {
-        const variants = phoneVariants(body.phone);
-        if (variants.length === 0) throw new BadRequestException('Phone required');
-        if (!body.code) throw new BadRequestException('Code required');
-        if (body.code !== this.DEV_CODE) throw new BadRequestException('Invalid code');
-
-        // מוצאים לפי כל הוריאנטים
-        const client = await this.clientRepo.findOne({ where: variants.map(p => ({ phone: p })) });
-        if (!client) throw new ConflictException('UNREGISTERED_CLIENT');
-
-        return this.buildAuthResult(client);
-    }
-
-    async register(body: { phone: string; code: string; firstName?: string; lastName?: string; }) {
+    async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
-        if (!body.code) throw new BadRequestException('Code required');
-        if (body.code !== this.DEV_CODE) throw new BadRequestException('Invalid code');
+        const meta = await this.getOtpMeta(norm);
+        const now = Date.now();
+        if (meta.lockedUntil && meta.lockedUntil > now) {
+            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        const record = await this.loadOtp(norm);
+        if (!record) {
+            throw new BadRequestException('Invalid code');
+        }
+        if (new Date(record.expiresAt).getTime() < now) {
+            await this.deleteOtp(norm);
+            throw new BadRequestException('Code expired');
+        }
+        const stored = record.hashed ? JSON.parse(record.hashed) : undefined;
+        const valid = verifySecret(body.code, stored);
+        if (!valid) {
+            await this.recordFailedOtpAttempt(norm);
+            throw new BadRequestException('Invalid code');
+        }
 
-        const firstName = body.firstName?.trim();
-        const lastName  = body.lastName?.trim();
+        await this.deleteOtp(norm);
+        await this.clearOtpMeta(norm);
+
+        const variants = phoneVariants(norm);
+        const client = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
+        if (!client) throw new ConflictException('UNREGISTERED_CLIENT');
+        return this.buildAuthResult(client, body.rememberMe, body.userAgent);
+    }
+
+    async register(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
+        const norm = normalizePhone(body.phone);
+        if (!norm) throw new BadRequestException('Phone required');
+        const meta = await this.getOtpMeta(norm);
+        if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
+            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        const record = await this.loadOtp(norm);
+        if (!record) throw new BadRequestException('Invalid code');
+        if (new Date(record.expiresAt).getTime() < Date.now()) {
+            await this.deleteOtp(norm);
+            throw new BadRequestException('Code expired');
+        }
+        const stored = record.hashed ? JSON.parse(record.hashed) : undefined;
+        const valid = verifySecret(body.code, stored);
+        if (!valid) {
+            await this.recordFailedOtpAttempt(norm);
+            throw new BadRequestException('Invalid code');
+        }
+
+        const firstName = sanitizeString(body.firstName || '');
+        const lastName = sanitizeString(body.lastName || '');
         if (!firstName || !lastName) throw new BadRequestException('NAME_REQUIRED');
 
-        // בדיקה חזקה: אם קיים לקוח עם 05… או 972… → כבר רשום
         if (await this.isRegistered(norm)) {
             throw new ConflictException('ALREADY_REGISTERED');
         }
 
-        // מכאן ואילך – שומרים תמיד בפורמט 05… כדי לאחד את הנתונים
         const partial: DeepPartial<Client> = {
             phone: norm,
             first_name: firstName,
@@ -138,7 +241,6 @@ export class AuthService {
         (partial as any).firstName = firstName;
         (partial as any).lastName = lastName;
         const client = this.clientRepo.create(partial);
-
         try {
             await this.clientRepo.save(client);
         } catch (e: any) {
@@ -146,21 +248,33 @@ export class AuthService {
             throw e;
         }
 
-        return this.buildAuthResult(client);
+        await this.deleteOtp(norm);
+        await this.clearOtpMeta(norm);
+        return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
-    private async buildAuthResult(client: Client) {
+    private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string): Promise<AuthTokens> {
         const payload = this.buildClientPayload(client);
         const roles = await this.resolveRolesForPhone(payload.phone);
         const isAdmin = roles.includes('admin');
         const payloadWithRole = { ...payload, isAdmin, is_admin: isAdmin } as any;
-        const { token, expiresAt } = this.issueToken(payloadWithRole, roles);
+        const access = this.issueAccessToken(payloadWithRole, roles);
+        const remember = rememberMe ?? this.defaultRemember;
+        let refreshToken: string | undefined;
+        let refreshExpiresAt: Date | undefined;
+        if (remember) {
+            const refresh = await this.issueRefreshToken(client, userAgent);
+            refreshToken = refresh.token;
+            refreshExpiresAt = refresh.expiresAt;
+        }
         return {
             ok: true,
             client: payloadWithRole,
             roles,
-            token,
-            expiresAt: expiresAt.toISOString(),
+            token: access.token,
+            expiresAt: access.expiresAt.toISOString(),
+            refreshToken,
+            refreshExpiresAt: refreshExpiresAt?.toISOString(),
         };
     }
 
@@ -169,33 +283,24 @@ export class AuthService {
         const lastName = (client as any).lastName ?? client.last_name ?? '';
         const isMember = Boolean((client as any).isMember ?? client.is_member ?? false);
         const phone = client.phone;
-        return {
-            id: client.id,
-            phone,
-            firstName,
-            lastName,
-            isMember,
-            is_member: isMember,
-        } as any;
+        return { id: client.id, phone, firstName, lastName, isMember, is_member: isMember } as any;
     }
 
     private async resolveRolesForPhone(phone: string): Promise<AuthRole[]> {
         const roles: AuthRole[] = ['client'];
         const isAdmin = await this.isAdminPhone(phone);
-        if (isAdmin) {
-            roles.push('admin');
-        }
+        if (isAdmin) roles.push('admin');
         return roles;
     }
 
     private async isAdminPhone(phone: string): Promise<boolean> {
         const variants = phoneVariants(phone);
         if (variants.length === 0) return false;
-        const admin = await this.adminRepo.findOne({ where: variants.map(p => ({ phone: p })) });
+        const admin = await this.adminRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
         return !!admin;
     }
 
-    private issueToken(client: any, roles: AuthRole[]) {
+    private issueAccessToken(client: any, roles: AuthRole[]) {
         const payload: AuthTokenPayload = {
             sub: client.id,
             phone: client.phone,
@@ -204,14 +309,61 @@ export class AuthService {
             roles,
             isAdmin: roles.includes('admin'),
         };
-        const token = sign(payload, this.jwtSecret, { expiresIn: this.jwtExpiresIn });
-        const expiresAt = new Date(Date.now() + this.jwtExpiresMs);
+        const token = sign(payload, this.jwtSecret, { expiresIn: this.accessTokenTtl });
+        const expiresAt = new Date(Date.now() + this.accessTokenMs);
         return { token, expiresAt };
+    }
+
+    private async issueRefreshToken(client: Client, userAgent?: string) {
+        const raw = this.generateTokenValue();
+        const hashed = hashSecret(raw, 15);
+        const entity = this.refreshRepo.create({
+            client,
+            tokenHash: JSON.stringify(hashed),
+            expiresAt: new Date(Date.now() + this.refreshTokenMs),
+            userAgent,
+        });
+        const saved = await this.refreshRepo.save(entity);
+        const compound = `${saved.id}.${raw}`;
+        return { token: compound, expiresAt: entity.expiresAt };
+    }
+
+    async refreshAccessToken(rawToken: string) {
+        const { id, token } = this.splitRefreshToken(rawToken);
+        const record = await this.refreshRepo.findOne({ where: { id }, relations: ['client'] });
+        if (!record || record.revokedAt) throw new UnauthorizedException('INVALID_REFRESH');
+        if (record.expiresAt.getTime() < Date.now()) {
+            await this.refreshRepo.update({ id: record.id }, { revokedAt: new Date() });
+            throw new UnauthorizedException('REFRESH_EXPIRED');
+        }
+        const stored = record.tokenHash ? JSON.parse(record.tokenHash) : undefined;
+        if (!verifySecret(token, stored)) {
+            await this.refreshRepo.update({ id: record.id }, { revokedAt: new Date() });
+            throw new UnauthorizedException('INVALID_REFRESH');
+        }
+        await this.refreshRepo.update({ id: record.id }, { revokedAt: new Date() });
+        const auth = await this.buildAuthResult(record.client, true, record.userAgent);
+        return auth;
+    }
+
+    async revokeRefreshToken(rawToken: string) {
+        const { id } = this.splitRefreshToken(rawToken);
+        await this.refreshRepo.update({ id }, { revokedAt: new Date() });
+    }
+
+    private splitRefreshToken(input: string): { id: string; token: string } {
+        if (!input || !input.includes('.')) throw new UnauthorizedException('INVALID_REFRESH');
+        const [id, token] = input.split('.');
+        if (!id || !token) throw new UnauthorizedException('INVALID_REFRESH');
+        return { id, token };
     }
 
     async verifyToken(token: string): Promise<AuthTokenPayload> {
         try {
             const payload = verify(token, this.jwtSecret) as AuthTokenPayload;
+            if (!payload.sub || !payload.phone || !payload.exp || !payload.iat) {
+                throw new UnauthorizedException('INVALID_TOKEN');
+            }
             if (!payload.roles || payload.roles.length === 0) {
                 payload.roles = ['client'];
             }
@@ -220,5 +372,13 @@ export class AuthService {
         } catch (e) {
             throw new UnauthorizedException('INVALID_TOKEN');
         }
+    }
+
+    private generateOtpCode(): string {
+        return ('' + Math.floor(100000 + Math.random() * 900000)).substring(0, 6);
+    }
+
+    private generateTokenValue(): string {
+        return randomBytes(48).toString('base64url');
     }
 }

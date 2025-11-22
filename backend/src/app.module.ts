@@ -2,9 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 
-import { DataSourceOptions } from 'typeorm';
-
-
 import { Client } from './clients/client.entity';
 import { ServiceEntity } from './entities/service.entity';
 import { BusinessHour } from './entities/business-hour.entity';
@@ -23,7 +20,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ContentModule } from './modules/content/content.module';
 import { SeedModule } from './seeds/seed.module';
-import {SnakeNamingStrategy} from "typeorm-naming-strategies";
+import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 
@@ -33,26 +30,23 @@ import { ClientsModule } from './clients/clients.module';
         TypeOrmModule.forRootAsync({
             useFactory: (): TypeOrmModuleOptions => {
                 const hasUrl = !!process.env.DATABASE_URL;
+                const username = process.env.DB_USERNAME || 'familia_app';
+                const password = process.env.DB_PASSWORD || 'change_me_strong';
+                const database = process.env.DB_NAME || 'familia';
+                const host = process.env.DB_HOST || 'localhost';
+                const port = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
                 return {
-                    type: 'postgres', // ליטרל תקין
+                    type: 'postgres',
                     ...(hasUrl
                         ? { url: process.env.DATABASE_URL }
-                        : {
-                            host: 'localhost',
-                            port: 5432,
-                            username: 'familia',
-                            password: 'familia',
-                            database: 'familia',
-                        }),
+                        : { host, port, username, password, database }),
                     autoLoadEntities: true,
-                    synchronize: false, // DEV בלבד
-                    logging: true, // <<< להדליק לוגים כדי לראות את ה-SQL והטעויות
-                    namingStrategy: new SnakeNamingStrategy(), // <<< מיפוי camelCase <-> snake_case
+                    synchronize: false,
+                    logging: ['error', 'warn'],
+                    namingStrategy: new SnakeNamingStrategy(),
                 };
             },
         }),
-        // אין צורך ב-TypeOrmModule.forFeature(...) ברמת AppModule
-        // תשאיר את ה-forFeature רק בתוך המודולים (Services/Appointments/Admin/Content/Seed)
         ServicesModule,
         AppointmentsModule,
         AdminModule,

@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Request, Response, NextFunction } from 'express';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 const logger = new Logger('Bootstrap');
 
@@ -44,7 +45,7 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
 }
 
 async function bootstrap() {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
     app.set('trust proxy', 1);
 
     const isProd = process.env.NODE_ENV === 'production';

@@ -22,6 +22,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.prod
 
 # אם יש תתי-פרויקטים
 frontend/node_modules/

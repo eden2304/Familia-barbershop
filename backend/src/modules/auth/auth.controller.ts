@@ -146,17 +146,18 @@ export class AuthController {
     uReqLogin(@Body() b: RequestCodeDto) { return this.requestCodeLogin(b); }
 
     private setRefreshCookie(res: Response, token?: string, expiresAt?: string) {
+        const isProd = process.env.NODE_ENV === 'production';
         if (token && expiresAt) {
             const maxAge = Math.max(new Date(expiresAt).getTime() - Date.now(), 0);
             res.cookie('refreshToken', token, {
                 httpOnly: true,
-                secure: true,
+                secure: isProd,
                 sameSite: 'lax',
                 maxAge,
                 path: '/',
             });
         } else {
-            res.cookie('refreshToken', '', { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 0, path: '/' });
+            res.cookie('refreshToken', '', { httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: 0, path: '/' });
         }
     }
 }

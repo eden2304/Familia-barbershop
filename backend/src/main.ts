@@ -35,21 +35,27 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd) {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+    }
     res.removeHeader('X-Powered-By');
     next();
 }
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
+    app.set('trust proxy', 1);
 
-    const allowedOrigin = 'https://familia.barber.com';
+    const isProd = process.env.NODE_ENV === 'production';
+    const allowedOrigins = isProd
+        ? ['https://familia-barbershop.com']
+        : ['http://localhost:5173', 'http://localhost:3000', 'https://familia-barbershop.com'];
+
     app.enableCors({
-        origin: (origin, callback) => {
-            if (!origin || origin === allowedOrigin) {
-                return callback(null, allowedOrigin);
-            }
-            return callback(new Error('CORS_DENIED'));
+        origin(origin, callback) {
+            if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+            else callback(new Error('CORS_DENIED'));
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -79,6 +85,12 @@ async function bootstrap() {
         transform: true,
         forbidUnknownValues: true,
     }));
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) {
+        logger.error('FATAL: JWT_SECRET missing or too short');
+        process.exit(1);
+    }
 
     const port = process.env.PORT || 3001;
     await app.listen(port);

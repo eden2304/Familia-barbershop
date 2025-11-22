@@ -23,14 +23,8 @@ services:
       context: ../
       dockerfile: Dockerfile
     container_name: familia_backend
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      DATABASE_URL: postgres://familia_app:change_me_strong@db:5432/familia
-      ADMIN_PHONES: "0537002171,0523767851"
-      SEED: "false"
-      ACCESS_TOKEN_TTL: 15m
-      REFRESH_TOKEN_TTL: 30d
+    env_file:
+      - .env.prod
     depends_on:
       db:
         condition: service_healthy

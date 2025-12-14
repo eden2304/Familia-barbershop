@@ -320,9 +320,20 @@ export class AuthService {
     private async isAdminPhone(phone: string): Promise<boolean> {
         const variants = phoneVariants(phone);
         if (variants.length === 0) return false;
+
+        const envPhones = (this.configService.get<string>('ADMIN_PHONES') || '')
+            .split(',')
+            .map(p => normalizePhone(p) || p.trim())
+            .filter(Boolean);
+
+        const digitsOnly = (s: string) => String(s).replace(/\D/g, '');
+        const isInEnv = variants.some(v => envPhones.some(e => digitsOnly(e) === digitsOnly(v)));
+        if (isInEnv) return true;
+
         const admin = await this.adminRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
         return !!admin;
     }
+
 
     private issueAccessToken(client: any, roles: AuthRole[]) {
         const payload: AuthTokenPayload = {

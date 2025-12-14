@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
 
 export function sanitizeString(input: any): string {
     if (typeof input !== 'string') return '';
@@ -59,3 +59,16 @@ export function verifySecret(value: string, stored?: HashedSecret): boolean {
 export function stableHash(value: string): string {
     return createHash('sha256').update(value || '').digest('hex');
 }
+
+export function hashOtp(code: string, secret: string): string {
+    return createHmac('sha256', secret).update(code).digest('hex');
+}
+
+export function verifyOtp(code: string, storedHex: string, secret: string): boolean {
+    const calc = hashOtp(code, secret);
+    const a = Buffer.from(calc, 'hex');
+    const b = Buffer.from(storedHex, 'hex');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+}
+

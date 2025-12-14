@@ -10,7 +10,17 @@ import { AdminPhone } from '../../entities/admin-phone.entity';
 import { ConfigService } from '@nestjs/config';
 import { AuthRole, AuthTokenPayload, AuthTokens } from './auth.types';
 import { RefreshToken } from '../../entities/refresh-token.entity';
-import { hashSecret, maskPhone, normalizePhone, phoneVariants, sanitizeString, verifySecret } from '../../common/security.utils';
+import {
+    hashSecret,
+    maskPhone,
+    normalizePhone,
+    phoneVariants,
+    sanitizeString,
+    verifySecret,
+    hashOtp,
+    verifyOtp
+} from '../../common/security.utils';
+
 
 interface OtpRecord {
     hashed: string;
@@ -37,6 +47,7 @@ export class AuthService {
     private readonly otpMaxAttempts = 5;
     private readonly otpLockMs = 10 * 60 * 1000;
     private readonly defaultRemember = false;
+    private readonly otpSecret: string;
 
     constructor(
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
@@ -54,6 +65,8 @@ export class AuthService {
         this.accessTokenMs = this.parseDurationToMs(configuredAccess, 15 * 60 * 1000);
         const configuredRefresh = this.configService.get<string>('REFRESH_TOKEN_TTL') || '30d';
         this.refreshTokenMs = this.parseDurationToMs(configuredRefresh, 30 * 24 * 60 * 60 * 1000);
+        this.otpSecret =
+            this.configService.get<string>('OTP_SECRET') || this.jwtSecret;
     }
 
     private parseDurationToMs(input: string | undefined, fallback: number): number {
@@ -137,9 +150,9 @@ export class AuthService {
 
     private async storeOtp(phone: string, code: string) {
         const key = `otp:${phone}`;
-        const hashed = hashSecret(code);
+        const hashed = hashOtp(code, this.otpSecret);
         const expiresAt = new Date(Date.now() + this.otpTtlMs).toISOString();
-        const value: OtpRecord = { hashed: JSON.stringify(hashed), expiresAt, attempts: 0 };
+        const value: OtpRecord = { hashed, expiresAt, attempts: 0 };
         const existing = await this.settingRepo.findOne({ where: { key } });
         if (existing) {
             existing.value = value;
@@ -197,8 +210,9 @@ export class AuthService {
             await this.deleteOtp(norm);
             throw new BadRequestException('Code expired');
         }
-        const stored = record.hashed ? JSON.parse(record.hashed) : undefined;
-        const valid = verifySecret(body.code, stored);
+        const valid = record.hashed
+            ? verifyOtp(body.code, record.hashed, this.otpSecret)
+            : false;
         if (!valid) {
             await this.recordFailedOtpAttempt(norm);
             throw new BadRequestException('Invalid code');
@@ -226,8 +240,9 @@ export class AuthService {
             await this.deleteOtp(norm);
             throw new BadRequestException('Code expired');
         }
-        const stored = record.hashed ? JSON.parse(record.hashed) : undefined;
-        const valid = verifySecret(body.code, stored);
+        const valid = record.hashed
+            ? verifyOtp(body.code, record.hashed, this.otpSecret)
+            : false;
         if (!valid) {
             await this.recordFailedOtpAttempt(norm);
             throw new BadRequestException('Invalid code');

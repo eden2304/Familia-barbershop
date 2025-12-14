@@ -5,6 +5,7 @@ import { Product } from '../../entities/product.entity';
 import { Testimonial } from '../../entities/testimonial.entity';
 import { GalleryVideo } from '../../entities/gallery-video.entity';
 import { BackgroundVideo } from '../../entities/background-video.entity';
+import {Public} from "../auth/public.decorator";
 
 @Controller()
 export class PublicContentController {
@@ -15,6 +16,7 @@ export class PublicContentController {
         @InjectRepository(BackgroundVideo) private backgrounds: Repository<BackgroundVideo>,
     ) {}
 
+    @Public()
     @Get('products')
     listProducts() {
         // ✔ camelCase
@@ -24,6 +26,7 @@ export class PublicContentController {
         });
     }
 
+    @Public()
     @Get('testimonials')
     listTestimonials() {
         return this.testimonials.find({
@@ -32,6 +35,7 @@ export class PublicContentController {
         });
     }
 
+    @Public()
     @Get('gallery-videos')
     listGallery() {
         return this.gallery.find({
@@ -40,6 +44,7 @@ export class PublicContentController {
         });
     }
 
+    @Public()
     @Get('background-videos')
     listBackgrounds() {
         return this.backgrounds.find({

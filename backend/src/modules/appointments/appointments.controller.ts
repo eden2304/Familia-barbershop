@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
+import {Public} from "../auth/public.decorator";
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -25,6 +26,7 @@ export class AppointmentsController {
         return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
     }
 
+    @Public()
     @Get('available')
     async getAvailable(
         @Query('serviceId') serviceId: string,

@@ -7,11 +7,17 @@ import { Setting } from '../../entities/setting.entity';
 import { AdminPhone } from '../../entities/admin-phone.entity';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RefreshToken } from '../../entities/refresh-token.entity';
+import {APP_GUARD} from "@nestjs/core";
+import {RolesGuard} from "./roles.guard";
 
 @Module({
     imports: [TypeOrmModule.forFeature([Client, Setting, AdminPhone, RefreshToken])],
     controllers: [AuthController],
-    providers: [AuthService, JwtAuthGuard],
+    providers: [
+        AuthService,
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+    ],
     exports: [AuthService, JwtAuthGuard],
 })
 export class AuthModule {}

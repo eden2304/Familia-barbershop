@@ -3,6 +3,7 @@ import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
+import {Public} from "./public.decorator";
 
 function parseCookies(req: Request): Record<string, string> {
     const header = req.headers['cookie'] || '';
@@ -17,6 +18,7 @@ function parseCookies(req: Request): Record<string, string> {
 export class AuthController {
     constructor(private readonly svc: AuthService) {}
 
+    @Public()
     @Post('auth/request-code')
     @HttpCode(200)
     async requestCode(@Body() body: RequestCodeDto) {
@@ -28,6 +30,7 @@ export class AuthController {
         return { ok: true, success: true };
     }
 
+    @Public()
     @Post('auth/request-code-login')
     @HttpCode(200)
     async requestCodeLogin(@Body() body: RequestCodeDto) {
@@ -39,6 +42,7 @@ export class AuthController {
         return { ok: true, success: true };
     }
 
+    @Public()
     @Post('auth/verify-code')
     @HttpCode(200)
     async verifyCode(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
@@ -60,6 +64,7 @@ export class AuthController {
         };
     }
 
+    @Public()
     @Post('auth/register')
     @HttpCode(200)
     async register(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
@@ -81,6 +86,7 @@ export class AuthController {
         };
     }
 
+    @Public()
     @Post('auth/refresh')
     @HttpCode(200)
     async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -98,6 +104,7 @@ export class AuthController {
         };
     }
 
+    @Public()
     @Post('auth/logout')
     @HttpCode(200)
     async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -110,6 +117,7 @@ export class AuthController {
         return { ok: true };
     }
 
+    @Public()
     @Post('auth/check-phone')
     @HttpCode(200)
     async checkPhone(@Body() body: RequestCodeDto) {

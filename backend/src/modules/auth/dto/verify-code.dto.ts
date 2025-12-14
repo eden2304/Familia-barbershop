@@ -11,8 +11,8 @@ export class VerifyCodeDto {
 
     @IsString()
     @IsNotEmpty()
-    @Length(6, 6)
-    @Matches(/^\d{6}$/)
+    @Length(4, 4)
+    @Matches(/^\d{4}$/)
     @Transform(({ value }) => sanitizeString(value))
     code: string;
 

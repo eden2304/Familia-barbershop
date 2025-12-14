@@ -165,12 +165,21 @@ export class AuthService {
     async requestCode(rawPhone: string) {
         const norm = normalizePhone(rawPhone);
         if (!norm) throw new BadRequestException('Phone required');
+
         await this.assertOtpRequestAllowance(norm);
-        const code = this.generateOtpCode();
+
+        const devOtp = this.configService.get<string>('DEV_OTP');
+        const code = devOtp ? String(devOtp) : this.generateOtpCode();
+
         await this.storeOtp(norm, code);
-        this.logger.log(`OTP issued for ${maskPhone(norm)}`);
+
+        this.logger.log(
+            `OTP issued for ${maskPhone(norm)}${devOtp ? ' (DEV_OTP)' : ''}`
+        );
+
         return { ok: true };
     }
+
 
     async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);

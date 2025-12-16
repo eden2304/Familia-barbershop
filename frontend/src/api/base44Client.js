@@ -2,11 +2,16 @@
 
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
-const BASE_URL = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:3001';
-export const API_ROOT =
-    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_ROOT) ||
+const ENV_BASE =
+    (import.meta?.env?.VITE_API_BASE) ||
+    (import.meta?.env?.VITE_API_URL) ||
     (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
     'http://localhost:3001';
+
+const BASE_URL = ENV_BASE;
+
+export const API_ROOT = ENV_BASE;
+
 
 // האם יש ראוטי אדמין ל־appointments בשרת?
 const HAS_ADMIN_APPOINTMENTS =

@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint ../../../Downloads/familia-barbershop-booking-efe0d6fd-2",
+    "start": "vite preview --host 0.0.0.0 --port $PORT",
     "preview": "vite preview",
+    "lint": "eslint ../../../Downloads/familia-barbershop-booking-efe0d6fd-2",
     "api": "node ../server/src/index.js"
   },
   "dependencies": {

@@ -49,27 +49,35 @@ async function bootstrap() {
     app.set('trust proxy', 1);
 
     const isProd = process.env.NODE_ENV === 'production';
+
     const allowedOrigins = isProd
-        ? ['https://familia-barbershop.com']
-        : ['http://localhost:5173', 'http://localhost:3000', 'https://familia-barbershop.com'];
+        ? [
+            'https://familia-barbershop.com',
+            'https://heartfelt-analysis-production.up.railway.app', // הדומיין של הפרונט שלך כרגע
+        ]
+        : [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'https://heartfelt-analysis-production.up.railway.app',
+            'https://familia-barbershop.com',
+        ];
 
     app.enableCors({
         origin(origin, callback) {
-            // allow non-browser (curl/postman) + same-origin
-            if (!origin) return callback(null, true);
-
-            // allow your custom domains
-            if (allowedOrigins.includes(origin)) return callback(null, true);
-
-            // allow Railway frontends (temporary / or permanent)
-            if (origin.endsWith('.up.railway.app')) return callback(null, true);
-
-            return callback(new Error('CORS_DENIED'));
+            if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+            else callback(new Error('CORS_DENIED'));
         },
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: [
+            'Content-Type',
+            'Authorization',
+            'x-client-phone',
+            'x-client-name',
+            'x-admin-phone',
+        ],
     });
+
 
     app.use(securityHeaders);
 

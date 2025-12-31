@@ -288,7 +288,7 @@ export class AppointmentsService {
         return this.apptRepo.save(appt);
     }
 
-    async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<{ time: string }[]> {
+    async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
         const service = await this.svcRepo.findOne({ where: { id: serviceId } });
         if (!service) throw new NotFoundException('Service not found');
 
@@ -351,7 +351,7 @@ export class AppointmentsService {
             if (!overlapsAppt && !overlapsBlock) {
                 const hh = String(slotStart.getHours()).padStart(2, '0');
                 const mm = String(slotStart.getMinutes()).padStart(2, '0');
-                slots.push({ time: `${hh}:${mm}` } as any);
+                slots.push(`${hh}:${mm}`);
             }
         }
 
@@ -361,7 +361,7 @@ export class AppointmentsService {
             const nowHH = nowFilter.getHours();
             const nowMM = nowFilter.getMinutes();
             return slots.filter(s => {
-                const [h, m] = s.time.split(':').map(Number);
+                const [h, m] = s.split(':').map(Number);
                 return h > nowHH || (h === nowHH && m > nowMM);
             });
         }

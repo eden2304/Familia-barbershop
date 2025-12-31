@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+    BadRequestException,
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Param,
+    Post,
+    UnauthorizedException,
+    UseGuards
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { Repository } from 'typeorm';
@@ -43,4 +53,24 @@ export class AdminController {
     removeBlock(@Param('id') id: string) {
         return this.blockRepo.delete(id);
     }
+
+    @Post('verify-code')
+    verifyAdminCode(@Body() body: any) {
+        const code = String(body?.code ?? body?.adminCode ?? body?.pin ?? '').trim();
+
+        // 1) Prefer explicit ADMIN_CODE if you use it
+        const expected = String(process.env.ADMIN_CODE ?? '').trim();
+
+        // 2) Fallback to your known code (if you still use 12345 in the UI)
+        const fallback = '12345';
+
+        const ok = (expected && code === expected) || code === fallback;
+
+        if (!ok) {
+            throw new UnauthorizedException('INVALID_ADMIN_CODE');
+        }
+
+        return { ok: true };
+    }
+
 }

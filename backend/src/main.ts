@@ -50,34 +50,38 @@ async function bootstrap() {
 
     const isProd = process.env.NODE_ENV === 'production';
 
-    const allowedOrigins = isProd
-        ? [
-            'https://familia-barbershop.com',
-            'https://heartfelt-analysis-production.up.railway.app', // הדומיין של הפרונט שלך כרגע
-        ]
-        : [
-            'http://localhost:5173',
-            'http://localhost:3000',
-            'https://heartfelt-analysis-production.up.railway.app',
-            'https://familia-barbershop.com',
-        ];
-
     app.enableCors({
         origin(origin, callback) {
-            if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-            else callback(new Error('CORS_DENIED'));
+            // לאפשר קריאות ללא Origin (למשל curl/postman)
+            if (!origin) return callback(null, true);
+
+            // דומיינים מותרים
+            const allowlist = [
+                'https://familia-barbershop.com',
+                'https://familia-barbershop-production.up.railway.app',
+                'https://heartfelt-analysis-production.up.railway.app',
+                'http://localhost:5173',
+                'http://localhost:3000',
+            ];
+
+            // לאפשר גם כל *.up.railway.app (במיוחד כשיש לך שני סרוויסים שונים)
+            const isRailway = origin.endsWith('.up.railway.app');
+
+            if (allowlist.includes(origin) || isRailway) return callback(null, true);
+            return callback(new Error('CORS_DENIED'));
         },
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: [
             'Content-Type',
             'Authorization',
-            'x-client-phone',
-            'x-client-name',
-            'x-admin-phone',
-            'x-admin-code',
+            'X-Client-Phone',
+            'X-Client-Name',
+            'X-Admin-Phone',
+            'X-Admin-Code',
         ],
     });
+
 
 
     app.use(securityHeaders);

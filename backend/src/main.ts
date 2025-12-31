@@ -75,6 +75,7 @@ async function bootstrap() {
             'x-client-phone',
             'x-client-name',
             'x-admin-phone',
+            'x-admin-code',
         ],
     });
 

@@ -1,7 +1,14 @@
 # ---------- Build stage ----------
 FROM node:20-alpine AS build
-
 WORKDIR /app
+
+# Accept build-time variables from Railway
+ARG VITE_API_BASE
+ARG VITE_API_URL
+
+# Expose them to Vite during build
+ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_API_URL=${VITE_API_URL}
 
 # Install deps first (better caching)
 COPY package*.json ./
@@ -16,17 +23,11 @@ RUN npm run build
 
 # ---------- Runtime stage ----------
 FROM node:20-alpine AS runtime
-
 WORKDIR /app
 
-# Install a tiny static server
 RUN npm i -g serve
 
-# Copy build output only
 COPY --from=build /app/dist ./dist
 
-# Railway provides PORT; default just in case
 ENV PORT=8080
-
-# Serve the static site on the correct port
 CMD ["sh", "-lc", "serve -s dist -l ${PORT}"]

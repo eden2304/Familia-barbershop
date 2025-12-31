@@ -77,7 +77,14 @@ const DevUploader = {
 };
 
 // "@/api/integrations.js"
-const API_ROOT = 'http://localhost:3001';
+const API_ROOT =
+    (import.meta?.env?.VITE_API_BASE) ||
+    (import.meta?.env?.VITE_API_URL) ||
+    (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
+    'http://localhost:3001';
+
+export { API_ROOT };
+
 
 export const UploadFile = {
     async upload(file) {

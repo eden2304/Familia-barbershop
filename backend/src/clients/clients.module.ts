@@ -5,10 +5,11 @@ import {Module} from "@nestjs/common";
 import {ClientsController} from "./clients.controller";
 import {ClientsService} from "./clients.service";
 import { AuthModule } from '../modules/auth/auth.module';
+import {PublicClientsController} from "./public-clients.controller";
 
 @Module({
     imports: [TypeOrmModule.forFeature([Client, Appointment]), AuthModule],
-    controllers: [ClientsController],
+    controllers: [ClientsController, PublicClientsController],
     providers: [ClientsService],
     exports: [ClientsService],
 })

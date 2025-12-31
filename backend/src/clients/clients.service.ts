@@ -4,7 +4,7 @@ import { Repository, Not } from 'typeorm';
 import { Client } from './client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { Appointment } from '../entities/appointment.entity'; // ← אם תרצה להשתמש ב-from(Appointment,...)
+import { Appointment } from '../entities/appointment.entity';
 
 function normalizePhone(p?: string) {
     if (!p) return '';
@@ -14,6 +14,25 @@ function normalizePhone(p?: string) {
     if (digits.length === 10 && digits.startsWith('0')) return digits;
     return digits.startsWith('0') ? digits : '0' + digits;
 }
+
+function normalizeDigits(phone?: string): string {
+    if (!phone) return '';
+    return String(phone).replace(/\D/g, '');
+}
+
+
+async function findClientByPhoneDigits(repo: Repository<Client>, digits: string): Promise<Client | null> {
+    const q = normalizeDigits(digits);
+    if (!q) return null;
+
+    const client = await repo
+        .createQueryBuilder('c')
+        .where("regexp_replace(c.phone, '\\D', '', 'g') LIKE :p", { p: `%${q}%` })
+        .getOne();
+
+    return client || null;
+}
+
 
 function parseBool(value: any): boolean {
     if (value === undefined || value === null) return false;
@@ -52,6 +71,10 @@ export class ClientsService {
         } catch {
             return null;
         }
+    }
+
+    async lookupByPhone(phone: string): Promise<Client | null> {
+        return findClientByPhoneDigits(this.repo, phone);
     }
 
     private extractName(source: any, primary: 'first' | 'last', fallback: string): string {

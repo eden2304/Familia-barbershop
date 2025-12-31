@@ -55,8 +55,16 @@ async function bootstrap() {
 
     app.enableCors({
         origin(origin, callback) {
-            if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-            else callback(new Error('CORS_DENIED'));
+            // allow non-browser (curl/postman) + same-origin
+            if (!origin) return callback(null, true);
+
+            // allow your custom domains
+            if (allowedOrigins.includes(origin)) return callback(null, true);
+
+            // allow Railway frontends (temporary / or permanent)
+            if (origin.endsWith('.up.railway.app')) return callback(null, true);
+
+            return callback(new Error('CORS_DENIED'));
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE'],

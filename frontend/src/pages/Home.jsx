@@ -155,7 +155,7 @@ export default function Home() {
                 className="absolute inset-0 w-full h-full object-cover"
                 src={
                     backgroundVideoUrl ||
-                    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+                    "/videos/backgroundVideo.MP4"
                 }
                 autoPlay
                 muted

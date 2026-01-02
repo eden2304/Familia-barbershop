@@ -148,10 +148,15 @@ export class AppointmentsService {
     }
 
     private parseLocalISO(isoLike: string) {
-        // אם אין אזור זמן, נניח +03:00
+        // אם כבר יש אזור זמן — לא נוגעים
         if (/Z$|[+-]\d\d:\d\d$/.test(isoLike)) return new Date(isoLike);
-        return new Date(`${isoLike}+03:00`);
+
+        // אם אין אזור זמן — נוסיף offset של ישראל לפי התאריך
+        const dateStr = String(isoLike).slice(0, 10); // YYYY-MM-DD
+        const offset = this.israelOffsetForDate(dateStr);
+        return new Date(`${isoLike}${offset}`);
     }
+
 
     private ensureNotPast(startAt: Date) {
         const now = new Date();

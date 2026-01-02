@@ -289,10 +289,7 @@ export class AppointmentsService {
     }
 
     private israelOffsetForDate(dateStr: string): string {
-        // משתמשים ב-UTC noon כדי להימנע מקצוות יום
         const d = new Date(`${dateStr}T12:00:00Z`);
-
-        // "GMT+2" / "GMT+3" (או עם דקות)
         const parts = new Intl.DateTimeFormat('en-US', {
             timeZone: 'Asia/Jerusalem',
             timeZoneName: 'shortOffset',
@@ -304,32 +301,11 @@ export class AppointmentsService {
         const m = tz.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
         if (!m) return '+02:00';
 
-        const signHour = Number(m[1]); // יכול להיות -? לא אמור בישראל
+        const signHour = Number(m[1]);
         const sign = signHour >= 0 ? '+' : '-';
         const hh = String(Math.abs(signHour)).padStart(2, '0');
         const mm = String(m[2] ? Number(m[2]) : 0).padStart(2, '0');
         return `${sign}${hh}:${mm}`;
-    }
-
-
-    // ✅ פורמט שעה לפי ישראל, גם אם השרת רץ ב-UTC (Railway)
-    private formatTimeIL(d: Date): string {
-        return new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'Asia/Jerusalem',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).format(d);
-    }
-
-    // ✅ פורמט תאריך YYYY-MM-DD לפי ישראל
-    private formatDateIL(d: Date): string {
-        return new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Jerusalem',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        }).format(d);
     }
 
     async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
@@ -352,7 +328,6 @@ export class AppointmentsService {
             return [];
         }
 
-        // ✅ offset אמיתי לישראל לפי התאריך (חורף/קיץ)
         const offset = this.israelOffsetForDate(dateStr);
 
         const dayLocalStart = new Date(`${dateStr}T00:00:00${offset}`);
@@ -392,6 +367,12 @@ export class AppointmentsService {
         const relevantBlocks = blocks.filter(b => !b.membersOnly || !isMember);
 
         const slots: string[] = [];
+        const fmtTime = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        });
 
         for (
             let t = new Date(workStart);
@@ -405,27 +386,11 @@ export class AppointmentsService {
             const overlapsBlock = relevantBlocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
 
             if (!overlapsAppt && !overlapsBlock) {
-                // ✅ מחזירים HH:mm לפי ישראל
-                const hh = String(
-                    Number(
-                        new Intl.DateTimeFormat('en-GB', {
-                            timeZone: 'Asia/Jerusalem',
-                            hour: '2-digit',
-                            hour12: false,
-                        }).format(slotStart),
-                    ),
-                ).padStart(2, '0');
-
-                const mm = new Intl.DateTimeFormat('en-GB', {
-                    timeZone: 'Asia/Jerusalem',
-                    minute: '2-digit',
-                }).format(slotStart);
-
-                slots.push(`${hh}:${mm}`);
+                slots.push(fmtTime.format(slotStart)); // ✅ תמיד HH:mm
             }
         }
 
-        // ✅ לא להציע עבר ביום הנוכחי (לפי ישראל)
+        // לא להציע עבר ביום הנוכחי (לפי ישראל)
         const nowILDate = new Intl.DateTimeFormat('en-CA', {
             timeZone: 'Asia/Jerusalem',
             year: 'numeric',
@@ -434,20 +399,12 @@ export class AppointmentsService {
         }).format(new Date());
 
         if (nowILDate === dateStr) {
-            const nowTime = new Intl.DateTimeFormat('en-GB', {
-                timeZone: 'Asia/Jerusalem',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-            }).format(new Date()); // "HH:mm"
-
+            const nowTime = fmtTime.format(new Date()); // "HH:mm"
             return slots.filter(s => s > nowTime);
         }
 
         return slots;
     }
-
-
 
     async getMyAppointmentsByPhone(phoneRaw: string) {
         const norm = this.normalizePhone(phoneRaw);

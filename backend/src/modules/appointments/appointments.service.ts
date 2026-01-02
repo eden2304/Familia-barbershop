@@ -21,6 +21,9 @@ import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { Setting } from '../../entities/setting.entity';
 
+import { DateTime } from 'luxon';
+const TZ = 'Asia/Jerusalem';
+
 export interface CreateAppointmentDto {
     clientPhone: string;
     clientFirstName: string;
@@ -148,15 +151,15 @@ export class AppointmentsService {
     }
 
     private parseLocalISO(isoLike: string) {
-        // אם כבר יש אזור זמן — לא נוגעים
+        if (!isoLike) return new Date(NaN);
+
+        // אם הגיע עם offset או Z – נקבל אותו כמו שהוא
         if (/Z$|[+-]\d\d:\d\d$/.test(isoLike)) return new Date(isoLike);
 
-        // אם אין אזור זמן — נוסיף offset של ישראל לפי התאריך
-        const dateStr = String(isoLike).slice(0, 10); // YYYY-MM-DD
-        const offset = this.israelOffsetForDate(dateStr);
-        return new Date(`${isoLike}${offset}`);
+        // אם הגיע בלי אזור זמן (למשל "2026-01-04T19:00:00") – נפרש כישראל
+        const dt = DateTime.fromISO(isoLike, { zone: TZ });
+        return dt.toJSDate();
     }
-
 
     private ensureNotPast(startAt: Date) {
         const now = new Date();
@@ -265,7 +268,7 @@ export class AppointmentsService {
         this.ensureWithinAdvanceWindow(startAt, isMember, bookingRules);
 
         // 5) שעות פעילות + אינטרוול
-        const dateStr = startAt.toISOString().slice(0, 10);
+        const dateStr = DateTime.fromJSDate(startAt).setZone(TZ).toFormat('yyyy-LL-dd');
         const bh = await this.ensureWithinBusinessHours(dateStr, startAt, endAt);
         this.ensureAlignedToInterval(startAt, bh);
 

@@ -57,8 +57,58 @@ function handleUnauthorized(status) {
 
 
 /* ---------------- low-level HTTP (GET tolerates 404) ---------------- */
-async function httpGet(path) {
+
+// ---------------- Simple GET cache with TTL ----------------
+const __getCache = new Map();
+
+function __cacheKey(path, headers) {
+  // Base URL + path is enough; if you want, add auth header to avoid cross-user mixing
+  const auth = (headers && (headers.Authorization || headers.authorization)) || '';
+  return String(BASE_URL) + String(path) + '::' + String(auth);
+}
+
+function __defaultTtlMs(path) {
+  const p = String(path || '');
+  // זמינות משתנה מהר -> TTL קצר
+  if (p.startsWith('/appointments/available')) return 15_000; // 15s
+  // דברים יחסית סטטיים
+  if (p.startsWith('/services')) return 5 * 60_000; // 5m
+  if (p.startsWith('/business-hours')) return 5 * 60_000; // 5m
+  if (p.startsWith('/settings/')) return 60_000; // 1m
+  return 0; // ברירת מחדל: בלי cache
+}
+
+function __getCached(key) {
+  const entry = __getCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    __getCache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function __setCached(key, value, ttlMs) {
+  if (!ttlMs || ttlMs <= 0) return;
+  __getCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+
+async function httpGet(path, options = {}) {
   const headers = authHeaders();
+
+  // TTL אפשר לשלוט מבחוץ אם רוצים: httpGet('/x', { cacheTtlMs: 10000 })
+  const ttlMs =
+      typeof options.cacheTtlMs === 'number' ? options.cacheTtlMs : __defaultTtlMs(path);
+
+  const key = __cacheKey(path, headers);
+
+  // Cache HIT
+  if (ttlMs > 0) {
+    const cached = __getCached(key);
+    if (cached !== undefined) return cached;
+  }
+
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'GET',
     headers,
@@ -66,6 +116,7 @@ async function httpGet(path) {
 
   const ct = (res.headers.get('content-type') || '').toLowerCase();
   if (res.status === 404) return null;
+
   const isJson = ct.indexOf('application/json') !== -1;
   const payload = isJson ? await safeJson(res) : null;
 
@@ -75,8 +126,13 @@ async function httpGet(path) {
     console.error('[API GET ' + path + ']', err);
     throw err;
   }
+
+  // Cache SET
+  if (ttlMs > 0) __setCached(key, payload, ttlMs);
+
   return payload;
 }
+
 
 async function httpPost(path, body) {
   const headers = authHeaders({ 'Content-Type': 'application/json' });

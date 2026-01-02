@@ -351,36 +351,51 @@ export default function Book() {
       setAvailableByDate({});
       return;
     }
-    const weekDays = visibleWeekDays;
+
     setLoadingSlots(true);
-    Promise.all(
-        weekDays.map(async (d) => {
-          const ymd = toYMD(d);
-          if (!isWithinBookingWindow(d)) {
-            return [ymd, []];
-          }
-          try {
-            const [memberRaw, publicRaw] = await Promise.all([
-              api.Appointment.getAvailable(svcId, ymd, { isMember: true }),
-              api.Appointment.getAvailable(svcId, ymd, { isMember: false }),
-            ]);
-            const publicTimes = extractSlotTimes(publicRaw);
-            const memberTimes = extractSlotTimes(memberRaw);
-            const merged = mergeSlotViews(publicTimes, memberTimes);
-            return [ymd, merged];
-          } catch (e) {
-            console.warn("availability failed for", ymd, e);
-            return [ymd, []];
-          }
-        })
-    )
-        .then((entries) => {
-          const map = {};
-          for (const [k, v] of entries) map[k] = v;
-          setAvailableByDate(map);
-        })
-        .finally(() => setLoadingSlots(false));
-  }, [selectedService?.id, selectedWeek, clientIsMember, visibleWeekDays, isWithinBookingWindow]);
+
+    const t = setTimeout(() => {
+      const weekDays = visibleWeekDays;
+
+      Promise.all(
+          weekDays.map(async (d) => {
+            const ymd = toYMD(d);
+
+            if (!isWithinBookingWindow(d)) {
+              return [ymd, []];
+            }
+
+            try {
+              // ✅ קריאה אחת בלבד
+              const raw = await api.Appointment.getAvailable(svcId, ymd, {
+                isMember: clientIsMember === true,
+              });
+
+              const times = extractSlotTimes(raw);
+              return [ymd, times];
+            } catch (e) {
+              console.warn("availability failed for", ymd, e);
+              return [ymd, []];
+            }
+          })
+      )
+          .then((entries) => {
+            const map = {};
+            for (const [k, v] of entries) map[k] = v;
+            setAvailableByDate(map);
+          })
+          .finally(() => setLoadingSlots(false));
+    }, 300); // ⏱ debounce 300ms
+
+    return () => clearTimeout(t);
+  }, [
+    selectedService?.id,
+    selectedWeek,
+    clientIsMember,
+    visibleWeekDays,
+    isWithinBookingWindow,
+  ]);
+
 
   useEffect(() => {
     // נטען תורים רק אם:

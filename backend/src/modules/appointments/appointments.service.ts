@@ -288,6 +288,26 @@ export class AppointmentsService {
         return this.apptRepo.save(appt);
     }
 
+    // ✅ פורמט שעה לפי ישראל, גם אם השרת רץ ב-UTC (Railway)
+    private formatTimeIL(d: Date): string {
+        return new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(d);
+    }
+
+    // ✅ פורמט תאריך YYYY-MM-DD לפי ישראל
+    private formatDateIL(d: Date): string {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Jerusalem',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(d);
+    }
+
     async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
         const service = await this.svcRepo.findOne({ where: { id: serviceId } });
         if (!service) throw new NotFoundException('Service not found');
@@ -316,8 +336,17 @@ export class AppointmentsService {
         if (!bh) return [];
 
         const interval = Number(bh.slotIntervalMinutes ?? 30);
-        const workStart = new Date(`${dateStr}T${bh.open}:00+03:00`);
-        const workEnd = new Date(`${dateStr}T${bh.close}:00+03:00`);
+
+        // אם יום "סגור" (00:00-00:00) או close<=open – אין זמינות
+        const openStr = String(bh.open ?? '').trim();
+        const closeStr = String(bh.close ?? '').trim();
+        if (!openStr || !closeStr) return [];
+        if (openStr === '00:00' && closeStr === '00:00') return [];
+
+        const workStart = new Date(`${dateStr}T${openStr}:00+03:00`);
+        const workEnd = new Date(`${dateStr}T${closeStr}:00+03:00`);
+        if (!Number.isFinite(workStart.getTime()) || !Number.isFinite(workEnd.getTime())) return [];
+        if (workEnd.getTime() <= workStart.getTime()) return [];
 
         const appts = await this.apptRepo.find({
             where: {
@@ -337,6 +366,7 @@ export class AppointmentsService {
         const relevantBlocks = blocks.filter(b => !b.membersOnly || !isMember);
 
         const slots: string[] = [];
+
         for (
             let t = new Date(workStart);
             t.getTime() + service.durationMinutes * 60000 <= workEnd.getTime();
@@ -349,25 +379,21 @@ export class AppointmentsService {
             const overlapsBlock = relevantBlocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
 
             if (!overlapsAppt && !overlapsBlock) {
-                const hh = String(slotStart.getHours()).padStart(2, '0');
-                const mm = String(slotStart.getMinutes()).padStart(2, '0');
-                slots.push(`${hh}:${mm}`);
+                // ✅ מחזירים HH:mm לפי ישראל, לא לפי timezone של השרת
+                slots.push(this.formatTimeIL(slotStart));
             }
         }
 
-        // לא להציע עבר ביום הנוכחי
-        const nowFilter = new Date();
-        if (nowFilter.toISOString().slice(0, 10) === dateStr) {
-            const nowHH = nowFilter.getHours();
-            const nowMM = nowFilter.getMinutes();
-            return slots.filter(s => {
-                const [h, m] = s.split(':').map(Number);
-                return h > nowHH || (h === nowHH && m > nowMM);
-            });
+        // ✅ לא להציע עבר ביום הנוכחי (לפי תאריך/שעה בישראל)
+        const nowIL = new Date();
+        if (this.formatDateIL(nowIL) === dateStr) {
+            const nowTime = this.formatTimeIL(nowIL); // "HH:mm"
+            return slots.filter(s => s > nowTime);
         }
 
         return slots;
     }
+
 
     async getMyAppointmentsByPhone(phoneRaw: string) {
         const norm = this.normalizePhone(phoneRaw);

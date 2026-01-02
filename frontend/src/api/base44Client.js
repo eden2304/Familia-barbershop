@@ -409,20 +409,17 @@ const api = {
 
   Appointment: {
     getAvailable: async (serviceOrId, date, options = {}) => {
-      const sid = (typeof serviceOrId === 'string') ? serviceOrId : (serviceOrId && serviceOrId.id);
+      const sid =
+          (typeof serviceOrId === 'string' || typeof serviceOrId === 'number')
+              ? String(serviceOrId)
+              : (serviceOrId && serviceOrId.id ? String(serviceOrId.id) : '');
 
-      // אם כבר הגיע yyyy-MM-dd – לא נוגעים.
-      // אחרת נשתמש בנרמול הקיים שלך.
-      const day =
-          (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
-              ? date
-              : normalizeDateForApi(date);
-
+      const day = normalizeDateForApi(date);
       if (!sid || !day) return [];
 
       const params = new URLSearchParams({
-        serviceId: String(sid),
-        date: String(day),
+        serviceId: sid,
+        date: day,
       });
 
       const memberFlag = options?.isMember ?? options?.member ?? options?.members ?? undefined;
@@ -430,20 +427,7 @@ const api = {
         params.set('isMember', memberFlag ? 'true' : 'false');
       }
 
-      const raw = await httpGet('/appointments/available?' + params.toString());
-
-      // ✅ תמיד נחזיר מערך שעות, גם אם השרת/פרוקסי עטפו את התשובה
-      if (Array.isArray(raw)) return raw;
-
-      const maybe =
-          raw?.slots ??
-          raw?.times ??
-          raw?.data ??
-          raw?.items ??
-          raw?.result ??
-          [];
-
-      return Array.isArray(maybe) ? maybe : [];
+      return (await httpGet('/appointments/available?' + params.toString())) || [];
     },
 
     // list – קודם ציבורי, פולבק ל־admin

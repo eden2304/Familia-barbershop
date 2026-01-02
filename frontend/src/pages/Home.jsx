@@ -155,7 +155,7 @@ export default function Home() {
                 className="absolute inset-0 w-full h-full object-cover"
                 src={
                     backgroundVideoUrl ||
-                    "/videos/backgroundVideo.MP4"
+                    "/videos/backgroundVideo.mp4"
                 }
                 autoPlay
                 muted

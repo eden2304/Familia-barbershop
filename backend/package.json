@@ -8,13 +8,10 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "build": "nest build",
-
     "format": "prettier --write \"src/**/*.ts\"",
-
     "typeorm:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:run",
     "typeorm:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:revert",
     "typeorm:show": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:show",
-
     "migrate:run": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run",
     "migrate:show": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:show",
     "migrate:revert": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:revert"
@@ -29,6 +26,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
     "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.7.2",
     "pg": "^8.11.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",

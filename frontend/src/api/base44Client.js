@@ -97,13 +97,14 @@ function __setCached(key, value, ttlMs) {
 async function httpGet(path, options = {}) {
   const headers = authHeaders();
 
-  // TTL אפשר לשלוט מבחוץ אם רוצים: httpGet('/x', { cacheTtlMs: 10000 })
   const ttlMs =
-      typeof options.cacheTtlMs === 'number' ? options.cacheTtlMs : __defaultTtlMs(path);
+      typeof options.cacheTtlMs === 'number'
+          ? options.cacheTtlMs
+          : __defaultTtlMs(path);
 
   const key = __cacheKey(path, headers);
 
-  // Cache HIT
+  // TTL cache HIT
   if (ttlMs > 0) {
     const cached = __getCached(key);
     if (cached !== undefined) return cached;
@@ -112,7 +113,16 @@ async function httpGet(path, options = {}) {
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'GET',
     headers,
+    // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
+    cache: 'no-store',
   });
+
+  // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
+  if (res.status === 304) {
+    const cached = __getCached(key);
+    if (cached !== undefined) return cached;
+    return null;
+  }
 
   const ct = (res.headers.get('content-type') || '').toLowerCase();
   if (res.status === 404) return null;
@@ -127,7 +137,7 @@ async function httpGet(path, options = {}) {
     throw err;
   }
 
-  // Cache SET
+  // TTL cache SET
   if (ttlMs > 0) __setCached(key, payload, ttlMs);
 
   return payload;

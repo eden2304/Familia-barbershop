@@ -182,17 +182,36 @@ export class AppointmentsService {
     }
 
     private async ensureWithinBusinessHours(dateStr: string, slotStart: Date, slotEnd: Date) {
-        const jsDow = new Date(`${dateStr}T12:00:00+03:00`).getDay();
+        // offset דינמי לפי היום בישראל (+02 / +03)
+        const offset = this.israelOffsetForDate(dateStr);
+
+        // יום בשבוע לפי ישראל
+        const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
         if (!bh) throw new ForbiddenException('CLOSED_DAY');
 
-        const workStart = new Date(`${dateStr}T${bh.open}:00+03:00`);
-        const workEnd = new Date(`${dateStr}T${bh.close}:00+03:00`);
+        const openStr = String(bh.open ?? '').trim();
+        const closeStr = String(bh.close ?? '').trim();
+        if (!openStr || !closeStr) throw new ForbiddenException('CLOSED_DAY');
+        if (openStr === '00:00' && closeStr === '00:00') throw new ForbiddenException('CLOSED_DAY');
+
+        const workStart = new Date(`${dateStr}T${openStr}:00${offset}`);
+        const workEnd = new Date(`${dateStr}T${closeStr}:00${offset}`);
+
+        if (!Number.isFinite(workStart.getTime()) || !Number.isFinite(workEnd.getTime())) {
+            throw new ForbiddenException('CLOSED_DAY');
+        }
+        if (workEnd.getTime() <= workStart.getTime()) {
+            throw new ForbiddenException('CLOSED_DAY');
+        }
+
         if (slotStart < workStart || slotEnd > workEnd) {
             throw new ForbiddenException('OUT_OF_BUSINESS_HOURS');
         }
+
         return bh;
     }
+
 
     private ensureAlignedToInterval(slotStart: Date, bh: BusinessHour) {
         const interval = Number(bh.slotIntervalMinutes ?? 30);

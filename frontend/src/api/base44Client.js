@@ -449,9 +449,6 @@ const api = {
     create: async (payload) => {
       payload = payload || {};
 
-      // אם הגיעו starts_at/ends_at ויש תמיכת אדמין אפשר להרחיב פה; כרגע תמיד נלך על המסלול הציבורי
-      // if ((payload.starts_at || payload.ends_at) && HAS_ADMIN_APPOINTMENTS) { ... }
-
       // --- בנייה למסלול הציבורי /appointments ---
       // תאריך/שעה: נקבל או מ-date/time או מ-starts_at
       const startInput = payload.starts_at || payload.date || null;
@@ -463,7 +460,7 @@ const api = {
           (start && !Number.isNaN(start.getTime()) ? localDateStr(start) : '');
 
       const time =
-          (payload.time && String(payload.time).slice(0,5)) || // "HH:mm"
+          (payload.time && String(payload.time).slice(0, 5)) || // "HH:mm"
           (start && !Number.isNaN(start.getTime()) ? localTimeStr(start) : '');
 
       // שירות
@@ -473,11 +470,38 @@ const api = {
           (payload.service && payload.service.id) ??
           null;
 
-      // שם הלקוח (אופציונלי)
+      // --- שם הלקוח (fallback מה-localStorage אם ה-UI לא שלח) ---
       const typedName = String(payload.client_name || payload.clientName || '').trim();
-      const parts = typedName ? typedName.split(/\s+/) : [];
-      const firstName = payload.firstName || payload.client_first_name || (parts[0] || '');
-      const lastName  = payload.lastName  || payload.client_last_name  || (parts.slice(1).join(' ') || '');
+
+      let storedName = '';
+      let storedFirst = '';
+      let storedLast = '';
+      try {
+        const raw = localStorage.getItem('familiaClient');
+        if (raw) {
+          const c = JSON.parse(raw);
+          storedName = String(c.client_name || c.name || '').trim();
+          storedFirst = String(c.firstName || c.first_name || '').trim();
+          storedLast = String(c.lastName || c.last_name || '').trim();
+        }
+      } catch {}
+
+      const finalName = typedName || storedName;
+
+      const parts = finalName ? finalName.split(/\s+/) : [];
+      const firstName = String(
+          payload.firstName ||
+          payload.client_first_name ||
+          storedFirst ||
+          (parts[0] || '')
+      ).trim();
+
+      const lastName = String(
+          payload.lastName ||
+          payload.client_last_name ||
+          storedLast ||
+          (parts.slice(1).join(' ') || '')
+      ).trim();
 
       // טלפון — נכסה את כל הווריאציות האפשריות וננרמל
       const rawPhone =
@@ -491,23 +515,26 @@ const api = {
 
       // ולידציה מקומית כדי לא לקבל 400 “חסרים שדות”
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        throw new Error('DATE_REQUIRED'); // אפשר ללכוד ולהראות הודעה יפה ב־UI
+        throw new Error('DATE_REQUIRED');
       }
       if (!time || !/^\d{2}:\d{2}$/.test(time)) {
         throw new Error('TIME_REQUIRED');
       }
       if (!phone || !/^\d{9,10}$/.test(phone)) {
-        // normalizePhone יחזיר 0XXXXXXXXX לרוב המקרים; אם לא — נכשיל כאן
         throw new Error('PHONE_REQUIRED');
+      }
+      if (!firstName || !lastName) {
+        // אם אין שם מה-UI וגם אין מה-localStorage
+        throw new Error('NAME_REQUIRED');
       }
 
       const publicBody = {
         serviceId,
-        date,                        // YYYY-MM-DD
-        time,                        // HH:mm
+        date, // YYYY-MM-DD
+        time, // HH:mm
         note: payload.note,
         client: { firstName, lastName, phone },
-        client_name: typedName,
+        client_name: finalName,
         is_guest: true,
         // גיבוי כפול (לא חובה, אבל עוזר לשרתים שמצפים לשדות שטוחים):
         phone,
@@ -516,6 +543,7 @@ const api = {
       const res = await httpPost('/appointments', publicBody);
       return normAppointment(res);
     },
+
 
     update: async (id, data) => {
       data = data || {};

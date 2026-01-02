@@ -367,12 +367,14 @@ export default function Book() {
 
             try {
               // ✅ קריאה אחת בלבד
-              const raw = await api.Appointment.getAvailable(svcId, ymd, {
-                isMember: clientIsMember === true,
-              });
-
+              const raw = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember === true });
               const times = extractSlotTimes(raw);
-              return [ymd, times];
+
+// ✅ להפוך לפורמט שה־UI מצפה לו
+              const view = times.map((hhmm) => ({ hhmm, memberOnly: false }));
+
+              return [ymd, view];
+
             } catch (e) {
               console.warn("availability failed for", ymd, e);
               return [ymd, []];

@@ -356,22 +356,33 @@ export default function Admin() { // Removed props
     e?.preventDefault?.();
     setAuthError("");
 
+    let res;
     try {
-      const res = await api.post('/admin/verify-code', { code: adminCode });
-
-      if (res?.accessToken) {
-        setStoredAuthToken(res.accessToken);
-        setIsCodeVerified(true);
-        setIsAuthenticated(true);
-        await loadData();
-        return;
-      }
-
-      setAuthError("קוד אדמין שגוי.");
+      res = await api.post('/admin/verify-code', { code: adminCode });
     } catch (err) {
       setAuthError("קוד אדמין שגוי.");
+      return;
+    }
+
+    if (!res?.accessToken) {
+      setAuthError("קוד אדמין שגוי.");
+      return;
+    }
+
+    // ✅ התחברות הצליחה
+    setStoredAuthToken(res.accessToken);
+    setIsCodeVerified(true);
+    setIsAuthenticated(true);
+
+    // ✅ עכשיו טוענים דאטה, ואם זה נכשל — לא מציגים "קוד שגוי"
+    try {
+      await loadData();
+    } catch (err) {
+      console.error("Admin loadData failed:", err);
+      setAuthError("התחברת, אבל טעינת נתונים נכשלה.");
     }
   }
+
 
   function formatDateTime(dt) {
     try { return format(new Date(dt), "EEE dd/MM HH:mm", { locale: he }); }

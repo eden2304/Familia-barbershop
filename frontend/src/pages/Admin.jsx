@@ -81,6 +81,7 @@ import { Admin as AdminApi } from "@/api/entities";
 import api from "@/api/base44Client";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { setStoredAuthToken } from '../utils/authStorage';
 
 
 const navItems = [

@@ -2,6 +2,7 @@
 // Minimal API with Postgres; tolerant migrations for existing DBs (camelCase/snake_case + missing cols).
 
 require('dotenv').config();
+const crypto = require('crypto');
 
 const http = require('http');
 const { Pool } = require('pg');
@@ -15,6 +16,31 @@ const UPLOAD_DIR = pathLib.resolve(__dirname, '..', 'uploads');
 
 const ADMIN_PANEL_CODE = process.env.ADMIN_PANEL_CODE || '12345';
 const AUTH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ימים
+const ADMIN_SESSION_TTL_MS = 1000 * 60 * 60 * 12; // 12 שעות (אפשר לשנות)
+const adminSessions = new Map(); // token -> expiresAt
+
+function issueAdminToken() {
+    const token = crypto.randomBytes(32).toString('hex');
+    adminSessions.set(token, Date.now() + ADMIN_SESSION_TTL_MS);
+    return token;
+}
+
+function isValidAdminToken(token) {
+    if (!token) return false;
+    const exp = adminSessions.get(token);
+    if (!exp) return false;
+    if (Date.now() > exp) {
+        adminSessions.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function getBearerToken(req) {
+    const h = String(req.headers['authorization'] || '');
+    if (!h.toLowerCase().startsWith('bearer ')) return '';
+    return h.slice(7).trim();
+}
 
 function normalizePhone(raw = "") {
     const d = String(raw).replace(/\D/g, "");
@@ -798,28 +824,29 @@ async function router(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
 
-    // --- Admin Guard: מחייב אדמין לכל /admin/* ---
-    if (pathname.startsWith('/admin/')) {
-        // בלי JWT כרגע: נסתמך על כותרת (header) או על query param
-        const phoneHeader = req.headers['x-client-phone'];
-        const phoneQuery  = url.searchParams.get('phone');
-        const phone = phoneHeader || phoneQuery;
-
-        if (!phone || !isAdminPhone(phone)) {
+// --- Admin Guard: מחייב accessToken לכל /admin/* (חוץ מ-verify-code) ---
+    if (pathname.startsWith('/admin/') && pathname !== '/admin/verify-code') {
+        const token = getBearerToken(req);
+        if (!isValidAdminToken(token)) {
             return json(res, 403, { error: 'Unauthorized (admin only)' });
         }
         // אם עברנו, מותר להמשיך ל-handlers של /admin/...
     }
 
+
     // POST /admin/verify-code  (דורש אדמין לפי ה-Guard + קוד נכון)
     if (pathname === '/admin/verify-code' && req.method === 'POST') {
         const body = await readBody(req).catch(() => ({}));
         const code = (body && (body.code || body.adminCode || body.pin)) || '';
+
         if (String(code) === String(ADMIN_PANEL_CODE)) {
-            return json(res, 200, { ok: true });
+            const accessToken = issueAdminToken();
+            return json(res, 200, { ok: true, accessToken });
         }
+
         return json(res, 401, { ok: false, error: 'INVALID_ADMIN_CODE' });
     }
+
 
 
     if (req.method === 'GET' && pathname.startsWith('/uploads/')) {

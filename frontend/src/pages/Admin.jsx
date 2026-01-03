@@ -355,14 +355,18 @@ export default function Admin() { // Removed props
   async function handleAdminCodeSubmit(e) {
     e?.preventDefault?.();
     setAuthError("");
+
     try {
       const res = await api.post('/admin/verify-code', { code: adminCode });
-      if (res?.ok) {
+
+      if (res?.accessToken) {
+        setStoredAuthToken(res.accessToken);
         setIsCodeVerified(true);
         setIsAuthenticated(true);
         await loadData();
         return;
       }
+
       setAuthError("קוד אדמין שגוי.");
     } catch (err) {
       setAuthError("קוד אדמין שגוי.");

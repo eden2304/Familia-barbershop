@@ -12,10 +12,14 @@ import { SettingsController } from './settings.controller';
 import { AuthModule } from '../auth/auth.module';
 import {AdminController} from "./admin.controller";
 
+
 @Module({
-    imports: [TypeOrmModule.forFeature([
-        Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting
-    ]), AuthModule],
+    imports: [
+        TypeOrmModule.forFeature([Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting]),
+        AuthModule,
+    ],
     controllers: [AdminContentController, AdminController, BlockedTimesController, SettingsController],
 })
 export class AdminModule {}
+
+

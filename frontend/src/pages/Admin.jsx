@@ -373,10 +373,12 @@ export default function Admin() { // Removed props
     setStoredAuthToken(res.accessToken);
     setIsCodeVerified(true);
     setIsAuthenticated(true);
+    console.log('admin auth set true');
 
     // ✅ עכשיו טוענים דאטה, ואם זה נכשל — לא מציגים "קוד שגוי"
     try {
       await loadData();
+      console.log('loadData done');
     } catch (err) {
       console.error("Admin loadData failed:", err);
       setAuthError("התחברת, אבל טעינת נתונים נכשלה.");

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DeepPartial } from 'typeorm';
-import { sign, verify } from 'jsonwebtoken';
+import { sign, verify, type Secret, type SignOptions, type JwtPayload } from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 
 import { Client } from '../../clients/client.entity';
@@ -37,7 +37,7 @@ interface OtpMeta {
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
-    private readonly jwtSecret: string;
+    private readonly jwtSecret: string = String(process.env.JWT_SECRET ?? '');
     private readonly accessTokenTtl: string;
     private readonly accessTokenMs: number;
     private readonly refreshTokenMs: number;
@@ -344,7 +344,11 @@ export class AuthService {
             roles,
             isAdmin: roles.includes('admin'),
         };
-        const token = sign(payload, this.jwtSecret, { expiresIn: this.accessTokenTtl });
+        const token = sign(
+            payload,
+            this.jwtSecret as Secret,
+            { expiresIn: this.accessTokenTtl as SignOptions['expiresIn'] }
+        );
         const expiresAt = new Date(Date.now() + this.accessTokenMs);
         return { token, expiresAt };
     }
@@ -395,7 +399,11 @@ export class AuthService {
 
     async verifyToken(token: string): Promise<AuthTokenPayload> {
         try {
-            const payload = verify(token, this.jwtSecret) as AuthTokenPayload;
+            const decoded = verify(token, this.jwtSecret as Secret);
+            if (typeof decoded === 'string') {
+                throw new UnauthorizedException('INVALID_TOKEN');
+            }
+            const payload = decoded as unknown as AuthTokenPayload;
             if (!payload.sub || !payload.phone || !payload.exp || !payload.iat) {
                 throw new UnauthorizedException('INVALID_TOKEN');
             }

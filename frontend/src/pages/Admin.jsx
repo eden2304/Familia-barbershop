@@ -80,8 +80,7 @@ import { fullName, serviceName, isPast, phone } from '@/lib/apt-utils';
 import { Admin as AdminApi } from "@/api/entities";
 import api from "@/api/base44Client";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
-import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
-import { setStoredAuthToken } from '../utils/authStorage';
+import { getStoredAuthToken, clearStoredAuthToken, setStoredAuthToken } from '../utils/authStorage';
 
 
 const navItems = [
@@ -321,14 +320,14 @@ export default function Admin() { // Removed props
       const adminFlag = Boolean(client?.isAdmin || client?.is_admin || client?.roles?.includes('admin'));
       if (!client || !token || !adminFlag) {
         localStorage.removeItem("familiaClient");
-        if (!token) clearStoredAuth();
+        if (!token) clearStoredAuthToken();
         navigate(createPageUrl("Home"));
         return;
       }
       setCanAccessAdmin(true);
     } catch {
       localStorage.removeItem("familiaClient");
-      clearStoredAuth();
+      clearStoredAuthToken();
       navigate(createPageUrl("Home"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

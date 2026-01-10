@@ -43,17 +43,16 @@ function authHeaders(base = {}) {
   return headers;
 }
 
-function handleUnauthorized(status) {
+function handleUnauthorized(status, path, payload) {
   if (status !== 401) return;
-  clearStoredAuth();
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem('familiaClient');
-    }
-  } catch {
-    // ignore
+
+  // נקה רק כאשר זה auth endpoints (או מקרה שאתה באמת רוצה logout)
+  if (String(path || '').startsWith('/auth/')) {
+    clearStoredAuth();
+    try { localStorage.removeItem('familiaClient'); } catch {}
   }
 }
+
 
 
 /* ---------------- low-level HTTP (GET tolerates 404) ---------------- */
@@ -131,7 +130,7 @@ async function httpGet(path, options = {}) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
-    handleUnauthorized(res.status);
+    handleUnauthorized(res.status, path, payload);
     const err = buildHttpError('GET', path, res.status, payload);
     console.error('[API GET ' + path + ']', err);
     throw err;
@@ -157,7 +156,7 @@ async function httpPost(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
-    handleUnauthorized(res.status);
+    handleUnauthorized(res.status, path, payload);
     const err = buildHttpError('POST', path, res.status, payload);
     console.error('[API POST ' + path + ']', err);
     throw err;
@@ -178,7 +177,7 @@ async function httpPut(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
-    handleUnauthorized(res.status);
+    handleUnauthorized(res.status, path, payload);
     const err = buildHttpError('PUT', path, res.status, payload);
     console.error('[API PUT ' + path + ']', err);
     throw err;
@@ -198,7 +197,7 @@ async function httpDelete(path) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
-    handleUnauthorized(res.status);
+    handleUnauthorized(res.status, path, payload);
     const err = buildHttpError('DELETE', path, res.status, payload);
     console.error('[API DELETE ' + path + ']', err);
     throw err;
@@ -219,7 +218,7 @@ async function httpPatch(path, body) {
   const payload = isJson ? await safeJson(res) : null;
 
   if (!res.ok) {
-    handleUnauthorized(res.status);
+    handleUnauthorized(res.status, path, payload);
     const err = buildHttpError('PATCH', path, res.status, payload);
     console.error('[API PATCH ' + path + ']', err);
     throw err;

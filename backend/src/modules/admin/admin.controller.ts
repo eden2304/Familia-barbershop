@@ -32,30 +32,6 @@ export class AdminController {
         const norm = String(value).trim().toLowerCase();
         return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
     }
-    @UseGuards(JwtAuthGuard)
-    @Get('blocked-times')
-    listBlocks() {
-        return this.blockRepo.find({ order: { startsAt: 'ASC' } });
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Post('blocked-times')
-    addBlock(@Body() b: AddBlockDto) {
-        const startsAt = new Date(b.startAt);
-        const endsAt = new Date(b.endAt);
-        if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || !(endsAt > startsAt)) {
-            throw new BadRequestException('Invalid startAt/endAt');
-        }
-        const rawMembersOnly = (b as any).membersOnly ?? (b as any).members_only;
-        const membersOnly = this.parseBoolean(rawMembersOnly);
-        return this.blockRepo.save(this.blockRepo.create({ startsAt, endsAt, reason: b.reason, membersOnly }));
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Delete('blocked-times/:id')
-    removeBlock(@Param('id') id: string) {
-        return this.blockRepo.delete(id);
-    }
 
     @Post('verify-code')
     verifyAdminCode(@Body() body: any) {

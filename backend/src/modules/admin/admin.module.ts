@@ -16,10 +16,11 @@ import {AdminController} from "./admin.controller";
 @Module({
     imports: [
         TypeOrmModule.forFeature([Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting]),
-        AuthModule,
+        AuthModule, // מספיק! כי AuthModule מייצא JwtModule
     ],
     controllers: [AdminContentController, AdminController, BlockedTimesController, SettingsController],
 })
 export class AdminModule {}
+
 
 

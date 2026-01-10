@@ -17,8 +17,8 @@ import { type SignOptions } from 'jsonwebtoken';
     imports: [
         TypeOrmModule.forFeature([Client, Setting, AdminPhone, RefreshToken]),
         JwtModule.register({
-            secret: process.env.JWT_SECRET, // ✅ חייב להיות מוגדר בפרודקשן
-            signOptions: { expiresIn: (process.env.ACCESS_TOKEN_TTL || '15m') as SignOptions['expiresIn'] },
+            secret: process.env.JWT_SECRET,          // חובה שזה יהיה אותו SECRET של כל המערכת
+            signOptions: { expiresIn: '30d' },       // או מה שבא לך
         }),
     ],
     controllers: [AuthController],
@@ -27,9 +27,6 @@ import { type SignOptions } from 'jsonwebtoken';
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
     ],
-    exports: [
-        AuthService,
-        JwtModule, // ✅ זה מה שפותח ל-AdminModule את JwtService
-    ],
+    exports: [AuthService, JwtModule],           // <-- חשוב! מייצאים כדי שמודולים אחרים יוכלו להזריק JwtService
 })
 export class AuthModule {}

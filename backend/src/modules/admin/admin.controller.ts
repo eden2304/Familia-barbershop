@@ -41,19 +41,17 @@ export class AdminController {
         const fallback = '12345';
 
         const ok = (expected && code === expected) || code === fallback;
-        if (!ok) {
-            throw new UnauthorizedException('INVALID_ADMIN_CODE');
-        }
+        if (!ok) throw new UnauthorizedException('INVALID_ADMIN_CODE');
 
         const token = this.jwtService.sign({
-            phone: 'admin',            // ערך דמה, רק כדי שלא יהיה undefined
-            roles: ['admin'],          // ⬅️ זה הקריטי
+            phone: 'admin',
+            roles: ['admin'],
             isAdmin: true,
         });
 
-
         return { accessToken: token };
     }
+
 
 
 }

@@ -46,9 +46,11 @@ export class AdminController {
         }
 
         const token = this.jwtService.sign({
-            role: 'admin',
+            phone: 'admin',            // ערך דמה, רק כדי שלא יהיה undefined
+            roles: ['admin'],          // ⬅️ זה הקריטי
             isAdmin: true,
         });
+
 
         return { accessToken: token };
     }

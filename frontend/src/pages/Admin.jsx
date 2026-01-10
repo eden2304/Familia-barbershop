@@ -302,6 +302,16 @@ export default function Admin() { // Removed props
       [selectedDate]
   );
 
+  useEffect(() => {
+    const t = getStoredAuthToken();
+    if (t) {
+      setIsCodeVerified(true);
+      setIsAuthenticated(true);
+      loadData();
+    }
+  }, []);
+
+
   // guard: מוודא שיש לקוח ובעל הרשאת אדמין, אחרת מחזיר לדף הבית
   useEffect(() => {
     try {

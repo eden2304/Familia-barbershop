@@ -1,6 +1,7 @@
 // src/api/base44Client.js
 
-import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { setStoredAuthToken, getStoredAuthToken, clearStoredAuthToken } from '@/utils/authStorage';
+
 
 const ENV_BASE =
     (import.meta?.env?.VITE_API_BASE) ||

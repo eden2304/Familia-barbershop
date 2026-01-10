@@ -11,14 +11,16 @@ import { BlockedTimesController } from './blocked-times.controller';
 import { SettingsController } from './settings.controller';
 import { AuthModule } from '../auth/auth.module';
 import {AdminController} from "./admin.controller";
+import { Appointment } from '../../entities/appointment.entity';
+import { AdminAppointmentsController } from './admin-appointments.controller';
 
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting]),
+        TypeOrmModule.forFeature([Appointment, Product, Testimonial, GalleryVideo, BackgroundVideo, BlockedTime, Setting]),
         AuthModule, // מספיק! כי AuthModule מייצא JwtModule
     ],
-    controllers: [AdminContentController, AdminController, BlockedTimesController, SettingsController],
+    controllers: [AdminAppointmentsController, AdminContentController, AdminController, BlockedTimesController, SettingsController],
 })
 export class AdminModule {}
 

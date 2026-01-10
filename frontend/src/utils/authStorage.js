@@ -12,7 +12,7 @@ export function setStoredAuthToken(token) {
   } catch {}
 }
 
-export function clearStoredAuthToken() {
+export function clearStoredAuth() {
   try { localStorage.removeItem(AUTH_TOKEN_KEY); }
   catch {}
 }

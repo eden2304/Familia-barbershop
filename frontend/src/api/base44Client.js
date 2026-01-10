@@ -1,6 +1,6 @@
 // src/api/base44Client.js
 
-import { setStoredAuthToken, getStoredAuthToken, clearStoredAuthToken } from '@/utils/authStorage';
+import { setStoredAuthToken, getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 
 const ENV_BASE =

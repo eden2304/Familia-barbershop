@@ -18,7 +18,6 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtService } from '@nestjs/jwt';
 
 @Controller('admin')
-@Roles('admin')
 export class AdminController {
     constructor(
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,

@@ -20,6 +20,7 @@ import {
     hashOtp,
     verifyOtp
 } from '../../common/security.utils';
+import { JwtService } from '@nestjs/jwt';
 
 
 interface OtpRecord {
@@ -55,6 +56,7 @@ export class AuthService {
         @InjectRepository(AdminPhone) private readonly adminRepo: Repository<AdminPhone>,
         @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
         private readonly configService: ConfigService,
+        private readonly jwt: JwtService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
@@ -397,25 +399,29 @@ export class AuthService {
         return { id, token };
     }
 
-    async verifyToken(token: string): Promise<AuthTokenPayload> {
-        try {
-            const decoded = verify(token, this.jwtSecret as Secret);
-            if (typeof decoded === 'string') {
-                throw new UnauthorizedException('INVALID_TOKEN');
-            }
-            const payload = decoded as unknown as AuthTokenPayload;
-            if (!payload.sub || !payload.phone || !payload.exp || !payload.iat) {
-                throw new UnauthorizedException('INVALID_TOKEN');
-            }
-            if (!payload.roles || payload.roles.length === 0) {
-                payload.roles = ['client'];
-            }
-            payload.isAdmin = payload.roles.includes('admin');
-            return payload;
-        } catch (e) {
-            throw new UnauthorizedException('INVALID_TOKEN');
-        }
+    async verifyToken(token: string) {
+        return this.jwt.verifyAsync(token); // משתמש באותו secret של JwtModule.register
     }
+
+    // async verifyToken(token: string): Promise<AuthTokenPayload> {
+    //     try {
+    //         const decoded = verify(token, this.jwtSecret as Secret);
+    //         if (typeof decoded === 'string') {
+    //             throw new UnauthorizedException('INVALID_TOKEN');
+    //         }
+    //         const payload = decoded as unknown as AuthTokenPayload;
+    //         if (!payload.sub || !payload.phone || !payload.exp || !payload.iat) {
+    //             throw new UnauthorizedException('INVALID_TOKEN');
+    //         }
+    //         if (!payload.roles || payload.roles.length === 0) {
+    //             payload.roles = ['client'];
+    //         }
+    //         payload.isAdmin = payload.roles.includes('admin');
+    //         return payload;
+    //     } catch (e) {
+    //         throw new UnauthorizedException('INVALID_TOKEN');
+    //     }
+    // }
 
     private generateOtpCode(): string {
         return ('' + Math.floor(100000 + Math.random() * 900000)).substring(0, 6);

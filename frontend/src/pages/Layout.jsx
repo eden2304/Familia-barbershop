@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AnimatePresence } from "framer-motion";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
-import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { getStoredAuthToken, clearStoredAuthToken } from '@/utils/authStorage';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -24,11 +24,11 @@ function MainLayout({ children, currentPageName }) {
       }
       else if (storedClient === "undefined") {
         localStorage.removeItem('familiaClient');
-        clearStoredAuth();
+        clearStoredAuthToken();
       }
     } catch {
       localStorage.removeItem('familiaClient');
-      clearStoredAuth();
+      clearStoredAuthToken();
     }
     const token = getStoredAuthToken();
     if (parsedClient && token) {
@@ -42,7 +42,7 @@ function MainLayout({ children, currentPageName }) {
     } else {
       setClient(null);
       setIsAdmin(false);
-      if (!token) clearStoredAuth();
+      if (!token) clearStoredAuthToken();
     }
   }, []);
 

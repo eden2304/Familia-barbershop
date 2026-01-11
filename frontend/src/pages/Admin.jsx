@@ -568,7 +568,7 @@ export default function Admin() { // Removed props
         galleryData, hoursData, clientsData, backgroundVideosData,
         productsData, waitingListData, bookingRulesSetting
       ] = await Promise.all([
-        Admin.appointmentsByDate(selectedDate).catch(() => []),
+        AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAny(Service, "order_index").catch(() => []),
         listAny(Testimonial, "order_index").catch(() => []),
         listAny(GalleryImage, "order_index").catch(() => []),

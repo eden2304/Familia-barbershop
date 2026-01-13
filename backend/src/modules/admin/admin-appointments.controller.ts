@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
+import { DateTime } from 'luxon';
 
 import { Appointment } from '../../entities/appointment.entity';
 
@@ -21,10 +22,21 @@ function normDate(date: string): string {
 }
 
 function dayRangeUtc(yyyyMmDd: string) {
-    const start = new Date(`${yyyyMmDd}T00:00:00.000Z`);
-    const end = new Date(`${yyyyMmDd}T23:59:59.999Z`);
+    const TZ = 'Asia/Jerusalem';
+
+    const start = DateTime.fromISO(yyyyMmDd, { zone: TZ })
+        .startOf('day')
+        .toUTC()
+        .toJSDate();
+
+    const end = DateTime.fromISO(yyyyMmDd, { zone: TZ })
+        .endOf('day')
+        .toUTC()
+        .toJSDate();
+
     return { start, end };
 }
+
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)

@@ -323,6 +323,15 @@ function localTimeStr(d) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; // HH:mm בלוקאלי
 }
 
+const toLocalYmd = (date) => {
+  if (!(date instanceof Date)) return String(date || '').slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+
 
 /* ---------------- helpers: dual snake/camel fields ---------------- */
 function both(obj, snake, camel, def) {
@@ -672,15 +681,7 @@ const api = {
   Admin : {
     // מחזיר רשימת תורים ליום מסוים (פורמט YYYY-MM-DD)
     appointmentsByDate: (date) => {
-      const toYmdLocal = (dt) => {
-        const d = dt instanceof Date ? dt : new Date(dt);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-      };
-
-      const d = toYmdLocal(date);
+      const d = toLocalYmd(date);
       return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
     },
 

@@ -709,11 +709,15 @@ const api = {
 
     blocks: {
       list: (date) => {
-        const q = date
-            ? '?date=' + encodeURIComponent(
-            date instanceof Date ? date.toISOString().slice(0,10) : String(date).slice(0,10)
-        )
-            : '';
+        const toYmdLocal = (dt) => {
+          const d = dt instanceof Date ? dt : new Date(dt);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        };
+
+        const q = date ? `?date=${encodeURIComponent(toYmdLocal(date))}` : '';
         return httpGet('/admin/blocked-times' + q);
       },
 

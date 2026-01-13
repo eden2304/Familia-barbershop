@@ -672,9 +672,15 @@ const api = {
   Admin : {
     // מחזיר רשימת תורים ליום מסוים (פורמט YYYY-MM-DD)
     appointmentsByDate: (date) => {
-      const d = (date instanceof Date)
-          ? date.toISOString().slice(0, 10)
-          : String(date || '').slice(0, 10);
+      const toYmdLocal = (dt) => {
+        const d = dt instanceof Date ? dt : new Date(dt);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      const d = toYmdLocal(date);
       return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
     },
 

@@ -1783,6 +1783,7 @@ const extractRecurringSchedules = (client) => {
                               const passed = isAfter(new Date(), new Date(apt.ends_at));
                               const displayName = isBlocked ? 'חסום' : ((
                                   (apt.client_name && String(apt.client_name).trim()) ||
+                                  (apt.clientName && String(apt.clientName).trim()) ||
                                   (apt.client?.name && String(apt.client.name).trim()) ||
                                   `${(apt.client?.firstName || apt.client_first_name || '').toString().trim()} ${(apt.client?.lastName || apt.client_last_name || '').toString().trim()}`.trim() ||
                                   (apt.client?.phone || apt.client_phone || apt.phone || '')
@@ -1793,7 +1794,13 @@ const extractRecurringSchedules = (client) => {
                                       initial={{ opacity: 0, y: 20 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0 }}
-                                      onClick={() => setSelectedAppointment(apt)}
+                                      onClick={() =>
+                                          setSelectedAppointment({
+                                            ...apt,
+                                            client_name: displayName,
+                                            clientName: displayName, // לשכבות/קומפוננטות שמחפשות camelCase
+                                          })
+                                      }
                                       className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
                                   >
                                     <div className="text-center w-20">

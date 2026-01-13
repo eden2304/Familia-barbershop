@@ -56,7 +56,7 @@ export class AdminAppointmentsController {
             .createQueryBuilder('a')
             .leftJoinAndSelect('a.service', 's')
             .leftJoinAndSelect('a.client', 'c')
-            .where('a.startsAt >= :start AND a.startsAt <= :end', { start, end })
+            .where("(a.startsAt AT TIME ZONE 'Asia/Jerusalem')::date = :d", { d })
             .orderBy('a.startsAt', 'ASC')
             .getMany();
 

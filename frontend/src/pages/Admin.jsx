@@ -268,6 +268,52 @@ export default function Admin() { // Removed props
   const [activeTab, setActiveTab] = useState("appointments");
 
   const [showQuickActionsModal, setShowQuickActionsModal] = useState(false);
+
+  const isPhoneLike = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '');
+    return digits.length >= 7;
+  };
+
+  const buildClientName = (client) => {
+    if (!client) return "";
+    const first = client.first_name ?? client.firstName ?? '';
+    const last = client.last_name ?? client.lastName ?? '';
+    const full = `${first} ${last}`.trim();
+    return full || client.name?.trim() || '';
+  };
+
+  const findClientForAppointment = (apt) => {
+    const aptClientId = apt?.client_id ?? apt?.clientId ?? apt?.client?.id;
+    if (aptClientId) {
+      const byId = (allClients || []).find((client) => String(client.id) === String(aptClientId));
+      if (byId) return byId;
+    }
+    const aptPhone = normalizePhone(apt?.client_phone ?? apt?.phone ?? apt?.client?.phone ?? "");
+    if (!aptPhone) return null;
+    return (allClients || []).find((client) => normalizePhone(client.phone ?? client.client_phone ?? "") === aptPhone) || null;
+  };
+
+  const getAppointmentDisplayInfo = (apt) => {
+    const matchedClient = findClientForAppointment(apt);
+    const appointmentFirst = apt?.client?.firstName ?? apt?.client_first_name ?? apt?.first_name ?? '';
+    const appointmentLast = apt?.client?.lastName ?? apt?.client_last_name ?? apt?.last_name ?? '';
+    const appointmentName = `${appointmentFirst} ${appointmentLast}`.trim();
+    const rawClientName = String(apt?.client_name ?? apt?.clientName ?? '').trim();
+    const safeRawName = rawClientName && !isPhoneLike(rawClientName) ? rawClientName : '';
+    const clientName = buildClientName(matchedClient);
+    const name = appointmentName || safeRawName || clientName || 'לקוח';
+    const clientPhone = matchedClient?.phone ?? matchedClient?.client_phone ?? apt?.client_phone ?? apt?.phone ?? apt?.client?.phone ?? '';
+
+    const normalizedClient = matchedClient
+        ? {
+          ...matchedClient,
+          firstName: matchedClient.firstName ?? matchedClient.first_name ?? matchedClient.name?.split(' ')[0],
+          lastName: matchedClient.lastName ?? matchedClient.last_name ?? matchedClient.name?.split(' ').slice(1).join(' '),
+        }
+        : null;
+
+    return { name, phone: clientPhone, client: normalizedClient };
+  };
   const [showAddAppointmentForm, setShowAddAppointmentForm] = useState(false);
   const [showBlockingForm, setShowBlockingForm] = useState(false);
 
@@ -1787,13 +1833,15 @@ const extractRecurringSchedules = (client) => {
                               const isCompleted = apt.status === 'completed';
                               const isBlocked = apt.status === 'blocked';
                               const passed = isAfter(new Date(), new Date(apt.ends_at));
-                              const displayName = isBlocked ? 'חסום' : ((
-                                  (apt.client_name && String(apt.client_name).trim()) ||
-                                  (apt.clientName && String(apt.clientName).trim()) ||
-                                  (apt.client?.name && String(apt.client.name).trim()) ||
-                                  `${(apt.client?.firstName || apt.client_first_name || '').toString().trim()} ${(apt.client?.lastName || apt.client_last_name || '').toString().trim()}`.trim() ||
-                                  (apt.client?.phone || apt.client_phone || apt.phone || '')
-                              ));
+                              const displayInfo = getAppointmentDisplayInfo(apt);
+                              const displayName = isBlocked ? 'חסום' : displayInfo.name;
+                              const selectedData = {
+                                ...apt,
+                                client_name: displayName,
+                                clientName: displayName, // לשכבות/קומפוננטות שמחפשות camelCase
+                                client_phone: isBlocked ? '' : displayInfo.phone,
+                                client: displayInfo.client || apt.client,
+                              };
                               return (
                                   <motion.div
                                       key={apt.id}
@@ -1801,11 +1849,7 @@ const extractRecurringSchedules = (client) => {
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0 }}
                                       onClick={() =>
-                                          setSelectedAppointment({
-                                            ...apt,
-                                            client_name: displayName,
-                                            clientName: displayName, // לשכבות/קומפוננטות שמחפשות camelCase
-                                          })
+                                          setSelectedAppointment(selectedData)
                                       }
                                       className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
                                   >
@@ -1828,7 +1872,7 @@ const extractRecurringSchedules = (client) => {
                                     <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setSelectedAppointment(apt);
+                                              setSelectedAppointment(selectedData);
                                             }}>
                                       <MoreVertical className="w-5 h-5" />
                                     </Button>
@@ -3160,8 +3204,8 @@ const extractRecurringSchedules = (client) => {
                 onClose={() => setSelectedAppointment(null)}
                 appointment={selectedAppointment}
                 service={serviceById(selectedAppointment?.service_id)}
-                onDelete={() => {
-                  handleDelete(Appointment, selectedAppointment.id, "תור");
+                onDelete={async () => {
+                  await handleDelete(Appointment, selectedAppointment.id, "תור");
                   setSelectedAppointment(null);
                 }}
                 onStatusChange={handleStatusChange}

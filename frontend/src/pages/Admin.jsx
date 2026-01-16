@@ -555,13 +555,28 @@ export default function Admin() { // Removed props
     }
   };
 
+  const normalizeAppointmentsForDay = (items = []) => {
+    const now = new Date();
+    return (items || []).map((apt) => {
+      const appointmentStartTime = new Date(apt.starts_at ?? apt.startsAt);
+      const appointmentEndTime = new Date(apt.ends_at ?? apt.endsAt);
+
+      if (isAfter(now, appointmentEndTime) && apt.status === 'booked') {
+        // UI-only: מציג כ'הושלם' בלי לגעת בשרת
+        return { ...apt, status: 'completed' };
+      }
+      return apt;
+    });
+  };
+
+  const loadAppointmentsForDate = async (date) => {
+    const data = await AdminApi.appointmentsByDate(date).catch(() => []);
+    setAppointments(normalizeAppointmentsForDay(data));
+  };
 
   const loadData = async () => {
     try {
       setLoading(true);
-
-      const now = new Date();
-      const oneWeekAgo = startOfDay(subDays(now, 7));
 
       const [
         allAppointmentsData, servicesData, testimonialsData,
@@ -583,20 +598,6 @@ export default function Admin() { // Removed props
         Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
       ]);
 
-      const processedAppointments = [];
-      for (const apt of allAppointmentsData || []) {
-        const appointmentStartTime = new Date(apt.starts_at);
-        const appointmentEndTime = new Date(apt.ends_at);
-
-        if (isAfter(now, appointmentEndTime) && apt.status === 'booked') {
-          // UI-only: מציג כ'הושלם' בלי לגעת בשרת
-          processedAppointments.push({ ...apt, status: 'completed' });
-        }
-        else {
-          processedAppointments.push(apt);
-        }
-      }
-
       const normalizedTestimonials = (testimonialsData || []).map((row) => {
         const rating = Number.isFinite(Number(row?.rating)) ? Number(row.rating) : 5;
         const content = (row?.content ?? row?.text ?? "").toString();
@@ -608,7 +609,7 @@ export default function Admin() { // Removed props
         };
       });
 
-      setAppointments(processedAppointments);
+      setAppointments(normalizeAppointmentsForDay(allAppointmentsData));
       setServices(servicesData || []);
       setTestimonials(normalizedTestimonials);
       setGalleryImages(galleryData || []);
@@ -630,6 +631,11 @@ export default function Admin() { // Removed props
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadAppointmentsForDate(selectedDate);
+  }, [isAuthenticated, selectedDate]);
 
   const sanitizeTimeInput = (value) => {
     if (!value) return "";

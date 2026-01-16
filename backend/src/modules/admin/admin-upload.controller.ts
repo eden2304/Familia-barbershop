@@ -6,6 +6,14 @@ import { extname, join } from 'path';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 
+
+type UploadedFile = {
+    filename: string;
+    size: number;
+    mimetype: string;
+};
+
+
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
 
 function ensureUploadsDir() {
@@ -37,7 +45,7 @@ export class AdminUploadController {
         }),
         limits: { fileSize: 50 * 1024 * 1024 },
     }))
-    async upload(@UploadedFile() file?: Express.Multer.File) {
+    async upload(@UploadedFile() file?: UploadedFile) {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }

@@ -1,5 +1,5 @@
 # ---------- Build stage ----------
-FROM node:20-alpine AS build
+FROM public.ecr.aws/docker/library/node:20-alpine AS build
 WORKDIR /app
 
 # Accept build-time variables from Railway
@@ -22,7 +22,7 @@ RUN npm run build
 
 
 # ---------- Runtime stage ----------
-FROM node:20-alpine AS runtime
+FROM public.ecr.aws/docker/library/node:20-alpine AS runtime
 WORKDIR /app
 
 RUN npm i -g serve

@@ -4,8 +4,8 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ name: 'services' })
 export class ServiceEntity {
-    @PrimaryGeneratedColumn('uuid')
-    id: string;
+    @PrimaryGeneratedColumn()
+    id: number;
 
     @Column({ type: 'varchar', length: 255 })
     name: string;
@@ -22,4 +22,3 @@ export class ServiceEntity {
     @Column({ name: 'is_active', type: 'boolean', default: true })
     isActive: boolean;
 }
-

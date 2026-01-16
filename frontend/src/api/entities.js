@@ -349,6 +349,14 @@ export const WaitingList = {
         return getJson(`/admin/waiting-list${qs}`);
     },
 
+    async list() {
+        return WaitingList.listAdmin();
+    },
+
+    async filter(filters = {}) {
+        return WaitingList.listAdmin(filters);
+    },
+
     /** עדכון סטטוס/זמן (אדמין) */
     async update(id, patch) {
         return putJson(`/admin/waiting-list/${id}`, patch);

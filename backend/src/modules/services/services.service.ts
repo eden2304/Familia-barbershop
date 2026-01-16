@@ -14,6 +14,14 @@ export class ServicesService {
     listAll() { return this.repo.find({ order: { orderIndex: 'ASC' } }); }
 
     create(data: Partial<ServiceEntity>) { return this.repo.save(this.repo.create(data)); }
-    update(id: string, data: Partial<ServiceEntity>) { return this.repo.update(id, data); }
-    remove(id: string) { return this.repo.delete(id); }
+    update(id: string, data: Partial<ServiceEntity>) {
+        const numericId = Number(id);
+        if (!Number.isFinite(numericId)) return Promise.resolve();
+        return this.repo.update(numericId, data);
+    }
+    remove(id: string) {
+        const numericId = Number(id);
+        if (!Number.isFinite(numericId)) return Promise.resolve();
+        return this.repo.delete(numericId);
+    }
 }

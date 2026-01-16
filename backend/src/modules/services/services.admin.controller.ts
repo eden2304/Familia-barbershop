@@ -24,14 +24,21 @@ export class AdminServicesController {
 
     @Put(':id')
     async update(@Param('id') id: string, @Body() dto: Partial<ServiceEntity>) {
-        // ✔ אל תעשה Number(id) — ה-id שלך טיפוס string (UUID)
-        await this.repo.update({ id }, dto);
-        return this.repo.findOne({ where: { id } });
+        const numericId = Number(id);
+        if (!Number.isFinite(numericId)) {
+            return null;
+        }
+        await this.repo.update({ id: numericId }, dto);
+        return this.repo.findOne({ where: { id: numericId } });
     }
 
     @Delete(':id')
     async remove(@Param('id') id: string) {
-        await this.repo.delete({ id });
+        const numericId = Number(id);
+        if (!Number.isFinite(numericId)) {
+            return { ok: false };
+        }
+        await this.repo.delete({ id: numericId });
         return { ok: true };
     }
 }

@@ -21,6 +21,15 @@ export class Appointment {
     @Column({ name: 'ends_at', type: 'timestamptz', nullable: true })
     endsAt: Date | null;
 
+    @Column({ type: 'varchar', length: 32, default: 'booked' })
+    status: string;
+
+    @Column({ type: 'text', nullable: true })
+    note: string | null;
+
+    @Column({ name: 'recurring_id', type: 'int', nullable: true })
+    recurringId: number | null;
+
     // ❌ הסר/הער את זה:
     // @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     // createdAt: Date;

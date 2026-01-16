@@ -1,4 +1,4 @@
-import { IsBoolean, IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, Matches, MinLength } from 'class-validator';
+import { IsBoolean, IsISO8601, IsNotEmpty, IsOptional, IsString, IsInt, Matches, MinLength } from 'class-validator';
 
 export class CreateAppointmentDto {
     @IsString()
@@ -11,8 +11,8 @@ export class CreateAppointmentDto {
     @IsString() @MinLength(1)
     clientLastName: string;
 
-    @IsUUID()
-    serviceId: string;
+    @IsInt()
+    serviceId: number;
 
     @IsISO8601()
     startsAt: string; // ISO (כולל אזור זמן)
@@ -23,8 +23,8 @@ export class CreateAppointmentDto {
 }
 
 export class GetAvailableQuery {
-    @IsUUID()
-    serviceId: string;
+    @IsInt()
+    serviceId: number;
 
     // YYYY-MM-DD
     @Matches(/^\d{4}-\d{2}-\d{2}$/)

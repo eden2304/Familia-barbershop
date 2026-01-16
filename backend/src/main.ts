@@ -3,6 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Request, Response, NextFunction } from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as express from 'express';
+import { join } from 'path';
 
 const logger = new Logger('Bootstrap');
 
@@ -81,6 +83,8 @@ async function bootstrap() {
             'X-Admin-Code',
         ],
     });
+
+    app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
 
 

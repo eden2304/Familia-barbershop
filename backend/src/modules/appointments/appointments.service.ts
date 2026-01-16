@@ -223,7 +223,11 @@ export class AppointmentsService {
 
     async create(dto: CreateAppointmentDto) {
         // 1) שירות
-        const service = await this.svcRepo.findOne({ where: { id: dto.serviceId } });
+        const serviceId = Number(dto.serviceId);
+        if (!Number.isFinite(serviceId)) {
+            throw new BadRequestException('Service not found');
+        }
+        const service = await this.svcRepo.findOne({ where: { id: serviceId } });
         if (!service) throw new NotFoundException('Service not found');
 
         // 2) start/end
@@ -336,7 +340,11 @@ export class AppointmentsService {
     }
 
     async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
-        const service = await this.svcRepo.findOne({ where: { id: serviceId } });
+        const numericId = Number(serviceId);
+        if (!Number.isFinite(numericId)) {
+            throw new NotFoundException('Service not found');
+        }
+        const service = await this.svcRepo.findOne({ where: { id: numericId } });
         if (!service) throw new NotFoundException('Service not found');
 
         const isMember = Boolean(opts.isMember);

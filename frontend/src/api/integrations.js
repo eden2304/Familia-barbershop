@@ -1,5 +1,7 @@
 // src/api/integrations.js
 
+import { getStoredAuthToken } from '@/utils/authStorage';
+
 const isBrowser = typeof window !== 'undefined';
 
 const Core = {
@@ -95,9 +97,16 @@ export const UploadFile = {
         const fd = new FormData();
         fd.append('file', file, file.name); // שם השדה חייב להיות "file"
 
+        const headers = {};
+        const token = getStoredAuthToken?.();
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
         const res = await fetch(`${API_ROOT}/admin/upload`, {
             method: 'POST',
-            body: fd,            // בלי headers בכלל
+            body: fd,            // בלי headers של content-type
+            headers,
         });
 
         const data = await res.json().catch(() => ({}));

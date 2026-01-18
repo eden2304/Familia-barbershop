@@ -579,6 +579,11 @@ export default function Admin() { // Removed props
     throw new Error("No list method on entity");
   };
 
+  const listAdminPreferred = async (entity, order) => {
+    if (entity?.adminList) return entity.adminList(order);
+    return listAny(entity, order);
+  };
+
   // מביא לקוחות מהדטהבייס דרך הסרבר (ללא קומבינות):
   const loadClients = async () => {
     // עדיפות לשכבת ה־entities (קורא ל־/clients מאחורה)
@@ -630,13 +635,13 @@ export default function Admin() { // Removed props
         productsData, waitingListData, bookingRulesSetting
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
-        listAny(Service, "order_index").catch(() => []),
+        listAdminPreferred(Service, "order_index").catch(() => []),
         listAny(Testimonial, "order_index").catch(() => []),
-        listAny(GalleryImage, "order_index").catch(() => []),
+        listAdminPreferred(GalleryImage, "order_index").catch(() => []),
         listAny(BusinessHours).catch(() => []),
         loadClients(),                                // ← לקוחות
-        listAny(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
-        listAny(Product, "order_index").catch(() => []),
+        listAdminPreferred(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
+        listAdminPreferred(Product, "order_index").catch(() => []),
         (WaitingList.filter
                 ? WaitingList.filter({ status: 'waiting' }, '-desired_starts_at')
                 : listAny(WaitingList, '-desired_starts_at')

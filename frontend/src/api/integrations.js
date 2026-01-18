@@ -109,12 +109,16 @@ export const UploadFile = {
             headers,
         });
 
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(JSON.stringify(data));
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            const message = data?.error || data?.message || `Upload failed (${res.status})`;
+            throw new Error(message);
+        }
 
-        const absoluteUrl = data.url?.startsWith('/')
-            ? `${API_ROOT}${data.url}`
-            : data.url;
+        const rawUrl = data?.url || data?.file_url || '';
+        const absoluteUrl = rawUrl.startsWith('/')
+            ? `${API_ROOT}${rawUrl}`
+            : rawUrl;
 
         return { ok: true, url: absoluteUrl, file_url: absoluteUrl };
     }

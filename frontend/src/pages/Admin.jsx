@@ -3656,8 +3656,9 @@ function GalleryForm({ gallery, onSubmit, onCancel }) {
         is_active: gallery?.is_active ?? gallery?.isActive ?? true,
       });
     } catch (error) {
+      const message = error?.message || "שגיאה בהעלאת הקובץ";
       console.error("Error uploading file:", error);
-      alert("שגיאה בהעלאת הקובץ");
+      alert(message);
     } finally {
       setUploading(false);
     }

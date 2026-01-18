@@ -3618,6 +3618,15 @@ function GalleryForm({ gallery, onSubmit, onCancel }) {
   const existingUrl = gallery?.video_url || gallery?.url || gallery?.image_url || "";
   const baseUrl = (api?.defaults?.baseURL || '').replace(/\/+$/, '');
   const previewUrl = existingUrl && (existingUrl.startsWith('http') ? existingUrl : `${baseUrl}${existingUrl}`);
+  const getErrorMessage = (error, fallback) => {
+    if (!error) return fallback;
+    return (
+        error?.payload?.error ||
+        error?.payload?.message ||
+        error?.message ||
+        String(error)
+    );
+  };
   const [formData, setFormData] = useState({
     alt_text: gallery?.alt_text || "",
     order_index: gallery?.order_index ?? gallery?.orderIndex ?? 0,
@@ -3656,7 +3665,7 @@ function GalleryForm({ gallery, onSubmit, onCancel }) {
         is_active: gallery?.is_active ?? gallery?.isActive ?? true,
       });
     } catch (error) {
-      const message = error?.message || "שגיאה בהעלאת הקובץ";
+      const message = getErrorMessage(error, "שגיאה בהעלאת הקובץ");
       console.error("Error uploading file:", error);
       alert(message);
     } finally {

@@ -103,11 +103,17 @@ export const UploadFile = {
             headers.Authorization = `Bearer ${token}`;
         }
 
-        const res = await fetch(`${API_ROOT}/admin/upload`, {
-            method: 'POST',
-            body: fd,            // בלי headers של content-type
-            headers,
-        });
+        let res;
+        try {
+            res = await fetch(`${API_ROOT}/admin/upload`, {
+                method: 'POST',
+                body: fd,            // בלי headers של content-type
+                headers,
+            });
+        } catch (error) {
+            const reason = error?.message || 'Network error';
+            throw new Error(`Upload failed: ${reason}. Check API_ROOT and network connectivity.`);
+        }
 
         const data = await res.json().catch(() => null);
         if (!res.ok) {

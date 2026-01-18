@@ -330,6 +330,7 @@ export default function Admin() { // Removed props
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingService, setEditingService] = useState(null);
   const [editingTestimonial, setEditingTestimonial] = useState(null);
+  const [editingGallery, setEditingGallery] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showClientForm, setShowClientForm] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
@@ -2634,7 +2635,10 @@ const extractRecurringSchedules = (client) => {
                       <div className="flex justify-between items-center">
                         <h2 className="text-2xl font-bold">ניהול סטוריז</h2>
                         <Button
-                            onClick={() => setShowGalleryForm(true)}
+                            onClick={() => {
+                              setEditingGallery(null);
+                              setShowGalleryForm(true);
+                            }}
                             className="bg-purple-600 hover:bg-purple-700 text-white rounded-full"
                         >
                           <Plus className="w-4 h-4 mr-2" />
@@ -2675,15 +2679,29 @@ const extractRecurringSchedules = (client) => {
                                               </div>
                                               <CardContent className="p-4">
                                                 <p className="text-sm text-gray-600 mb-3 truncate">{item.alt_text || 'סרטון'}</p>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => handleDelete(GalleryImage, item.id, "סרטון")}
-                                                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                >
-                                                  <Trash2 className="w-4 h-4 mr-1" />
-                                                  מחק
-                                                </Button>
+                                                <div className="flex gap-2">
+                                                  <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      onClick={() => {
+                                                        setEditingGallery(item);
+                                                        setShowGalleryForm(true);
+                                                      }}
+                                                      className="flex-1"
+                                                  >
+                                                    <Edit className="w-4 h-4 mr-1" />
+                                                    עריכה
+                                                  </Button>
+                                                  <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      onClick={() => handleDelete(GalleryImage, item.id, "סרטון")}
+                                                      className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                  >
+                                                    <Trash2 className="w-4 h-4 mr-1" />
+                                                    מחק
+                                                  </Button>
+                                                </div>
                                               </CardContent>
                                             </Card>
                                           </div>
@@ -3303,22 +3321,37 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showGalleryForm && (
-            <Dialog open={showGalleryForm} onOpenChange={setShowGalleryForm}>
+            <Dialog
+                open={showGalleryForm}
+                onOpenChange={(open) => {
+                  setShowGalleryForm(open);
+                  if (!open) setEditingGallery(null);
+                }}
+            >
               <DialogContent className="max-w-md" aria-describedby={undefined}>
                 <DialogHeader>
-                  <DialogTitle>הוספת סרטון חדש</DialogTitle>
+                  <DialogTitle>{editingGallery ? 'עריכת סרטון' : 'הוספת סרטון חדש'}</DialogTitle>
                 </DialogHeader>
                 <GalleryForm
+                    gallery={editingGallery}
                     onSubmit={async (data) => {
                       try {
-                        await GalleryImage.create(data);
+                        if (editingGallery) {
+                          await GalleryImage.update(editingGallery.id, data);
+                        } else {
+                          await GalleryImage.create(data);
+                        }
                         loadData();
                         setShowGalleryForm(false);
+                        setEditingGallery(null);
                       } catch (error) {
                         console.error("Error adding video:", error);
                       }
                     }}
-                    onCancel={() => setShowGalleryForm(false)}
+                    onCancel={() => {
+                      setShowGalleryForm(false);
+                      setEditingGallery(null);
+                    }}
                 />
               </DialogContent>
             </Dialog>
@@ -3581,38 +3614,46 @@ function TestimonialForm({ testimonial, onSubmit, onCancel }) {
 }
 
 // Gallery Form Component with File Upload
-function GalleryForm({ onSubmit, onCancel }) {
+function GalleryForm({ gallery, onSubmit, onCancel }) {
+  const existingUrl = gallery?.video_url || gallery?.url || gallery?.image_url || "";
+  const baseUrl = (api?.defaults?.baseURL || '').replace(/\/+$/, '');
+  const previewUrl = existingUrl && (existingUrl.startsWith('http') ? existingUrl : `${baseUrl}${existingUrl}`);
   const [formData, setFormData] = useState({
-    alt_text: "",
-    order_index: 0
+    alt_text: gallery?.alt_text || "",
+    order_index: gallery?.order_index ?? gallery?.orderIndex ?? 0,
+    url: existingUrl,
   });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!file) {
-      alert("נא לבחור קובץ וידאו");
+    if (!file && !formData.url) {
+      alert("נא לבחור קובץ וידאו או להדביק קישור");
       return;
     }
 
     setUploading(true);
     try {
-      // שרת מחזיר { ok:true, url: "/uploads/..." }
-      console.log('selected file:', file?.name, file?.type, file); // צריך לראות שם/סוג
-      const { url } = await UploadFile.upload(file);
+      let finalUrl = formData.url;
 
-      // נבנה URL מוחלט לפי הבסיס של axios (api)
-      const base = (api?.defaults?.baseURL || '').replace(/\/+$/,''); // בלי "/" בסוף
-      const abs = url.startsWith('http') ? url : `${base}${url}`;      // "/uploads/..." -> "http://localhost:3001/uploads/..."
+      if (file) {
+        const { url } = await UploadFile.upload(file);
+        finalUrl = url;
+      }
+
+      if (!finalUrl) {
+        alert("שגיאה בקבלת קישור לקובץ");
+        return;
+      }
 
       await onSubmit({
-        // נשמור את שלושתם כדי שכל מקום בקוד ימצא מה שהוא צריך:
-        image_url: abs,
-        video_url: abs,
-        url:       abs,
-        alt_text:  formData.alt_text,
-        order_index: formData.order_index
+        image_url: finalUrl,
+        video_url: finalUrl,
+        url: finalUrl,
+        alt_text: formData.alt_text,
+        order_index: formData.order_index,
+        is_active: gallery?.is_active ?? gallery?.isActive ?? true,
       });
     } catch (error) {
       console.error("Error uploading file:", error);
@@ -3630,7 +3671,15 @@ function GalleryForm({ onSubmit, onCancel }) {
               type="file"
               accept="video/mp4,video/*"
               onChange={(e) => setFile(e.target.files[0])}
-              required
+          />
+        </div>
+
+        <div>
+          <Label>או הדבק קישור ישיר</Label>
+          <Input
+              value={formData.url}
+              onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+              placeholder="https://"
           />
         </div>
 
@@ -3639,7 +3688,6 @@ function GalleryForm({ onSubmit, onCancel }) {
           <Input
               value={formData.alt_text}
               onChange={(e) => setFormData({ ...formData, alt_text: e.target.value })}
-              required
           />
         </div>
 
@@ -3652,9 +3700,22 @@ function GalleryForm({ onSubmit, onCancel }) {
           />
         </div>
 
+        {previewUrl && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-xs text-gray-500 mb-2">תצוגה מקדימה</p>
+              <video
+                  src={previewUrl}
+                  className="w-full h-40 object-cover rounded-lg"
+                  muted
+                  playsInline
+                  controls={false}
+              />
+            </div>
+        )}
+
         <div className="flex gap-3 pt-4">
           <Button type="submit" className="flex-1" disabled={uploading}>
-            {uploading ? "מעלה..." : "הוסף"}
+            {uploading ? "מעלה..." : gallery ? "עדכן" : "הוסף"}
           </Button>
           <Button type="button" variant="outline" onClick={onCancel} className="flex-1" disabled={uploading}>
             ביטול

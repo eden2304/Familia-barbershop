@@ -3,11 +3,15 @@
 import { setStoredAuthToken, getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 
+const FALLBACK_BASE = (import.meta?.env?.DEV
+    ? 'http://localhost:3001'
+    : (typeof window !== 'undefined' ? window.location.origin : ''));
+
 const ENV_BASE =
     (import.meta?.env?.VITE_API_BASE) ||
     (import.meta?.env?.VITE_API_URL) ||
     (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
-    'http://localhost:3001';
+    FALLBACK_BASE;
 
 const BASE_URL = ENV_BASE;
 
@@ -469,7 +473,9 @@ function toTestimonialBody(b) {
 function toGalleryBody(b) {
   b = b || {};
   return {
+    imageUrl: (b.imageUrl !== undefined ? b.imageUrl : b.image_url),
     videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    url: (b.url !== undefined ? b.url : (b.videoUrl ?? b.video_url)),
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
   };

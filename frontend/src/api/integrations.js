@@ -77,11 +77,15 @@ const DevUploader = {
 };
 
 // "@/api/integrations.js"
+const FALLBACK_BASE = (import.meta?.env?.DEV
+    ? 'http://localhost:3001'
+    : (typeof window !== 'undefined' ? window.location.origin : ''));
+
 const API_ROOT =
     (import.meta?.env?.VITE_API_BASE) ||
     (import.meta?.env?.VITE_API_URL) ||
     (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
-    'http://localhost:3001';
+    FALLBACK_BASE;
 
 export { API_ROOT };
 
@@ -110,4 +114,3 @@ export const UploadFile = {
 
 export { Core, WhatsApp, Phone, Maps, DevUploader as _DevUploader };
 export default { Core, WhatsApp, Phone, Maps, UploadFile };
-

@@ -295,12 +295,23 @@ export const Testimonial = {
         }
         return arr;
     },
+    async adminList(order = "order_index") {
+        const res = await api.get("/admin/testimonials");
+        const raw = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const arr = normTestimonialArr(raw);
+        if (order === "order_index") {
+            arr.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        }
+        return arr;
+    },
 
     async create(data) {
+        const contentValue = (data?.content ?? data?.text ?? "").toString();
         const payload = {
             author: data?.author ?? '',
             rating: data?.rating,
-            content: (data?.content ?? data?.text ?? ''), // שולח תמיד content
+            content: contentValue, // תואם לשרת שמצפה ל-content
+            text: contentValue, // תואם לשרת שמצפה ל-text
             is_active: data?.is_active ?? data?.isActive ?? true,
             order_index: data?.order_index ?? data?.orderIndex ?? 0,
         };
@@ -309,11 +320,13 @@ export const Testimonial = {
     },
 
     async update(id, data) {
+        const hasContent = (data?.content !== undefined || data?.text !== undefined);
+        const contentValue = (data?.content ?? data?.text ?? "").toString();
         const payload = {
             author: data?.author,
             rating: data?.rating,
-            ...( (data?.content !== undefined || data?.text !== undefined)
-                ? { content: (data?.content ?? data?.text ?? '') }
+            ...(hasContent
+                ? { content: contentValue, text: contentValue }
                 : {} ),
             is_active: data?.is_active ?? data?.isActive,
             order_index: data?.order_index ?? data?.orderIndex,

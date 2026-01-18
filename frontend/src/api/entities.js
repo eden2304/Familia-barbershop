@@ -1,6 +1,6 @@
 // src/api/entities.js
 // ייבוא יחיד – בלי resolverים כפולים ובלי דאבלים
-import api, {
+import api, { invalidateCacheByPathPrefix,
     Service,
     Appointment,
     Admin,
@@ -187,6 +187,7 @@ export const BusinessHours = {
         const payload = prepareBusinessHourPayload(rows);
         try {
             const res = await api.put('/admin/business-hours', { hours: payload });
+            invalidateCacheByPathPrefix('/business-hours');
             const normalized = normalizeBusinessHourArr(res);
             if (normalized.length > 0) return normalized;
         } catch (e) {

@@ -67,6 +67,17 @@ function __cacheKey(path, headers) {
   return String(BASE_URL) + String(path) + '::' + String(auth);
 }
 
+export function invalidateCacheByPathPrefix(prefix) {
+  const normalized = String(prefix || '');
+  if (!normalized) return;
+  const match = String(BASE_URL) + normalized;
+  for (const key of __getCache.keys()) {
+    if (key.startsWith(match)) {
+      __getCache.delete(key);
+    }
+  }
+}
+
 function __defaultTtlMs(path) {
   const p = String(path || '');
   // זמינות משתנה מהר -> TTL קצר
@@ -477,9 +488,21 @@ const api = {
   Service: {
     list: async () => normServiceArr((await httpGet('/services')) || []),
     adminList: async () => normServiceArr((await httpGet('/admin/services')) || []),
-    create: async (data) => normService(await httpPost('/admin/services', toServiceBody(data))),
-    update: async (id, data) => normService(await httpPut('/admin/services/' + encodeURIComponent(id), toServiceBody(data))),
-    remove: (id) => httpDelete('/admin/services/' + encodeURIComponent(id)),
+    create: async (data) => {
+      const res = normService(await httpPost('/admin/services', toServiceBody(data)));
+      invalidateCacheByPathPrefix('/services');
+      return res;
+    },
+    update: async (id, data) => {
+      const res = normService(await httpPut('/admin/services/' + encodeURIComponent(id), toServiceBody(data)));
+      invalidateCacheByPathPrefix('/services');
+      return res;
+    },
+    remove: async (id) => {
+      const res = await httpDelete('/admin/services/' + encodeURIComponent(id));
+      invalidateCacheByPathPrefix('/services');
+      return res;
+    },
   },
 
   Appointment: {
@@ -673,6 +696,7 @@ const api = {
     updateAll: async (rows) => {
       const payload = Array.isArray(rows) ? rows : [];
       const res = await httpPut('/admin/business-hours', { hours: payload });
+      invalidateCacheByPathPrefix('/business-hours');
       return Array.isArray(res) ? res : payload;
     },
     update: async (rows) => api.BusinessHours.updateAll(rows),
@@ -738,6 +762,7 @@ const api = {
 
   Product: {
     list: async () => normMediaArr((await httpGet('/products')) || []),
+    adminList: async () => normMediaArr((await httpGet('/admin/products')) || []),
     create: async (data) => normMedia(await httpPost('/admin/products', toProductBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/products/' + encodeURIComponent(id), toProductBody(data))),
     remove: (id) => httpDelete('/admin/products/' + encodeURIComponent(id)),
@@ -766,6 +791,7 @@ const api = {
 
   GalleryVideo: {
     list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
+    adminList: async () => normMediaArr((await httpGet('/admin/gallery-videos')) || []),
     create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
     remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
@@ -773,6 +799,7 @@ const api = {
   // alias: some UIs still call GalleryImage
   GalleryImage: {
     list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
+    adminList: async () => normMediaArr((await httpGet('/admin/gallery-videos')) || []),
     create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
     remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
@@ -780,6 +807,7 @@ const api = {
 
   BackgroundVideo: {
     list: async () => normMediaArr((await httpGet('/background-videos')) || []),
+    adminList: async () => normMediaArr((await httpGet('/admin/background-videos')) || []),
     create: async (data) => normMedia(await httpPost('/admin/background-videos', toBackgroundBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/background-videos/' + encodeURIComponent(id), toBackgroundBody(data))),
     remove: (id) => httpDelete('/admin/background-videos/' + encodeURIComponent(id)),

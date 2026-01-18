@@ -636,7 +636,7 @@ export default function Admin() { // Removed props
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAdminPreferred(Service, "order_index").catch(() => []),
-        listAny(Testimonial, "order_index").catch(() => []),
+        listAdminPreferred(Testimonial, "order_index").catch(() => []),
         listAdminPreferred(GalleryImage, "order_index").catch(() => []),
         listAny(BusinessHours).catch(() => []),
         loadClients(),                                // ← לקוחות

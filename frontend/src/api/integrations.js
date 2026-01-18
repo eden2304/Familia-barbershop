@@ -1,5 +1,7 @@
 // src/api/integrations.js
 
+import { getStoredAuthToken } from "@/utils/authStorage";
+
 const isBrowser = typeof window !== 'undefined';
 
 const Core = {
@@ -91,9 +93,13 @@ export const UploadFile = {
         const fd = new FormData();
         fd.append('file', file, file.name); // שם השדה חייב להיות "file"
 
+        const token = getStoredAuthToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
         const res = await fetch(`${API_ROOT}/admin/upload`, {
             method: 'POST',
-            body: fd,            // בלי headers בכלל
+            headers,
+            body: fd,            // בלי Content-Type כדי לא לשבור boundary
         });
 
         const data = await res.json().catch(() => ({}));
@@ -110,4 +116,3 @@ export const UploadFile = {
 
 export { Core, WhatsApp, Phone, Maps, DevUploader as _DevUploader };
 export default { Core, WhatsApp, Phone, Maps, UploadFile };
-

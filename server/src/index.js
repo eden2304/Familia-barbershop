@@ -243,6 +243,7 @@ async function migrate() {
                                                       id serial primary key,
                                                       video_url text,
                                                       image_url text,
+                                                      alt_text text,
                                                       url text,
                                                       order_index int default 0,
                                                       is_active boolean not null default true
@@ -353,6 +354,7 @@ async function migrate() {
     await ensureSnakeFromCamel('gallery_videos', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('gallery_videos', 'video_url', 'videoUrl', 'text');
     await ensureColumn('gallery_videos', 'url', 'text');
+    await ensureColumn('gallery_videos', 'alt_text', 'text');
     await ensureSnakeFromCamel('background_videos', 'image_url', 'imageUrl', 'text');
     await ensureSnakeFromCamel('background_videos', 'video_url', 'videoUrl', 'text');
     await ensureColumn('background_videos', 'url', 'text');
@@ -1078,6 +1080,7 @@ async function router(req, res) {
         const q = await pool.query(`select id,
                                            coalesce(image_url, video_url) as image_url,
                                            video_url,
+                                           alt_text,
                                            url,
                                            order_index, is_active
                                     from gallery_videos
@@ -2254,15 +2257,15 @@ async function router(req, res) {
 
 // ---------- GALLERY VIDEOS (Stories) ----------
     if (req.method === 'GET' && pathname === '/admin/gallery-videos') {
-        const q = await pool.query(`select id, image_url, video_url, url, order_index, is_active from gallery_videos order by order_index, id`);
+        const q = await pool.query(`select id, image_url, video_url, alt_text, url, order_index, is_active from gallery_videos order by order_index, id`);
         return json(res, 200, q.rows);
     }
     if (req.method === 'POST' && pathname === '/admin/gallery-videos') {
         const b = await readBody(req) || {};
         const q = await pool.query(
-            `insert into gallery_videos (image_url, video_url, url, order_index, is_active)
-     values ($1,$2,$3,$4,$5) returning id, image_url, video_url, url, order_index, is_active`,
-            [str(b.imageUrl ?? b.image_url), str(b.videoUrl ?? b.video_url ?? b.url), str(b.url ?? b.videoUrl ?? b.video_url),
+            `insert into gallery_videos (image_url, video_url, alt_text, url, order_index, is_active)
+     values ($1,$2,$3,$4,$5,$6) returning id, image_url, video_url, alt_text, url, order_index, is_active`,
+            [str(b.imageUrl ?? b.image_url), str(b.videoUrl ?? b.video_url ?? b.url), str(b.altText ?? b.alt_text), str(b.url ?? b.videoUrl ?? b.video_url),
                 num(b.orderIndex ?? b.order_index, 0), bool(b.isActive ?? b.is_active, true)]
         );
         return json(res, 200, q.rows[0]);
@@ -2277,19 +2280,21 @@ async function router(req, res) {
             `update gallery_videos set
                                        image_url = coalesce($2, image_url),
                                        video_url = coalesce($3, video_url),
-                                       url       = coalesce($4, url),
-                                       order_index = coalesce($5, order_index),
-                                       is_active   = coalesce($6, is_active)
+                                       alt_text = coalesce($4, alt_text),
+                                       url       = coalesce($5, url),
+                                       order_index = coalesce($6, order_index),
+                                       is_active   = coalesce($7, is_active)
              where ${where.sql}`,
             [where.param,
                 str(b.imageUrl ?? b.image_url),
                 (b.videoUrl===undefined && b.video_url===undefined && b.url===undefined ? null : str(b.videoUrl ?? b.video_url ?? b.url)),
+                (b.altText===undefined && b.alt_text===undefined ? null : str(b.altText ?? b.alt_text)),
                 (b.url===undefined && b.videoUrl===undefined && b.video_url===undefined ? null : str(b.url ?? b.videoUrl ?? b.video_url)),
                 (b.orderIndex===undefined && b.order_index===undefined ? null : num(b.orderIndex ?? b.order_index, 0)),
                 (b.isActive===undefined && b.is_active===undefined ? null : bool(b.isActive ?? b.is_active))]
         );
         const q = await pool.query(
-            `select id, image_url, video_url, url, order_index, is_active from gallery_videos where ${where.sql}`,
+            `select id, image_url, video_url, alt_text, url, order_index, is_active from gallery_videos where ${where.sql}`,
             [where.param]
         );
         return json(res, 200, q.rows[0]);

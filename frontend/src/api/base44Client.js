@@ -397,7 +397,8 @@ function normMedia(x) {
   var withImg = both({ image_url: image, imageUrl: image }, 'image_url', 'imageUrl', undefined);
   var withVid = both({ video_url: video, videoUrl: video }, 'video_url', 'videoUrl', undefined);
 
-  var out = Object.assign({}, base, withImg, withVid);
+  var altText = pick(x, 'alt_text', 'altText', undefined);
+  var out = Object.assign({}, base, withImg, withVid, both({ alt_text: altText, altText }, 'alt_text', 'altText', undefined));
   out.url = (video !== undefined && video !== null) ? video : x.url;
   return out;
 }
@@ -470,6 +471,7 @@ function toGalleryBody(b) {
   b = b || {};
   return {
     videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    altText: (b.altText !== undefined ? b.altText : b.alt_text),
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
   };

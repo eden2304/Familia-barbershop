@@ -475,7 +475,18 @@ function toBackgroundBody(b) {
 /* ---------------- API (with fallbacks) ---------------- */
 const api = {
   Service: {
-    list: async () => normServiceArr((await httpGet('/services')) || []),
+    list: async () => {
+      try {
+        const pub = await httpGet('/services');
+        return normServiceArr(pub || []);
+      } catch (e) {
+        if (e && (e.status === 401 || e.status === 403 || e.status === 404)) {
+          const admin = await httpGet('/admin/services').catch(() => []);
+          return normServiceArr(admin || []);
+        }
+        throw e;
+      }
+    },
     adminList: async () => normServiceArr((await httpGet('/admin/services')) || []),
     create: async (data) => normService(await httpPost('/admin/services', toServiceBody(data))),
     update: async (id, data) => normService(await httpPut('/admin/services/' + encodeURIComponent(id), toServiceBody(data))),
@@ -661,8 +672,9 @@ const api = {
         const res = await httpGet('/business-hours');
         return Array.isArray(res) ? res : [];
       } catch (error) {
-        if (error?.status === 403 || error?.status === 404) {
-          return [];
+        if (error?.status === 401 || error?.status === 403 || error?.status === 404) {
+          const admin = await httpGet('/admin/business-hours').catch(() => []);
+          return Array.isArray(admin) ? admin : [];
         }
         throw error;
       }
@@ -737,7 +749,18 @@ const api = {
   },
 
   Product: {
-    list: async () => normMediaArr((await httpGet('/products')) || []),
+    list: async () => {
+      try {
+        const pub = await httpGet('/products');
+        return normMediaArr(pub || []);
+      } catch (e) {
+        if (e && (e.status === 401 || e.status === 403 || e.status === 404)) {
+          const admin = await httpGet('/admin/products').catch(() => []);
+          return normMediaArr(admin || []);
+        }
+        throw e;
+      }
+    },
     create: async (data) => normMedia(await httpPost('/admin/products', toProductBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/products/' + encodeURIComponent(id), toProductBody(data))),
     remove: (id) => httpDelete('/admin/products/' + encodeURIComponent(id)),
@@ -746,16 +769,16 @@ const api = {
   Testimonial: {
     list: async () => {
       try {
-        const admin = await httpGet('/admin/testimonials');
-        if (Array.isArray(admin)) return normTestimonialArr(admin);
         const pub = await httpGet('/testimonials');
-        return normTestimonialArr(pub || []);
+        if (Array.isArray(pub)) return normTestimonialArr(pub);
+        const admin = await httpGet('/admin/testimonials');
+        return normTestimonialArr(admin || []);
       } catch (e) {
-        if (e && e.status === 404) {
-          const pub = await httpGet('/testimonials');
-          return normTestimonialArr(pub || []);
+        if (e && (e.status === 401 || e.status === 403 || e.status === 404)) {
+          const fallback = await httpGet('/testimonials').catch(() => []);
+          return normTestimonialArr(fallback || []);
         }
-        return [];
+        return normTestimonialArr([]);
       }
     },
     create: async (data) => normTestimonialRow(await httpPost('/admin/testimonials', toTestimonialBody(data))),
@@ -765,7 +788,18 @@ const api = {
 
 
   GalleryVideo: {
-    list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
+    list: async () => {
+      try {
+        const pub = await httpGet('/gallery-videos');
+        return normMediaArr(pub || []);
+      } catch (e) {
+        if (e && (e.status === 401 || e.status === 403 || e.status === 404)) {
+          const admin = await httpGet('/admin/gallery-videos').catch(() => []);
+          return normMediaArr(admin || []);
+        }
+        throw e;
+      }
+    },
     create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
     remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
@@ -779,7 +813,18 @@ const api = {
   },
 
   BackgroundVideo: {
-    list: async () => normMediaArr((await httpGet('/background-videos')) || []),
+    list: async () => {
+      try {
+        const pub = await httpGet('/background-videos');
+        return normMediaArr(pub || []);
+      } catch (e) {
+        if (e && (e.status === 401 || e.status === 403 || e.status === 404)) {
+          const admin = await httpGet('/admin/background-videos').catch(() => []);
+          return normMediaArr(admin || []);
+        }
+        throw e;
+      }
+    },
     create: async (data) => normMedia(await httpPost('/admin/background-videos', toBackgroundBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/background-videos/' + encodeURIComponent(id), toBackgroundBody(data))),
     remove: (id) => httpDelete('/admin/background-videos/' + encodeURIComponent(id)),

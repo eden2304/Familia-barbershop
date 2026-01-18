@@ -325,8 +325,10 @@ export default function Book() {
         api.BusinessHours?.list?.().catch(() => []),
       ]);
 
-      // אל תסנן לפי .active (לא קיים בבאק); אם יש isActive=false – נסיר
-      setServices((servicesData || []).filter((s) => s.isActive !== false));
+      const orderedServices = (servicesData || [])
+        .filter((s) => s?.isActive !== false && s?.is_active !== false)
+        .sort((a, b) => (a?.order_index ?? a?.orderIndex ?? 0) - (b?.order_index ?? b?.orderIndex ?? 0));
+      setServices(orderedServices);
 
       const normalizedRules = normalizeBookingRules(bookingRulesSetting?.value);
       setBookingRules(normalizedRules);

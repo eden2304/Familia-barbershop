@@ -8,8 +8,7 @@ import ProductGallery from "../components/ProductGallery.jsx";
 import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+import api from "@/api/base44Client";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -51,26 +50,28 @@ export default function Home() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // Testimonials דרך REST
-      const raw = await fetch(`${API_URL}/testimonials`)
-          .then((r) => r.json())
-          .catch(() => []);
+      const [testimonialRows, backgroundVideos] = await Promise.all([
+        api.Testimonial.list().catch(() => []),
+        api.BackgroundVideo.list().catch(() => []),
+      ]);
 
-      const testiFromApi = Array.isArray(raw)
-          ? raw.map((t, idx) => ({
+      const orderedTestimonials = (Array.isArray(testimonialRows) ? testimonialRows : [])
+          .filter((row) => row?.isActive !== false && row?.is_active !== false)
+          .sort((a, b) => (a?.order_index ?? a?.orderIndex ?? 0) - (b?.order_index ?? b?.orderIndex ?? 0))
+          .map((t, idx) => ({
             id: t?.id ?? `testimonial-${idx}`,
             author: t?.author || "לקוח מרוצה",
             rating: Number.isFinite(Number(t?.rating)) ? Number(t.rating) : 5,
             text: (t?.text ?? t?.content ?? '').toString(),
             content: (t?.content ?? t?.text ?? '').toString(),
-          }))
-          : [];
+          }));
 
-      setTestimonials(testiFromApi);
+      setTestimonials(orderedTestimonials);
 
-      // Background videos
-      const bg = await fetch(`${API_URL}/background-videos`).then((r) => r.json()).catch(() => []);
-      const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
+      const orderedBackground = (Array.isArray(backgroundVideos) ? backgroundVideos : [])
+          .filter((row) => row?.isActive !== false && row?.is_active !== false)
+          .sort((a, b) => (a?.order_index ?? a?.orderIndex ?? 0) - (b?.order_index ?? b?.orderIndex ?? 0));
+      const active = orderedBackground.find((v) => v.isActive || v.is_active) || orderedBackground[0] || null;
       setBackgroundVideoUrl(active?.videoUrl || active?.video_url || "");
     } catch (err) {
       console.error("Error loading data:", err);

@@ -12,7 +12,10 @@ export default function VideoGallery() {
       try {
         // אותו API כמו אצלך, רק דרך ה-index
         const galleryData = await GalleryImage.list("order_index");
-        setVideos(Array.isArray(galleryData) ? galleryData : []);
+        const ordered = (Array.isArray(galleryData) ? galleryData : [])
+            .filter((row) => row?.isActive !== false && row?.is_active !== false)
+            .sort((a, b) => (a?.order_index ?? a?.orderIndex ?? 0) - (b?.order_index ?? b?.orderIndex ?? 0));
+        setVideos(ordered);
       } catch (error) {
         console.error("Error fetching gallery videos:", error);
         setVideos([]);

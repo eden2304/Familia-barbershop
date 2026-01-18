@@ -10,7 +10,10 @@ export default function ProductGallery() {
     const fetchProducts = async () => {
       try {
         const productData = await Product.list();
-        setProducts(productData || []);
+        const ordered = (productData || [])
+          .filter((row) => row?.isActive !== false && row?.is_active !== false)
+          .sort((a, b) => (a?.order_index ?? a?.orderIndex ?? 0) - (b?.order_index ?? b?.orderIndex ?? 0));
+        setProducts(ordered);
       } catch (error) {
         console.error("Error fetching products:", error);
       }
@@ -38,7 +41,7 @@ export default function ProductGallery() {
             <div className="relative aspect-[4/5] overflow-hidden">
               <img
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                src={product.image_url}
+                src={product.image_url || product.imageUrl}
                 alt={product.name}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>

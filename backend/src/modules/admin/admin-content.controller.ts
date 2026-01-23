@@ -11,6 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Express } from 'express';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)

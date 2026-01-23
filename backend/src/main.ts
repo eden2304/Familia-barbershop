@@ -3,6 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Request, Response, NextFunction } from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const logger = new Logger('Bootstrap');
 
@@ -48,7 +50,10 @@ async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
     app.set('trust proxy', 1);
 
-    const isProd = process.env.NODE_ENV === 'production';
+    const uploadDir = path.resolve(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
 
     app.enableCors({
         origin(origin, callback) {
@@ -85,6 +90,7 @@ async function bootstrap() {
 
 
     app.use(securityHeaders);
+    app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
     const globalLimiter = createMemoryRateLimiter(100, 60_000, 'global');
     const authLimiter = createMemoryRateLimiter(10, 60_000, 'auth');

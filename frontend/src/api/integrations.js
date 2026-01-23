@@ -76,14 +76,8 @@ const DevUploader = {
     toDataUrl(file)   { return fileToDataUrl(file); },
 };
 
-// "@/api/integrations.js"
-const API_ROOT =
-    (import.meta?.env?.VITE_API_BASE) ||
-    (import.meta?.env?.VITE_API_URL) ||
-    (typeof window !== 'undefined' && (window.API_ROOT || window.BASE44_API_ROOT)) ||
-    'http://localhost:3001';
-
-export { API_ROOT };
+import { API_ROOT } from '@/api/base44Client';
+import { getStoredAuthToken } from '@/utils/authStorage';
 
 
 export const UploadFile = {
@@ -91,9 +85,16 @@ export const UploadFile = {
         const fd = new FormData();
         fd.append('file', file, file.name); // שם השדה חייב להיות "file"
 
+        const headers = {};
+        const token = getStoredAuthToken();
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
         const res = await fetch(`${API_ROOT}/admin/upload`, {
             method: 'POST',
             body: fd,            // בלי headers בכלל
+            headers,
         });
 
         const data = await res.json().catch(() => ({}));
@@ -110,4 +111,3 @@ export const UploadFile = {
 
 export { Core, WhatsApp, Phone, Maps, DevUploader as _DevUploader };
 export default { Core, WhatsApp, Phone, Maps, UploadFile };
-

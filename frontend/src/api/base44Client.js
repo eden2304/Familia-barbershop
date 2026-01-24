@@ -570,19 +570,22 @@ const api = {
 
       // --- שם הלקוח (fallback מה-localStorage אם ה-UI לא שלח) ---
       const typedName = String(payload.client_name || payload.clientName || '').trim();
+      const shouldUseStoredClient = payload.createClient !== false;
 
       let storedName = '';
       let storedFirst = '';
       let storedLast = '';
-      try {
-        const raw = localStorage.getItem('familiaClient');
-        if (raw) {
-          const c = JSON.parse(raw);
-          storedName = String(c.client_name || c.name || '').trim();
-          storedFirst = String(c.firstName || c.first_name || '').trim();
-          storedLast = String(c.lastName || c.last_name || '').trim();
-        }
-      } catch {}
+      if (shouldUseStoredClient) {
+        try {
+          const raw = localStorage.getItem('familiaClient');
+          if (raw) {
+            const c = JSON.parse(raw);
+            storedName = String(c.client_name || c.name || '').trim();
+            storedFirst = String(c.firstName || c.first_name || '').trim();
+            storedLast = String(c.lastName || c.last_name || '').trim();
+          }
+        } catch {}
+      }
 
       const finalName = typedName || storedName;
 
@@ -590,15 +593,15 @@ const api = {
       const firstName = String(
           payload.firstName ||
           payload.client_first_name ||
-          storedFirst ||
-          (parts[0] || '')
+          (parts[0] || '') ||
+          storedFirst
       ).trim();
 
       const lastName = String(
           payload.lastName ||
           payload.client_last_name ||
-          storedLast ||
-          (parts.slice(1).join(' ') || '')
+          (parts.slice(1).join(' ') || '') ||
+          storedLast
       ).trim();
 
       // טלפון — נכסה את כל הווריאציות האפשריות וננרמל

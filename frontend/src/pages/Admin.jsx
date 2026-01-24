@@ -78,9 +78,17 @@ import WaitingListActionModal from "../components/WaitingListActionModal.jsx";
 import { useSidebar } from "../components/SidebarContext.jsx"; // Import the context hook
 import { fullName, serviceName, isPast, phone } from '@/lib/apt-utils';
 import { Admin as AdminApi } from "@/api/entities";
-import api from "@/api/base44Client";
+import api, { API_ROOT } from "@/api/base44Client";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
 import { getStoredAuthToken, clearStoredAuth, setStoredAuthToken } from '../utils/authStorage';
+
+const resolveMediaUrl = (value) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(API_ROOT || "").replace(/\/+$/, "");
+  if (value.startsWith("/")) return `${base}${value}`;
+  return `${base}/${value}`;
+};
 
 
 const navItems = [
@@ -2791,15 +2799,14 @@ const extractRecurringSchedules = (client) => {
                       </div>
 
                       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {backgroundVideos.map((video) => (
+                        {backgroundVideos.map((video) => {
+                          const videoSrc = resolveMediaUrl(video.video_url || video.videoUrl || video.url || "");
+                          const isActive = video.is_active ?? video.isActive ?? false;
+                          return (
                             <Card key={video.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                               <div className="aspect-video bg-gray-100">
                                 <video
-                                    src={
-                                      video.video_url?.startsWith('http')
-                                          ? video.video_url
-                                          : `${(api?.defaults?.baseURL || '').replace(/\/+$/, '')}${video.video_url || ''}`
-                                    }
+                                    src={videoSrc}
                                     className="w-full h-full object-cover"
                                     muted
                                     loop
@@ -2810,8 +2817,8 @@ const extractRecurringSchedules = (client) => {
                               <CardContent className="p-4">
                                 <div className="flex items-center justify-between mb-3">
                                   <Badge
-                                      className={video.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                                    {video.is_active ? "פעיל" : "לא פעיל"}
+                                      className={isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                                    {isActive ? "פעיל" : "לא פעיל"}
                                   </Badge>
                                 </div>
                                 <div className="flex gap-2">
@@ -2833,9 +2840,9 @@ const extractRecurringSchedules = (client) => {
                                         }
                                       }}
                                       className="flex-1"
-                                      disabled={video.is_active}
+                                      disabled={isActive}
                                   >
-                                    {video.is_active ? "פעיל" : "הפעל"}
+                                    {isActive ? "פעיל" : "הפעל"}
                                   </Button>
                                   <Button
                                       variant="outline"
@@ -2848,7 +2855,8 @@ const extractRecurringSchedules = (client) => {
                                 </div>
                               </CardContent>
                             </Card>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                 )}
@@ -3675,7 +3683,8 @@ function BackgroundVideoForm({ onSubmit, onCancel }) {
     setUploading(true);
     try {
       const { url } = await UploadFile.upload(file);
-      await onSubmit({ video_url: url, image_url: url, url });
+      const absoluteUrl = resolveMediaUrl(url);
+      await onSubmit({ video_url: absoluteUrl, image_url: absoluteUrl, url: absoluteUrl });
     } catch (err) {
       console.error("Error uploading file:", err);
       alert("שגיאה בהעלאת הקובץ");

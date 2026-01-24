@@ -10,6 +10,13 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const resolveVideoUrl = (value) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(API_URL || "").replace(/\/+$/, "");
+  if (value.startsWith("/")) return `${base}${value}`;
+  return `${base}/${value}`;
+};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -71,7 +78,8 @@ export default function Home() {
       // Background videos
       const bg = await fetch(`${API_URL}/background-videos`).then((r) => r.json()).catch(() => []);
       const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
-      setBackgroundVideoUrl(active?.videoUrl || active?.video_url || "");
+      const rawUrl = active?.videoUrl || active?.video_url || active?.url || "";
+      setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
     } catch (err) {
       console.error("Error loading data:", err);
     } finally {

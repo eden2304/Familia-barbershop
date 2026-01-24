@@ -25,7 +25,7 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
 
     try {
       if (file) {
-        const { file_url } = await UploadFile({ file });
+        const { file_url } = await UploadFile.upload(file);
         imageUrl = file_url;
       }
 

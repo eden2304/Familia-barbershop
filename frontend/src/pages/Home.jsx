@@ -162,8 +162,9 @@ export default function Home() {
                 key={backgroundVideoUrl || "fallback"}
                 className="absolute inset-0 w-full h-full object-cover"
                 src={
-                    backgroundVideoUrl ||
-                    "/videos/backgroundVideo.mp4"
+                  backgroundVideoUrl
+                    // backgroundVideoUrl ||
+                    // "/videos/backgroundVideo.mp4"
                 }
                 autoPlay
                 muted

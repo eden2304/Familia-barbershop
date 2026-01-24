@@ -150,7 +150,7 @@ export default function BlockAppointmentsModal({
         const sDay = startOfDay(dayDate);
         const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
         arr = arr
-            .map(b => ({ ...b, s: new Date(b.start_at || b.startAt), e: new Date(b.end_at || b.endAt) }))
+            .map(b => ({ ...b, s: new Date(b.start_at || b.startAt || b.startsAt), e: new Date(b.end_at || b.endAt || b.endsAt) }))
             .filter(b => isValidDate(b.s) && isValidDate(b.e))
             .filter(b => b.s < eDay && b.e > sDay)
             .sort((a,b) => a.s - b.s);
@@ -462,8 +462,8 @@ export default function BlockAppointmentsModal({
                                       const filtered = (Array.isArray(list) ? list : [])
                                           .map(block => ({
                                             ...block,
-                                            s: new Date(block.start_at || block.startAt),
-                                            e: new Date(block.end_at || block.endAt)
+                                            s: new Date(block.start_at || block.startAt || block.startsAt),
+                                            e: new Date(block.end_at || block.endAt || block.endsAt)
                                           }))
                                           .filter(block => isValidDate(block.s) && isValidDate(block.e))
                                           .filter(block => block.s < eDay && block.e > sDay)

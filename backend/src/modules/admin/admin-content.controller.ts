@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../../entities/product.entity';
@@ -7,6 +7,11 @@ import { GalleryVideo } from '../../entities/gallery-video.entity';
 import { BackgroundVideo } from '../../entities/background-video.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Express } from 'express';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -128,5 +133,40 @@ export class AdminContentController {
     async deleteBackground(@Param('id') id: string) {
         await this.backgrounds.delete({ id }); // ✔
         return { ok: true };
+    }
+
+    // ----- Upload (Stories/Backgrounds) -----
+    @Post('upload')
+    @UseInterceptors(FileInterceptor('file', {
+        storage: diskStorage({
+            destination: (_req, _file, cb) => {
+                const uploadDir = path.resolve(process.cwd(), 'uploads');
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
+                }
+                cb(null, uploadDir);
+            },
+            filename: (_req, file, cb) => {
+                const rawExt = path.extname(file.originalname || '');
+                const ext = rawExt || (file.mimetype === 'video/mp4' ? '.mp4'
+                    : file.mimetype === 'video/webm' ? '.webm'
+                        : file.mimetype === 'image/png' ? '.png'
+                            : file.mimetype === 'image/jpeg' ? '.jpg' : '');
+                const base = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                cb(null, `${base}${ext}`);
+            },
+        }),
+        limits: { fileSize: 1024 * 1024 * 1024 },
+    }))
+    uploadFile(@UploadedFile() file?: Express.Multer.File) {
+        if (!file) {
+            throw new BadRequestException('No file uploaded');
+        }
+        return {
+            ok: true,
+            url: `/uploads/${file.filename}`,
+            size: file.size,
+            mime: file.mimetype,
+        };
     }
 }

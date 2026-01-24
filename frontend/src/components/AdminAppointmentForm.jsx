@@ -75,21 +75,36 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
         loadBlocks();
     }, [selectedDay]);
 
+    const resolveServiceDuration = (service) => {
+        const duration = Number(
+            service?.duration_minutes ??
+            service?.durationMinutes ??
+            service?.duration ??
+            0
+        );
+        return Number.isFinite(duration) && duration > 0 ? duration : 0;
+    };
+
     const generateTimeSlotsForDay = (date) => {
         if (!selectedService || !date) return [];
+        const serviceDuration = resolveServiceDuration(selectedService);
+        if (!serviceDuration) return [];
 
         const slots = [];
         const dayOfWeek = date.getDay();
         const hours = businessHours.find(h => h.weekday === dayOfWeek);
-        if (!hours || hours.is_closed) return [];
+        const isClosed = hours?.is_closed ?? hours?.isClosed ?? false;
+        const openValue = hours?.open_time ?? hours?.open ?? hours?.openTime;
+        const closeValue = hours?.close_time ?? hours?.close ?? hours?.closeTime;
+        if (!hours || isClosed || !openValue || !closeValue) return [];
 
-        const openTime = parse(hours.open_time, 'HH:mm', date);
-        const closeTime = parse(hours.close_time, 'HH:mm', date);
+        const openTime = parse(openValue, 'HH:mm', date);
+        const closeTime = parse(closeValue, 'HH:mm', date);
 
         let currentTime = openTime;
 
-        while (isBefore(addMinutes(currentTime, selectedService.duration_minutes), closeTime)) {
-            const slotEnd = addMinutes(currentTime, selectedService.duration_minutes);
+        while (isBefore(addMinutes(currentTime, serviceDuration), closeTime)) {
+            const slotEnd = addMinutes(currentTime, serviceDuration);
 
             // חסימות לפי תאריך — משתמשים ב-startAt/endAt אמיתיים
             const isBlocked = blockedTimesByDay.some(block => {
@@ -155,7 +170,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
 
     try {
       const startTime = selectedSlot.time;
-      const endTime = addMinutes(startTime, selectedService.duration_minutes);
+      const endTime = addMinutes(startTime, resolveServiceDuration(selectedService));
 
       // Normalize phone number before saving
       const normalizedPhone = normalizePhone(formData.phone);

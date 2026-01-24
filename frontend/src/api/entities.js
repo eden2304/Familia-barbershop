@@ -210,7 +210,12 @@ function dayBounds(dateStr) {
     return { start, end };
 }
 export const BlockedTime = (() => {
-    const root = Admin?.blocks || { list: async () => [], add: async () => { throw new Error('Admin.blocks.add unavailable'); }, remove: async () => { throw new Error('Admin.blocks.remove unavailable'); } };
+    const root = Admin?.blocks || {
+        list: async () => [],
+        add: async () => { throw new Error('Admin.blocks.add unavailable'); },
+        update: async () => { throw new Error('Admin.blocks.update unavailable'); },
+        remove: async () => { throw new Error('Admin.blocks.remove unavailable'); },
+    };
     const list = async () => (await root.list()) || [];
     const listByDate = async (date) => {
         const all = await list();
@@ -230,9 +235,10 @@ export const BlockedTime = (() => {
         const membersOnly = Boolean(data.membersOnly ?? data.members_only ?? false);
         return root.add(startAt, endAt, reason, membersOnly);
     };
+    const update = (id, startAt, endAt, reason, membersOnly = false) => root.update(id, startAt, endAt, reason, membersOnly);
     const remove = (id) => root.remove(id);
     const del = (id) => root.remove(id);
-    return { list, listByDate, add, create, remove, delete: del };
+    return { list, listByDate, add, create, update, remove, delete: del };
 })();
 export const BlockedTimes = BlockedTime;
 

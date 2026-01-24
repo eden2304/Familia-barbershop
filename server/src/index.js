@@ -1960,11 +1960,20 @@ async function router(req, res) {
 
     /* ---- BLOCKS ---- */
     if (req.method === 'GET' && pathname === '/admin/blocked-times') {
+        const date = url.searchParams.get('date');
+        const params = [];
+        let where = '';
+        if (date) {
+            const { start, end } = dayBounds(date);
+            params.push(start, end);
+            where = 'where start_at < $2 and end_at > $1';
+        }
         const q = await pool.query(`
             select id, start_at, end_at, reason, coalesce(members_only,false) as members_only
             from blocked_times
+            ${where}
             order by start_at desc
-        `);
+        `, params);
         const rows = q.rows.map(r => ({
             id: r.id,
             startAt: r.start_at,
@@ -1979,6 +1988,27 @@ async function router(req, res) {
     }
 
 
+
+    const loadAppointmentConflicts = async (startAt, endAt) => {
+        return await pool.query(`
+    select a.id, a.starts_at, a.ends_at,
+           coalesce(nullif(trim(c.first_name || ' ' || c.last_name), ''), 'לקוח') as client_name
+    from appointments a
+    left join clients c on c.id = a.client_id
+    where coalesce(a.status,'booked') <> 'canceled'
+      and a.starts_at < $2
+      and a.ends_at   > $1
+    order by a.starts_at
+    limit 20
+  `, [startAt, endAt]);
+    };
+
+    const serializeConflicts = (rows = []) => rows.map(r => ({
+        id: r.id,
+        starts_at: r.starts_at,
+        ends_at: r.ends_at,
+        client_name: r.client_name || ''
+    }));
 
     // POST /admin/blocked-times — מונע חסימה אם יש תורים חופפים; מחזיר 409 עם פירוט
     if (req.method === 'POST' && pathname === '/admin/blocked-times') {
@@ -2006,27 +2036,12 @@ async function router(req, res) {
         }
 
         // ✳️ בדיקת חפיפה לתורים לא מבוטלים
-        const overlap = await pool.query(`
-    select a.id, a.starts_at, a.ends_at,
-           coalesce(nullif(trim(c.first_name || ' ' || c.last_name), ''), 'לקוח') as client_name
-    from appointments a
-    left join clients c on c.id = a.client_id
-    where coalesce(a.status,'booked') <> 'canceled'
-      and a.starts_at < $2
-      and a.ends_at   > $1
-    order by a.starts_at
-    limit 20
-  `, [s, e]);
+        const overlap = await loadAppointmentConflicts(s, e);
 
         if (overlap.rowCount > 0) {
             return json(res, 409, {
                 error: 'יש תורים קיימים בתוך הטווח – בטל/י אותם לפני חסימה.',
-                conflicts: overlap.rows.map(r => ({
-                    id: r.id,
-                    starts_at: r.starts_at,
-                    ends_at: r.ends_at,
-                    client_name: r.client_name || ''
-                }))
+                conflicts: serializeConflicts(overlap.rows)
             });
         }
 
@@ -2049,6 +2064,62 @@ async function router(req, res) {
         });
     }
 
+
+    if (req.method === 'PUT' && pathname.startsWith('/admin/blocked-times/')) {
+        const idRaw = pathname.split('/').pop();
+        const parsed = parseId(idRaw);
+        if (!parsed.raw) return json(res, 400, { error: 'Missing id' });
+
+        const body = await readBody(req) || {};
+        const where = idWhere('blocked_times', parsed);
+        const existing = await pool.query(
+            `select id, start_at, end_at, reason, coalesce(members_only,false) as members_only
+             from blocked_times where ${where.sql} limit 1`,
+            [where.param]
+        );
+        const row = existing.rows[0];
+        if (!row) return json(res, 404, { error: 'Blocked time not found' });
+
+        const startsAtRaw = body.starts_at || body.startAt || body.start || body.from || row.start_at;
+        const endsAtRaw   = body.ends_at   || body.endAt   || body.end   || body.to   || row.end_at;
+        const reason      = body.reason    ?? body.desc    ?? row.reason ?? '';
+        const membersOnly = parseBoolean(body.members_only ?? body.membersOnly ?? body.members, row.members_only ?? false);
+
+        const s = parseAnyDate(startsAtRaw);
+        const e = parseAnyDate(endsAtRaw);
+
+        if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+            return json(res, 400, { error: 'Invalid datetime format' });
+        }
+        if (e <= s) {
+            return json(res, 400, { error: 'Invalid time range: end <= start' });
+        }
+
+        const overlap = await loadAppointmentConflicts(s, e);
+        if (overlap.rowCount > 0) {
+            return json(res, 409, {
+                error: 'יש תורים קיימים בתוך הטווח – בטל/י אותם לפני חסימה.',
+                conflicts: serializeConflicts(overlap.rows)
+            });
+        }
+
+        const updated = await pool.query(
+            `update blocked_times
+             set start_at=$2, end_at=$3, reason=$4, members_only=$5
+             where ${where.sql}
+             returning id, start_at, end_at, reason, coalesce(members_only,false) as members_only`,
+            [where.param, s, e, String(reason ?? ''), membersOnly]
+        );
+        const updatedRow = updated.rows[0];
+        return json(res, 200, {
+            id: updatedRow.id,
+            starts_at: updatedRow.start_at,
+            ends_at:   updatedRow.end_at,
+            reason: updatedRow.reason,
+            members_only: !!updatedRow.members_only,
+            membersOnly: !!updatedRow.members_only,
+        });
+    }
 
     if (req.method === 'DELETE' && pathname.startsWith('/admin/blocked-times/')) {
         const idRaw = pathname.split('/').pop();

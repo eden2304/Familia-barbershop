@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Scissors, Calendar, Clock, Phone, MessageCircle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, addDays, startOfWeek, parse, isSameDay, addMinutes, isAfter, isBefore, startOfDay } from 'date-fns';
+import { Scissors, Calendar, Clock, Phone, Check, ChevronLeft, ChevronRight, Crown } from 'lucide-react';
+import { format, addDays, startOfWeek, parse, addMinutes, isAfter, isBefore, startOfDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { Appointment } from '@/api/entities';
 import { WaitingList } from '@/api/entities';
@@ -50,7 +50,8 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
       if (isAfter(currentTime, new Date())) {
         const slotEnd = addMinutes(currentTime, service.duration_minutes || 30);
         const hasConflict = appointments.some(apt => {
-          if (apt.status !== 'booked') return false;
+          const status = (apt.status ?? 'booked').toString().toLowerCase();
+          if (status === 'canceled' || status === 'blocked') return false;
           const aptStart = new Date(apt.starts_at);
           const aptEnd = new Date(apt.ends_at);
           return (isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart));
@@ -70,7 +71,24 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
     return [parts[0] || '', parts.slice(1).join(' ') || ''];
   }
 
+  const desiredStart = new Date(entry.desired_starts_at);
+  const durationMinutes = service?.duration_minutes || 30;
+  const desiredEnd = addMinutes(desiredStart, durationMinutes);
+  const originalSlotHasConflict = appointments.some((apt) => {
+    const status = (apt.status ?? 'booked').toString().toLowerCase();
+    if (status === 'canceled' || status === 'blocked') return false;
+    const aptStart = new Date(apt.starts_at);
+    const aptEnd = new Date(apt.ends_at);
+    return isBefore(aptStart, desiredEnd) && isAfter(aptEnd, desiredStart);
+  });
+  const originalSlotInPast = isBefore(desiredStart, new Date());
+  const canBookOriginal = !originalSlotInPast && !originalSlotHasConflict;
+
   const handleBookOriginalTime = async () => {
+    if (!canBookOriginal) {
+      alert("השעה הזו עדיין תפוסה או שכבר חלפה.");
+      return;
+    }
     try {
       const [fn, ln] = splitName(entry.client_name);
 
@@ -122,7 +140,15 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
   const renderMainView = () => (
     <div className="space-y-6">
       <DialogHeader className="text-center">
-        <DialogTitle className="text-2xl font-bold text-gray-900">{entry.client_name}</DialogTitle>
+        <div className="flex flex-col items-center gap-2">
+          <DialogTitle className="text-2xl font-bold text-gray-900">{entry.client_name}</DialogTitle>
+          {entry.isMember && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-xs font-semibold">
+                <Crown className="w-3.5 h-3.5" />
+                חבר מועדון
+              </span>
+          )}
+        </div>
         <p className="text-sm text-gray-500">{entry.phone}</p>
       </DialogHeader>
 
@@ -146,11 +172,20 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
           <Phone className="w-5 h-5"/>
           <span className="text-xs font-medium">התקשר</span>
         </Button>
-        <Button onClick={handleBookOriginalTime} className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl bg-green-600 hover:bg-green-700 text-white">
+        <Button
+            onClick={handleBookOriginalTime}
+            disabled={!canBookOriginal}
+            className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl bg-green-600 hover:bg-green-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+        >
           <Check className="w-5 h-5"/>
           <span className="text-xs font-medium">קבע בזמן המבוקש</span>
         </Button>
       </div>
+      {!canBookOriginal && (
+          <p className="text-xs text-amber-600 text-center">
+            אפשר לקבוע את הזמן המבוקש רק אם התור התפנה ועדיין לא חלף.
+          </p>
+      )}
 
       <Button onClick={() => setView('reschedule')} variant="outline" className="w-full rounded-full py-3">
         קבע בזמן אחר

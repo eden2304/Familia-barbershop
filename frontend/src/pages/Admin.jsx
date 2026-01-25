@@ -300,6 +300,28 @@ export default function Admin() { // Removed props
     return (allClients || []).find((client) => normalizePhone(client.phone ?? client.client_phone ?? "") === aptPhone) || null;
   };
 
+  const findClientForWaitingEntry = (entry) => {
+    if (!entry) return null;
+    const entryClientId = entry?.client_id ?? entry?.clientId ?? entry?.client?.id;
+    if (entryClientId) {
+      const byId = (allClients || []).find((client) => String(client.id) === String(entryClientId));
+      if (byId) return byId;
+    }
+    const entryPhone = normalizePhone(entry?.phone ?? entry?.client_phone ?? entry?.clientPhone ?? "");
+    if (!entryPhone) return null;
+    return (allClients || []).find((client) => normalizePhone(client.phone ?? client.client_phone ?? "") === entryPhone) || null;
+  };
+
+  const enrichWaitingEntry = (entry) => {
+    const matchedClient = findClientForWaitingEntry(entry);
+    const isMember = Boolean(matchedClient?.is_member ?? matchedClient?.isMember ?? entry?.is_member ?? entry?.isMember);
+    return {
+      ...entry,
+      waitingClient: matchedClient ?? null,
+      isMember,
+    };
+  };
+
   const getAppointmentDisplayInfo = (apt) => {
     const matchedClient = findClientForAppointment(apt);
     const appointmentFirst = apt?.client?.firstName ?? apt?.client_first_name ?? apt?.first_name ?? '';
@@ -991,9 +1013,23 @@ const extractRecurringSchedules = (client) => {
   };
 
   const getWaitingListForDay = (date) => {
-    return waitingList.filter(entry =>
-        isSameDay(new Date(entry.desired_starts_at), date)
-    ).sort((a, b) => new Date(a.desired_starts_at) - new Date(b.desired_starts_at));
+    const toCreatedAt = (entry) => {
+      const raw = entry?.created_at ?? entry?.createdAt ?? null;
+      const parsed = raw ? new Date(raw).getTime() : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    return waitingList
+        .filter(entry => isSameDay(new Date(entry.desired_starts_at), date))
+        .map((entry) => enrichWaitingEntry(entry))
+        .sort((a, b) => {
+          const timeDiff = new Date(a.desired_starts_at) - new Date(b.desired_starts_at);
+          if (timeDiff !== 0) return timeDiff;
+          if (a.isMember !== b.isMember) return a.isMember ? -1 : 1;
+          const createdDiff = toCreatedAt(a) - toCreatedAt(b);
+          if (createdDiff !== 0) return createdDiff;
+          return Number(a.id ?? 0) - Number(b.id ?? 0);
+        });
   };
 
 
@@ -1780,9 +1816,17 @@ const extractRecurringSchedules = (client) => {
                                     </div>
                                     <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
                                     <div className="flex-1">
-                                      <h4 className="font-bold text-gray-900">
-                                        {entry.client_name}
-                                      </h4>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="font-bold text-gray-900">
+                                          {entry.client_name}
+                                        </h4>
+                                        {entry.isMember && (
+                                            <Badge className="flex items-center gap-1 bg-amber-100 text-amber-700">
+                                              <Crown className="w-3 h-3" />
+                                              חבר מועדון
+                                            </Badge>
+                                        )}
+                                      </div>
                                       <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
                                     </div>
                                     <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>

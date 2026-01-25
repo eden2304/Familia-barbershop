@@ -41,11 +41,12 @@ export default function WaitingListModal({
     if (!service || !day) return [];
     const { start, end } = toYmdBounds(day);
 
-    // קח רק תורים של אותו היום שאינם מבוטלים
+    // קח רק תורים של אותו היום שהם באמת תפוסים (לא חסומים/מבוטלים)
     const dayAppointments = (allAppointments || []).filter(apt => {
       const s = new Date(apt.starts_at);
-      const status = (apt.status || 'booked').toLowerCase();
-      return status !== 'canceled' && s >= start && s < end;
+      const status = (apt.status ?? 'booked').toString().toLowerCase();
+      const isBooked = status === 'booked' || status === 'confirmed';
+      return isBooked && s >= start && s < end;
     });
 
     // הפוך לרשימת שעות ("HH:mm") עם ייחוד ומיון

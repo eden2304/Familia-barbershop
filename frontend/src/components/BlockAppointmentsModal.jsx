@@ -82,6 +82,7 @@ export default function BlockAppointmentsModal({
 
   // חסימות קיימות ליום הנבחר (נטען מהשרת)
   const [blocks, setBlocks] = useState([]);
+  const [dayAppointments, setDayAppointments] = useState([]);
 
   const dayDate = useMemo(() => {
     const d = new Date(dateStr);
@@ -126,17 +127,36 @@ export default function BlockAppointmentsModal({
     else setTo(timeOptions[timeOptions.length - 1]);
   };
 
+  // טעינת תורים ליום הנבחר (כדי להציג תמיד את התורים ליום שנבחר במודאל)
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        if (!dayDate) { setDayAppointments([]); return; }
+        if (Admin?.appointmentsByDate) {
+          const list = await Admin.appointmentsByDate(dateStr);
+          if (!stop) setDayAppointments(Array.isArray(list) ? list : []);
+        } else {
+          if (!stop) setDayAppointments(Array.isArray(appointments) ? appointments : []);
+        }
+      } catch {
+        if (!stop) setDayAppointments(Array.isArray(appointments) ? appointments : []);
+      }
+    })();
+    return () => { stop = true; };
+  }, [dateStr, dayDate, appointments]);
+
   // רשימת תורים קיימים באותו יום (לצורכי תצוגה ואזהרה)
   const conflicts = useMemo(() => {
     if (!dayDate) return [];
     const sDay = startOfDay(dayDate);
     const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
-    return (appointments || [])
+    return (dayAppointments || [])
         .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e))
         .filter(a => a.s < eDay && a.e > sDay)
         .sort((a,b) => a.s - b.s);
-  }, [appointments, dayDate]);
+  }, [dayAppointments, dayDate]);
 
   // טעינת חסימות קיימות ליום (השרת תומך ?date=; אם לא, נסנן בצד לקוח)
   useEffect(() => {
@@ -193,12 +213,12 @@ export default function BlockAppointmentsModal({
     const s = parseHHMMOnDate(dayDate, from);
     const e = parseHHMMOnDate(dayDate, to);
     if (!s || !e || e <= s) return [];
-    const appts = (appointments || [])
+    const appts = (dayAppointments || [])
         .filter(a => (String(a.status || '').toLowerCase() !== 'canceled'))
         .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e));
     return appts.filter(a => overlaps(a.s, a.e, s, e));
-  }, [appointments, dayDate, from, to]);
+  }, [dayAppointments, dayDate, from, to]);
 
   const openLabel = hoursForDay?.isClosed ? "סגור" : `${hoursForDay?.open ?? "--:--"} – ${hoursForDay?.close ?? "--:--"}`;
 

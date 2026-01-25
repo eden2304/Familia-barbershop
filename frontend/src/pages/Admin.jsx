@@ -2566,16 +2566,21 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'products' && (
                     <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold">ניהול מוצרים</h2>
-                        <Button
-                            onClick={() => { setEditingProduct(null); setShowProductForm(true); }}
-                            className="bg-orange-600 hover:bg-orange-700 text-white rounded-full"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          הוסף מוצר
-                        </Button>
-                      </div>
+                      <Card className="border border-slate-200/60 bg-gradient-to-l from-white via-orange-50/40 to-white shadow-sm">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">ניהול מוצרים</h2>
+                            <p className="text-sm text-gray-500">סידור ועדכון המוצרים המוצגים ללקוחות.</p>
+                          </div>
+                          <Button
+                              onClick={() => { setEditingProduct(null); setShowProductForm(true); }}
+                              className="bg-orange-600 hover:bg-orange-700 text-white rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            הוסף מוצר
+                          </Button>
+                        </CardContent>
+                      </Card>
                       <DragDropContext onDragEnd={(result) => handleDragEnd(result, products, setProducts, Product)}>
                         <Droppable droppableId="products">
                           {(provided) => (
@@ -2653,16 +2658,21 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'stories' && (
                     <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold">ניהול סטוריז</h2>
-                        <Button
-                            onClick={() => setShowGalleryForm(true)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white rounded-full"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          הוסף סרטון
-                        </Button>
-                      </div>
+                      <Card className="border border-slate-200/60 bg-gradient-to-l from-white via-purple-50/40 to-white shadow-sm">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">ניהול סטוריז</h2>
+                            <p className="text-sm text-gray-500">הוסף והזז סטוריז כדי לרענן את העמוד הראשי.</p>
+                          </div>
+                          <Button
+                              onClick={() => setShowGalleryForm(true)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            הוסף סרטון
+                          </Button>
+                        </CardContent>
+                      </Card>
                       <DragDropContext onDragEnd={(result) => handleDragEnd(result, galleryImages, setGalleryImages, GalleryImage)}>
                         <Droppable droppableId="gallery">
                           {(provided) => (
@@ -2722,16 +2732,21 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'testimonials' && (
                     <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold">ניהול תגובות לקוחות</h2>
-                        <Button
-                            onClick={() => setShowTestimonialForm(true)}
-                            className="bg-green-600 hover:bg-green-700 text-white rounded-full"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          הוסף תגובה
-                        </Button>
-                      </div>
+                      <Card className="border border-slate-200/60 bg-gradient-to-l from-white via-emerald-50/40 to-white shadow-sm">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">ניהול תגובות לקוחות</h2>
+                            <p className="text-sm text-gray-500">שמור על סדר ועדכון של הביקורות החשובות.</p>
+                          </div>
+                          <Button
+                              onClick={() => setShowTestimonialForm(true)}
+                              className="bg-green-600 hover:bg-green-700 text-white rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            הוסף תגובה
+                          </Button>
+                        </CardContent>
+                      </Card>
                       <DragDropContext onDragEnd={(result) => handleDragEnd(result, testimonials, setTestimonials, Testimonial)}>
                         <Droppable droppableId="testimonials">
                           {(provided) => (
@@ -2801,16 +2816,21 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'background' && (
                     <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold">ניהול סרטון הרקע</h2>
-                        <Button
-                            onClick={() => setShowBackgroundVideoForm(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          הוסף סרטון רקע
-                        </Button>
-                      </div>
+                      <Card className="border border-slate-200/60 bg-gradient-to-l from-white via-indigo-50/40 to-white shadow-sm">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">ניהול סרטון הרקע</h2>
+                            <p className="text-sm text-gray-500">בחר והפעל סרטון רקע שיופיע במסך הבית.</p>
+                          </div>
+                          <Button
+                              onClick={() => setShowBackgroundVideoForm(true)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            הוסף סרטון רקע
+                          </Button>
+                        </CardContent>
+                      </Card>
 
                       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {backgroundVideos.map((video) => {

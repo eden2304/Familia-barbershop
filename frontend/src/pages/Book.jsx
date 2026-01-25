@@ -99,21 +99,34 @@ const extractSlotTimes = (raw) => {
   if (!Array.isArray(raw)) return [];
   return raw
       .map((entry) => {
-        if (typeof entry === "string") return entry;
+        if (typeof entry === "string") {
+          return { hhmm: entry, memberOnly: false };
+        }
         if (entry && typeof entry === "object") {
-          return (
+          const hhmm =
               entry.hhmm ||
               entry.time ||
               entry.slot ||
               entry.startsAt ||
               entry.start ||
               entry.formatted ||
-              null
-          );
+              null;
+          if (!hhmm || typeof hhmm !== "string" || !hhmm.includes(":")) return null;
+          return {
+            hhmm,
+            memberOnly: Boolean(
+                entry.memberOnly ??
+                entry.membersOnly ??
+                entry.members_only ??
+                entry.member_only ??
+                false
+            ),
+            formatted: entry.formatted,
+          };
         }
         return null;
       })
-      .filter((val) => typeof val === "string" && val.includes(":"));
+      .filter((val) => val && typeof val.hhmm === "string" && val.hhmm.includes(":"));
 };
 
 const mergeSlotViews = (publicTimes, memberTimes) => {
@@ -368,10 +381,13 @@ export default function Book() {
             try {
               // ✅ קריאה אחת בלבד
               const raw = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember === true });
-              const times = extractSlotTimes(raw);
+              const slots = extractSlotTimes(raw);
 
-// ✅ להפוך לפורמט שה־UI מצפה לו
-              const view = times.map((hhmm) => ({ hhmm, memberOnly: false }));
+              const view = slots.map((slot) => ({
+                hhmm: slot.hhmm,
+                memberOnly: Boolean(slot.memberOnly),
+                formatted: slot.formatted ?? slot.hhmm,
+              }));
 
               return [ymd, view];
 

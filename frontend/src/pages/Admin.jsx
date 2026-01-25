@@ -1574,9 +1574,9 @@ const extractRecurringSchedules = (client) => {
 
   const blocksForSelectedDay = useMemo(() => {
     return (blocks || []).filter((b) => {
-      const s = new Date(b.start_at || b.startAt);
+      const s = new Date(b.start_at || b.startAt || b.startsAt);
       return !Number.isNaN(s.getTime()) && isSameDay(s, selectedDate);
-    }).sort((a,b) => new Date(a.start_at || a.startAt) - new Date(b.start_at || b.startAt));
+    }).sort((a,b) => new Date(a.start_at || a.startAt || a.startsAt) - new Date(b.start_at || b.startAt || b.startsAt));
   }, [blocks, selectedDate]);
 
 
@@ -1911,8 +1911,8 @@ const extractRecurringSchedules = (client) => {
 
                             <div className="space-y-2">
                               {blocksForSelectedDay.map((blk) => {
-                                const s = new Date(blk.start_at || blk.startAt);
-                                const e = new Date(blk.end_at || blk.endAt);
+                                const s = new Date(blk.start_at || blk.startAt || blk.startsAt);
+                                const e = new Date(blk.end_at || blk.endAt || blk.endsAt);
                                 const reason = blk.reason || "";
                                 return (
                                     <div

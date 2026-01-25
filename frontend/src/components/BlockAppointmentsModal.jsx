@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { X, Ban, Clock } from "lucide-react";
+import { X, Ban, Clock, Pencil, Trash2 } from "lucide-react";
 import { format, isValid as isValidDate, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { Admin } from "@/api/entities";
@@ -78,9 +78,11 @@ export default function BlockAppointmentsModal({
   const [to, setTo] = useState("");     // "HH:mm"
   const [reason, setReason] = useState("");
   const [membersOnly, setMembersOnly] = useState(false);
+  const [editingBlock, setEditingBlock] = useState(null);
 
   // חסימות קיימות ליום הנבחר (נטען מהשרת)
   const [blocks, setBlocks] = useState([]);
+  const [dayAppointments, setDayAppointments] = useState([]);
 
   const dayDate = useMemo(() => {
     const d = new Date(dateStr);
@@ -125,17 +127,36 @@ export default function BlockAppointmentsModal({
     else setTo(timeOptions[timeOptions.length - 1]);
   };
 
+  // טעינת תורים ליום הנבחר (כדי להציג תמיד את התורים ליום שנבחר במודאל)
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        if (!dayDate) { setDayAppointments([]); return; }
+        if (Admin?.appointmentsByDate) {
+          const list = await Admin.appointmentsByDate(dateStr);
+          if (!stop) setDayAppointments(Array.isArray(list) ? list : []);
+        } else {
+          if (!stop) setDayAppointments(Array.isArray(appointments) ? appointments : []);
+        }
+      } catch {
+        if (!stop) setDayAppointments(Array.isArray(appointments) ? appointments : []);
+      }
+    })();
+    return () => { stop = true; };
+  }, [dateStr, dayDate, appointments]);
+
   // רשימת תורים קיימים באותו יום (לצורכי תצוגה ואזהרה)
   const conflicts = useMemo(() => {
     if (!dayDate) return [];
     const sDay = startOfDay(dayDate);
     const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
-    return (appointments || [])
-        .map(a => ({ ...a, s: new Date(a.starts_at), e: new Date(a.ends_at) }))
+    return (dayAppointments || [])
+        .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e))
         .filter(a => a.s < eDay && a.e > sDay)
         .sort((a,b) => a.s - b.s);
-  }, [appointments, dayDate]);
+  }, [dayAppointments, dayDate]);
 
   // טעינת חסימות קיימות ליום (השרת תומך ?date=; אם לא, נסנן בצד לקוח)
   useEffect(() => {
@@ -149,7 +170,7 @@ export default function BlockAppointmentsModal({
         const sDay = startOfDay(dayDate);
         const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
         arr = arr
-            .map(b => ({ ...b, s: new Date(b.start_at || b.startAt), e: new Date(b.end_at || b.endAt) }))
+            .map(b => ({ ...b, s: new Date(b.start_at || b.startAt || b.startsAt), e: new Date(b.end_at || b.endAt || b.endsAt) }))
             .filter(b => isValidDate(b.s) && isValidDate(b.e))
             .filter(b => b.s < eDay && b.e > sDay)
             .sort((a,b) => a.s - b.s);
@@ -164,8 +185,27 @@ export default function BlockAppointmentsModal({
   useEffect(() => {
     if (!isOpen) {
       setMembersOnly(false);
+      setEditingBlock(null);
     }
   }, [isOpen]);
+
+  const beginEdit = (block) => {
+    if (!block?.s || !block?.e) return;
+    setDateStr(format(block.s, "yyyy-MM-dd"));
+    setFrom(format(block.s, "HH:mm"));
+    setTo(format(block.e, "HH:mm"));
+    setReason(block.reason || "");
+    setMembersOnly(Boolean(block.members_only ?? block.membersOnly));
+    setEditingBlock(block);
+  };
+
+  const clearForm = () => {
+    setFrom("");
+    setTo("");
+    setReason("");
+    setMembersOnly(false);
+    setEditingBlock(null);
+  };
 
   // אזהרת חפיפה לטווח שנבחר כרגע מול תורים
   const selectedRangeConflicts = useMemo(() => {
@@ -173,12 +213,12 @@ export default function BlockAppointmentsModal({
     const s = parseHHMMOnDate(dayDate, from);
     const e = parseHHMMOnDate(dayDate, to);
     if (!s || !e || e <= s) return [];
-    const appts = (appointments || [])
+    const appts = (dayAppointments || [])
         .filter(a => (String(a.status || '').toLowerCase() !== 'canceled'))
-        .map(a => ({ ...a, s: new Date(a.starts_at), e: new Date(a.ends_at) }))
+        .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e));
     return appts.filter(a => overlaps(a.s, a.e, s, e));
-  }, [appointments, dayDate, from, to]);
+  }, [dayAppointments, dayDate, from, to]);
 
   const openLabel = hoursForDay?.isClosed ? "סגור" : `${hoursForDay?.open ?? "--:--"} – ${hoursForDay?.close ?? "--:--"}`;
 
@@ -205,13 +245,24 @@ export default function BlockAppointmentsModal({
     }
 
     try {
-      await Admin.blocks.add(
-          toLocalIsoWithOffset(startAt),
-          toLocalIsoWithOffset(endAt),
-          reason || "",
-          membersOnly
-      );
+      if (editingBlock) {
+        await Admin.blocks.update(
+            editingBlock.id,
+            toLocalIsoWithOffset(startAt),
+            toLocalIsoWithOffset(endAt),
+            reason || "",
+            membersOnly
+        );
+      } else {
+        await Admin.blocks.add(
+            toLocalIsoWithOffset(startAt),
+            toLocalIsoWithOffset(endAt),
+            reason || "",
+            membersOnly
+        );
+      }
       onBlock?.();
+      clearForm();
       onClose?.();
     } catch (err) {
       console.error("Error blocking time:", err);
@@ -348,9 +399,19 @@ export default function BlockAppointmentsModal({
                 ביטול
               </Button>
               <Button type="submit" disabled={disabled || selectedRangeConflicts.length > 0} className="flex-1 bg-black text-white rounded-full">
-                חסום
+                {editingBlock ? "עדכן" : "חסום"}
               </Button>
             </div>
+            {editingBlock && (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={clearForm}
+                    className="w-full text-xs text-gray-500"
+                >
+                  ביטול עריכה
+                </Button>
+            )}
           </form>
 
           {/* Existing appointments list */}
@@ -386,12 +447,58 @@ export default function BlockAppointmentsModal({
                     const membersOnlyBlock = Boolean(b.members_only ?? b.membersOnly);
                     return (
                         <div key={b.id} className="text-xs text-gray-700 bg-orange-50 rounded-xl px-3 py-2 space-y-1">
-                          <div>{safeFormat(b.s, "HH:mm")}–{safeFormat(b.e, "HH:mm")} · {b.reason || "חסימה"}</div>
-                          {membersOnlyBlock && (
-                              <div className="text-[11px] font-medium text-orange-700 bg-orange-100 rounded-full inline-block px-2 py-[2px]">
-                                לחברי מועדון בלבד
-                              </div>
-                          )}
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div>{safeFormat(b.s, "HH:mm")}–{safeFormat(b.e, "HH:mm")} · {b.reason || "חסימה"}</div>
+                              {membersOnlyBlock && (
+                                  <div className="text-[11px] font-medium text-orange-700 bg-orange-100 rounded-full inline-block px-2 py-[2px]">
+                                    לחברי מועדון בלבד
+                                  </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-gray-500 hover:text-gray-700"
+                                  onClick={() => beginEdit(b)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-red-500 hover:text-red-600"
+                                  onClick={async () => {
+                                    if (!confirm("לבטל את החסימה הזו?")) return;
+                                    try {
+                                      await Admin.blocks.remove(b.id);
+                                      if (editingBlock?.id === b.id) clearForm();
+                                      const list = await Admin.blocks.list(dateStr);
+                                      const sDay = startOfDay(dayDate);
+                                      const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
+                                      const filtered = (Array.isArray(list) ? list : [])
+                                          .map(block => ({
+                                            ...block,
+                                            s: new Date(block.start_at || block.startAt || block.startsAt),
+                                            e: new Date(block.end_at || block.endAt || block.endsAt)
+                                          }))
+                                          .filter(block => isValidDate(block.s) && isValidDate(block.e))
+                                          .filter(block => block.s < eDay && block.e > sDay)
+                                          .sort((a, b2) => a.s - b2.s);
+                                      setBlocks(filtered);
+                                    } catch (err) {
+                                      console.error("Error deleting block:", err);
+                                      alert("שגיאה בביטול החסימה");
+                                    }
+                                  }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
                     );
                   })

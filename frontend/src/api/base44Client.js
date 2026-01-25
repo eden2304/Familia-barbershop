@@ -759,6 +759,15 @@ const api = {
         });
       },
 
+      update: async (id, startIso, endIso, reason, membersOnly = false) => {
+        return await httpPut('/admin/blocked-times/' + encodeURIComponent(id), {
+          starts_at: String(startIso),
+          ends_at:   String(endIso),
+          reason:    reason ?? '',
+          members_only: Boolean(membersOnly),
+        });
+      },
+
       remove: (id) => httpDelete('/admin/blocked-times/' + encodeURIComponent(id)),
     }
   },

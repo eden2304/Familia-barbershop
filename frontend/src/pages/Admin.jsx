@@ -917,30 +917,6 @@ const extractRecurringSchedules = (client) => {
     return grouped.map((arr) => [...arr].sort((a, b) => a.start.localeCompare(b.start)));
   }, [memberSettings.memberOnlyWindows]);
 
-  const getUpcomingWeekday = (baseDate, targetWeekday) => {
-    const start = startOfDay(baseDate);
-    const current = start.getDay();
-    const delta = (targetWeekday - current + 7) % 7;
-    return addDays(start, delta);
-  };
-
-  const advanceWindowOptions = useMemo(() => {
-    const today = startOfDay(new Date());
-    const endOfWeek = getUpcomingWeekday(today, 5); // שישי
-    const endOfNextWeek = addDays(endOfWeek, 7);
-    const endOfTwoWeeks = addDays(endOfWeek, 14);
-    return [
-      { value: 'end_of_week', label: 'עד סוף השבוע', days: differenceInDays(endOfWeek, today) },
-      { value: 'end_of_next_week', label: 'עד סוף שבוע הבא', days: differenceInDays(endOfNextWeek, today) },
-      { value: 'two_weeks', label: 'עד עוד שבועיים', days: differenceInDays(endOfTwoWeeks, today) },
-    ];
-  }, []);
-
-  const resolveAdvanceOption = (daysValue) => {
-    const sanitized = clampAdvanceDays(daysValue, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
-    return advanceWindowOptions.find((opt) => opt.days === sanitized)?.value ?? advanceWindowOptions[0]?.value;
-  };
-
   const updateAdvanceDays = (field, rawValue, fallback) => {
     const sanitized = clampAdvanceDays(rawValue, fallback);
     setMemberSettings((prev) => ({ ...prev, [field]: sanitized }));
@@ -949,19 +925,12 @@ const extractRecurringSchedules = (client) => {
   };
 
   const handlePublicAdvanceChange = (value) => {
-    const selected = advanceWindowOptions.find((opt) => opt.value === value);
-    if (!selected) return;
-    updateAdvanceDays('publicMaxAdvanceDays', selected.days, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
+    updateAdvanceDays('publicMaxAdvanceDays', value, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
   };
 
   const handleMemberAdvanceChange = (value) => {
-    const selected = advanceWindowOptions.find((opt) => opt.value === value);
-    if (!selected) return;
-    updateAdvanceDays('memberMaxAdvanceDays', selected.days, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
+    updateAdvanceDays('memberMaxAdvanceDays', value, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
   };
-
-  const publicAdvanceValue = resolveAdvanceOption(memberSettings.publicMaxAdvanceDays);
-  const memberAdvanceValue = resolveAdvanceOption(memberSettings.memberMaxAdvanceDays);
 
   const toggleMemberOnlyService = (serviceId, checked) => {
     const idStr = String(serviceId ?? '');
@@ -2323,38 +2292,30 @@ const extractRecurringSchedules = (client) => {
                           <div className="grid gap-4 md:grid-cols-2">
                             <div>
                               <Label className="text-sm font-semibold text-gray-800">לקוחות רגילים</Label>
-                              <Select value={publicAdvanceValue} onValueChange={handlePublicAdvanceChange}>
-                                <SelectTrigger className="mt-2">
-                                  <SelectValue placeholder="בחר טווח הזמנות" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {advanceWindowOptions.map((option) => (
-                                      <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                      </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <Input
+                                  type="number"
+                                  min={0}
+                                  max={365}
+                                  value={memberSettings.publicMaxAdvanceDays}
+                                  onChange={(e) => handlePublicAdvanceChange(e.target.value)}
+                                  className="mt-2"
+                              />
                               <p className="text-xs text-gray-500 mt-1">
-                                בחר עד מתי לקוחות רגילים יכולים להזמין (עד יום שישי של השבוע הנבחר).
+                                מספר הימים קדימה שלקוח שאינו חבר מועדון יכול להזמין.
                               </p>
                             </div>
                             <div>
                               <Label className="text-sm font-semibold text-gray-800">חברי מועדון</Label>
-                              <Select value={memberAdvanceValue} onValueChange={handleMemberAdvanceChange}>
-                                <SelectTrigger className="mt-2">
-                                  <SelectValue placeholder="בחר טווח הזמנות" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {advanceWindowOptions.map((option) => (
-                                      <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                      </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <Input
+                                  type="number"
+                                  min={0}
+                                  max={365}
+                                  value={memberSettings.memberMaxAdvanceDays}
+                                  onChange={(e) => handleMemberAdvanceChange(e.target.value)}
+                                  className="mt-2"
+                              />
                               <p className="text-xs text-gray-500 mt-1">
-                                בחר עד מתי חברי מועדון יכולים להזמין (עד יום שישי של השבוע הנבחר).
+                                מספר הימים קדימה שחבר מועדון יכול להזמין תור.
                               </p>
                             </div>
                           </div>

@@ -132,7 +132,7 @@ export class BlockedTimesController {
                     id: a.id,
                     starts_at: a.startsAt,
                     ends_at: a.endsAt,
-                    client_name: a.client ? `${a.client.firstName ?? ''} ${a.client.lastName ?? ''}`.trim() : '',
+                    client_name: a.client ? `${a.client.first_name ?? ''} ${a.client.last_name ?? ''}`.trim() : '',
                 })),
             });
         }
@@ -174,7 +174,7 @@ export class BlockedTimesController {
                     id: a.id,
                     starts_at: a.startsAt,
                     ends_at: a.endsAt,
-                    client_name: a.client ? `${a.client.firstName ?? ''} ${a.client.lastName ?? ''}`.trim() : '',
+                    client_name: a.client ? `${a.client.first_name ?? ''} ${a.client.last_name ?? ''}`.trim() : '',
                 })),
             });
         }

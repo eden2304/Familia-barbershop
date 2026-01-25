@@ -132,7 +132,7 @@ export default function BlockAppointmentsModal({
     const sDay = startOfDay(dayDate);
     const eDay = new Date(sDay); eDay.setDate(eDay.getDate() + 1);
     return (appointments || [])
-        .map(a => ({ ...a, s: new Date(a.starts_at), e: new Date(a.ends_at) }))
+        .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e))
         .filter(a => a.s < eDay && a.e > sDay)
         .sort((a,b) => a.s - b.s);
@@ -195,7 +195,7 @@ export default function BlockAppointmentsModal({
     if (!s || !e || e <= s) return [];
     const appts = (appointments || [])
         .filter(a => (String(a.status || '').toLowerCase() !== 'canceled'))
-        .map(a => ({ ...a, s: new Date(a.starts_at), e: new Date(a.ends_at) }))
+        .map(a => ({ ...a, s: new Date(a.starts_at || a.startsAt), e: new Date(a.ends_at || a.endsAt) }))
         .filter(a => isValidDate(a.s) && isValidDate(a.e));
     return appts.filter(a => overlaps(a.s, a.e, s, e));
   }, [appointments, dayDate, from, to]);

@@ -37,12 +37,20 @@ interface BookingRules {
     publicMaxAdvanceDays: number;
     memberMaxAdvanceDays: number;
     memberOnlyServiceIds: string[];
+    memberOnlyWindows: MemberWindow[];
+}
+
+interface MemberWindow {
+    weekday: number;
+    start: string;
+    end: string;
 }
 
 const DEFAULT_BOOKING_RULES: BookingRules = {
     publicMaxAdvanceDays: 7,
     memberMaxAdvanceDays: 14,
     memberOnlyServiceIds: [],
+    memberOnlyWindows: [],
 };
 
 @Injectable()
@@ -63,6 +71,72 @@ export class AppointmentsService {
         if (intVal < 0) return 0;
         if (intVal > 365) return 365;
         return intVal;
+    }
+
+    private normalizeTime(value: any): string | null {
+        if (value === undefined || value === null) return null;
+        const str = String(value).trim();
+        const match = /^(\d{1,2}):(\d{2})$/.exec(str);
+        if (!match) return null;
+        let hours = Number(match[1]);
+        let minutes = Number(match[2]);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+        if (hours < 0) hours = 0;
+        if (hours > 23) hours = 23;
+        if (minutes < 0) minutes = 0;
+        if (minutes > 59) minutes = 59;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+
+    private normalizeMemberWindows(candidate: any): MemberWindow[] {
+        const windows: MemberWindow[] = [];
+        const seen = new Set<string>();
+
+        const pushWindow = (weekday: any, start: any, end: any) => {
+            if (weekday === undefined || weekday === null) return;
+            const day = Number(weekday);
+            if (!Number.isInteger(day) || day < 0 || day > 6) return;
+            const startNorm = this.normalizeTime(start);
+            const endNorm = this.normalizeTime(end);
+            if (!startNorm || !endNorm) return;
+            const startMinutes = parseInt(startNorm.slice(0, 2), 10) * 60 + parseInt(startNorm.slice(3), 10);
+            const endMinutes = parseInt(endNorm.slice(0, 2), 10) * 60 + parseInt(endNorm.slice(3), 10);
+            if (endMinutes <= startMinutes) return;
+            const key = `${day}|${startNorm}|${endNorm}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            windows.push({ weekday: day, start: startNorm, end: endNorm });
+        };
+
+        const explore = (value: any, fallbackDay?: number) => {
+            if (!value) return;
+            if (Array.isArray(value)) {
+                value.forEach(entry => explore(entry, fallbackDay));
+                return;
+            }
+            if (typeof value === 'object') {
+                const day = value.weekday ?? value.day ?? value.day_of_week ?? fallbackDay;
+                const start = value.start ?? value.from ?? value.open ?? value.start_time ?? value.startTime;
+                const end = value.end ?? value.to ?? value.close ?? value.end_time ?? value.endTime;
+                if (day !== undefined || (start !== undefined && end !== undefined)) {
+                    pushWindow(day, start, end);
+                    return;
+                }
+                Object.entries(value).forEach(([maybeDay, nested]) => {
+                    const parsedDay = Number.isNaN(Number(maybeDay)) ? fallbackDay : Number(maybeDay);
+                    explore(nested, parsedDay);
+                });
+            }
+        };
+
+        explore(candidate);
+
+        windows.sort((a, b) => {
+            if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+            return a.start.localeCompare(b.start);
+        });
+
+        return windows;
     }
 
     private normalizeBookingRules(raw: any): BookingRules {
@@ -95,6 +169,12 @@ export class AppointmentsService {
             source.member_only_services ??
             source.members_only_services ??
             [];
+        const windowCandidate =
+            source.memberOnlyWindows ??
+            source.member_only_windows ??
+            source.memberWindows ??
+            source.member_windows ??
+            [];
 
         const publicMaxAdvanceDays = this.clampAdvanceDays(publicCandidate, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
         const memberMaxAdvanceDays = this.clampAdvanceDays(memberCandidate, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
@@ -111,11 +191,13 @@ export class AppointmentsService {
                   ),
               )
             : [];
+        const windows = this.normalizeMemberWindows(windowCandidate);
 
         return {
             publicMaxAdvanceDays,
             memberMaxAdvanceDays,
             memberOnlyServiceIds: ids,
+            memberOnlyWindows: windows,
         };
     }
 
@@ -181,42 +263,31 @@ export class AppointmentsService {
         }
     }
 
-    private async ensureWithinBusinessHours(dateStr: string, slotStart: Date, slotEnd: Date) {
-        // offset דינמי לפי היום בישראל (+02 / +03)
+    private async getBusinessHoursForDate(dateStr: string) {
         const offset = this.israelOffsetForDate(dateStr);
-
-        // יום בשבוע לפי ישראל
         const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
-        if (!bh) throw new ForbiddenException('CLOSED_DAY');
-
-        const openStr = String(bh.open ?? '').trim();
-        const closeStr = String(bh.close ?? '').trim();
-        if (!openStr || !closeStr) throw new ForbiddenException('CLOSED_DAY');
-        if (openStr === '00:00' && closeStr === '00:00') throw new ForbiddenException('CLOSED_DAY');
-
-        const workStart = new Date(`${dateStr}T${openStr}:00${offset}`);
-        const workEnd = new Date(`${dateStr}T${closeStr}:00${offset}`);
-
-        if (!Number.isFinite(workStart.getTime()) || !Number.isFinite(workEnd.getTime())) {
-            throw new ForbiddenException('CLOSED_DAY');
-        }
-        if (workEnd.getTime() <= workStart.getTime()) {
-            throw new ForbiddenException('CLOSED_DAY');
-        }
-
-        if (slotStart < workStart || slotEnd > workEnd) {
-            throw new ForbiddenException('OUT_OF_BUSINESS_HOURS');
-        }
-
-        return bh;
+        return { bh, offset, jsDow };
     }
 
+    private buildMemberWindowsForDate(dateStr: string, rules: BookingRules, offset: string, jsDow: number) {
+        return (rules.memberOnlyWindows || [])
+            .filter(win => Number(win.weekday) === Number(jsDow))
+            .map(win => ({
+                start: new Date(`${dateStr}T${win.start}:00${offset}`),
+                end: new Date(`${dateStr}T${win.end}:00${offset}`),
+            }))
+            .filter(win => Number.isFinite(win.start.getTime()) && Number.isFinite(win.end.getTime()) && win.end > win.start);
+    }
 
-    private ensureAlignedToInterval(slotStart: Date, bh: BusinessHour) {
-        const interval = Number(bh.slotIntervalMinutes ?? 30);
+    private isSlotWithinWindow(slotStart: Date, slotEnd: Date, window: { start: Date; end: Date }): boolean {
+        return slotStart >= window.start && slotEnd <= window.end;
+    }
+
+    private ensureAlignedToInterval(slotStart: Date, interval: number) {
+        const step = Number(interval ?? 30) || 30;
         const minutes = slotStart.getMinutes();
-        if (minutes % interval !== 0) {
+        if (minutes % step !== 0) {
             throw new BadRequestException('NOT_ALIGNED_TO_INTERVAL');
         }
     }
@@ -288,8 +359,44 @@ export class AppointmentsService {
 
         // 5) שעות פעילות + אינטרוול
         const dateStr = DateTime.fromJSDate(startAt).setZone(TZ).toFormat('yyyy-LL-dd');
-        const bh = await this.ensureWithinBusinessHours(dateStr, startAt, endAt);
-        this.ensureAlignedToInterval(startAt, bh);
+        const { bh, offset, jsDow } = await this.getBusinessHoursForDate(dateStr);
+        const interval = Number(bh?.slotIntervalMinutes ?? 30) || 30;
+        const openStr = String(bh?.open ?? '').trim();
+        const closeStr = String(bh?.close ?? '').trim();
+        const hasBaseConfig = Boolean(openStr && closeStr && openStr !== closeStr);
+        const baseWindow = hasBaseConfig
+            ? {
+                start: new Date(`${dateStr}T${openStr}:00${offset}`),
+                end: new Date(`${dateStr}T${closeStr}:00${offset}`),
+            }
+            : null;
+        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow);
+        const isInMemberWindow = memberWindows.some(win => this.isSlotWithinWindow(startAt, endAt, win));
+        const isInBaseWindow = baseWindow ? this.isSlotWithinWindow(startAt, endAt, baseWindow) : false;
+        const hasBaseWindow = Boolean(
+            baseWindow &&
+            Number.isFinite(baseWindow.start.getTime()) &&
+            Number.isFinite(baseWindow.end.getTime()) &&
+            baseWindow.end > baseWindow.start,
+        );
+        const hasMemberWindow = memberWindows.length > 0;
+
+        if (!hasBaseWindow && !hasMemberWindow) {
+            throw new ForbiddenException('CLOSED_DAY');
+        }
+
+        if (!isMember && isInMemberWindow) {
+            throw new ForbiddenException('MEMBERS_ONLY_WINDOW');
+        }
+
+        if (!isInBaseWindow && !isInMemberWindow) {
+            if (!hasBaseWindow && hasMemberWindow) {
+                throw new ForbiddenException('MEMBERS_ONLY_WINDOW');
+            }
+            throw new ForbiddenException('OUT_OF_BUSINESS_HOURS');
+        }
+
+        this.ensureAlignedToInterval(startAt, interval);
 
         // 6) חפיפות
         const hasApptOverlap = await this.apptRepo.exist({
@@ -335,7 +442,11 @@ export class AppointmentsService {
         return `${sign}${hh}:${mm}`;
     }
 
-    async getAvailableSlots(serviceId: string, dateStr: string, opts: { isMember?: boolean } = {}): Promise<string[]> {
+    async getAvailableSlots(
+        serviceId: string,
+        dateStr: string,
+        opts: { isMember?: boolean } = {},
+    ): Promise<Array<{ hhmm: string; memberOnly: boolean }>> {
         const service = await this.svcRepo.findOne({ where: { id: serviceId } });
         if (!service) throw new NotFoundException('Service not found');
 
@@ -362,19 +473,16 @@ export class AppointmentsService {
 
         const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
-        if (!bh) return [];
 
-        const interval = Number(bh.slotIntervalMinutes ?? 30);
+        const interval = Number(bh?.slotIntervalMinutes ?? 30) || 30;
 
-        const openStr = String(bh.open ?? '').trim();
-        const closeStr = String(bh.close ?? '').trim();
-        if (!openStr || !closeStr) return [];
-        if (openStr === '00:00' && closeStr === '00:00') return [];
-
-        const workStart = new Date(`${dateStr}T${openStr}:00${offset}`);
-        const workEnd = new Date(`${dateStr}T${closeStr}:00${offset}`);
-        if (!Number.isFinite(workStart.getTime()) || !Number.isFinite(workEnd.getTime())) return [];
-        if (workEnd.getTime() <= workStart.getTime()) return [];
+        const openStr = String(bh?.open ?? '').trim();
+        const closeStr = String(bh?.close ?? '').trim();
+        const hasBaseWindow = Boolean(openStr && closeStr && openStr !== closeStr);
+        const workStart = hasBaseWindow ? new Date(`${dateStr}T${openStr}:00${offset}`) : null;
+        const workEnd = hasBaseWindow ? new Date(`${dateStr}T${closeStr}:00${offset}`) : null;
+        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow);
+        if (!hasBaseWindow && (!isMember || memberWindows.length === 0)) return [];
 
         const appts = await this.apptRepo.find({
             where: {
@@ -393,7 +501,7 @@ export class AppointmentsService {
         });
         const relevantBlocks = blocks.filter(b => !b.membersOnly || !isMember);
 
-        const slots: string[] = [];
+        const slots: Array<{ hhmm: string; memberOnly: boolean }> = [];
         const fmtTime = new Intl.DateTimeFormat('en-GB', {
             timeZone: 'Asia/Jerusalem',
             hour: '2-digit',
@@ -401,20 +509,36 @@ export class AppointmentsService {
             hour12: false,
         });
 
-        for (
-            let t = new Date(workStart);
-            t.getTime() + service.durationMinutes * 60000 <= workEnd.getTime();
-            t = new Date(t.getTime() + interval * 60000)
-        ) {
-            const slotStart = t;
-            const slotEnd = new Date(t.getTime() + service.durationMinutes * 60000);
+        const durationMs = service.durationMinutes * 60000;
+        const addSlotsForWindow = (window: { start: Date; end: Date }, memberOnly: boolean) => {
+            for (
+                let t = new Date(window.start);
+                t.getTime() + durationMs <= window.end.getTime();
+                t = new Date(t.getTime() + interval * 60000)
+            ) {
+                const slotStart = new Date(t);
+                const slotEnd = new Date(t.getTime() + durationMs);
+                if (!Number.isFinite(slotStart.getTime()) || !Number.isFinite(slotEnd.getTime())) continue;
 
-            const overlapsAppt = appts.some(a => !(slotEnd <= a.startsAt || slotStart >= a.endsAt));
-            const overlapsBlock = relevantBlocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
+                if (!memberOnly) {
+                    const overlapsMemberWindow = memberWindows.some(win => this.isSlotWithinWindow(slotStart, slotEnd, win));
+                    if (overlapsMemberWindow) continue;
+                }
 
-            if (!overlapsAppt && !overlapsBlock) {
-                slots.push(fmtTime.format(slotStart)); // ✅ תמיד HH:mm
+                const overlapsAppt = appts.some(a => !(slotEnd <= a.startsAt || slotStart >= a.endsAt));
+                const overlapsBlock = relevantBlocks.some(b => !(slotEnd <= b.startsAt || slotStart >= b.endsAt));
+                if (!overlapsAppt && !overlapsBlock) {
+                    slots.push({ hhmm: fmtTime.format(slotStart), memberOnly });
+                }
             }
+        };
+
+        if (hasBaseWindow && workStart && workEnd && workEnd.getTime() > workStart.getTime()) {
+            addSlotsForWindow({ start: workStart, end: workEnd }, false);
+        }
+
+        if (memberWindows.length > 0) {
+            memberWindows.forEach(win => addSlotsForWindow(win, true));
         }
 
         // לא להציע עבר ביום הנוכחי (לפי ישראל)
@@ -427,10 +551,15 @@ export class AppointmentsService {
 
         if (nowILDate === dateStr) {
             const nowTime = fmtTime.format(new Date()); // "HH:mm"
-            return slots.filter(s => s > nowTime);
+            return slots.filter(s => s.hhmm > nowTime);
         }
 
-        return slots;
+        const unique = new Map<string, { hhmm: string; memberOnly: boolean }>();
+        for (const slot of slots) {
+            const key = `${slot.hhmm}-${slot.memberOnly ? 'member' : 'public'}`;
+            if (!unique.has(key)) unique.set(key, slot);
+        }
+        return Array.from(unique.values()).sort((a, b) => a.hhmm.localeCompare(b.hhmm));
     }
 
     async getMyAppointmentsByPhone(phoneRaw: string) {

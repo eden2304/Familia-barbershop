@@ -2466,16 +2466,21 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'services' && (
                     <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold">ניהול שירותים</h2>
-                        <Button
-                            onClick={() => setShowServiceForm(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          הוסף שירות
-                        </Button>
-                      </div>
+                      <Card className="border border-slate-200/60 bg-gradient-to-l from-white via-slate-50/60 to-white shadow-sm">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">ניהול שירותים</h2>
+                            <p className="text-sm text-gray-500">סדר, עדכון והפעלה של השירותים בחנות.</p>
+                          </div>
+                          <Button
+                              onClick={() => setShowServiceForm(true)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            הוסף שירות
+                          </Button>
+                        </CardContent>
+                      </Card>
 
                       <DragDropContext onDragEnd={(result) => handleDragEnd(result, services, setServices, Service)}>
                         <Droppable droppableId="services">
@@ -2485,33 +2490,41 @@ const extractRecurringSchedules = (client) => {
                                   ref={provided.innerRef}
                                   className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"
                               >
-                                {services.map((service, index) => (
+                                {services.map((service, index) => {
+                                  const isActive = service.isActive ?? service.is_active ?? true;
+                                  const durationValue = service.durationMinutes ?? service.duration_minutes ?? service.duration;
+                                  const durationLabel = durationValue ? `${durationValue} דקות` : "משך לא מוגדר";
+
+                                  return (
                                     <Draggable key={service.id} draggableId={service.id.toString()} index={index}>
                                       {(provided) => (
                                           <div
                                               ref={provided.innerRef}
                                               {...provided.draggableProps}
                                           >
-                                            <Card className="bg-white rounded-2xl shadow-sm">
-                                              <CardContent className="p-4">
-                                                <div className="flex justify-between items-start mb-4">
-                                                  <div className="flex items-center gap-2">
-                                                    <div {...provided.dragHandleProps} className="cursor-grab text-gray-400">
+                                            <Card className="rounded-2xl border border-gray-200/70 bg-white shadow-sm transition hover:shadow-md">
+                                              <CardContent className="p-5 space-y-4">
+                                                <div className="flex justify-between items-start gap-3">
+                                                  <div className="flex items-center gap-3">
+                                                    <div {...provided.dragHandleProps} className="cursor-grab text-gray-400 hover:text-gray-600">
                                                       <GripVertical />
                                                     </div>
                                                     <div>
-                                                      <h3 className="font-bold text-lg">{service.name}</h3>
-                                                      <p className="text-gray-600 text-sm">{service.description}</p>
+                                                      <h3 className="font-bold text-lg text-gray-900">{service.name}</h3>
+                                                      <p className="text-xs text-gray-500">{service.description || "ללא תיאור"}</p>
                                                     </div>
                                                   </div>
-                                                  <Badge className={(service.isActive ?? service.is_active) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                                                    {(service.isActive ?? service.is_active) ? "פעיל" : "לא פעיל"}
+                                                  <Badge className={isActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                                                    {isActive ? "פעיל" : "לא פעיל"}
                                                   </Badge>
                                                 </div>
 
-                                                <div className="flex justify-between items-center mb-4">
-                                                  <span className="font-bold text-lg">₪{service.price}</span>
-                                                  <span className="text-gray-500 text-sm">{service.duration_minutes} דקות</span>
+                                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+                                                  <span className="font-semibold text-gray-900">₪{service.price}</span>
+                                                  <span className="flex items-center gap-1 text-gray-600">
+                                                    <Clock className="h-4 w-4 text-gray-400" />
+                                                    {durationLabel}
+                                                  </span>
                                                 </div>
 
                                                 <div className="flex gap-2">
@@ -2541,7 +2554,8 @@ const extractRecurringSchedules = (client) => {
                                           </div>
                                       )}
                                     </Draggable>
-                                ))}
+                                  );
+                                })}
                                 {provided.placeholder}
                               </div>
                           )}
@@ -3447,7 +3461,7 @@ function ServiceForm({ service, onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
     name: service?.name || "",
     description: service?.description || "",
-    duration_minutes: service?.duration_minutes || 30,
+    durationMinutes: service?.durationMinutes ?? service?.duration_minutes ?? 30,
     price: service?.price || 0,
     isActive: service?.isActive ?? service?.is_active ?? true
   });
@@ -3481,8 +3495,8 @@ function ServiceForm({ service, onSubmit, onCancel }) {
             <Label>משך (דקות)</Label>
             <Input
                 type="number"
-                value={formData.duration_minutes}
-                onChange={(e) => setFormData({ ...formData, duration_minutes: parseInt(e.target.value)})}
+                value={formData.durationMinutes}
+                onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) })}
                 required
             />
           </div>

@@ -2504,8 +2504,8 @@ const extractRecurringSchedules = (client) => {
                                                       <p className="text-gray-600 text-sm">{service.description}</p>
                                                     </div>
                                                   </div>
-                                                  <Badge className={service.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-                                                    {service.active ? "פעיל" : "לא פעיל"}
+                                                  <Badge className={(service.isActive ?? service.is_active) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                                                    {(service.isActive ?? service.is_active) ? "פעיל" : "לא פעיל"}
                                                   </Badge>
                                                 </div>
 
@@ -3449,7 +3449,7 @@ function ServiceForm({ service, onSubmit, onCancel }) {
     description: service?.description || "",
     duration_minutes: service?.duration_minutes || 30,
     price: service?.price || 0,
-    active: service?.active ?? true
+    isActive: service?.isActive ?? service?.is_active ?? true
   });
 
   const handleSubmit = (e) => {
@@ -3501,8 +3501,8 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           <input
               type="checkbox"
               id="active"
-              checked={formData.active}
-              onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+              checked={formData.isActive}
+              onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
           />
           <Label htmlFor="active">שירות פעיל</Label>
         </div>

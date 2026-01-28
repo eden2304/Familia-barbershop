@@ -28,14 +28,13 @@ export default function Home() {
   const [showVerification, setShowVerification] = useState(false);
   const [backgroundVideoUrl, setBackgroundVideoUrl] = useState("");
   const [showAboutText, setShowAboutText] = useState(false);
-  const [showLoadingScreen, setShowLoadingScreen] = useState(false);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
 
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
-    setShowLoadingScreen(true);
     const t = setTimeout(() => setShowLoadingScreen(false), 1500);
     const controller = new AbortController();
 

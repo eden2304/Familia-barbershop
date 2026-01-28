@@ -3,6 +3,7 @@ import { WaitingList } from '@/api/entities';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
+import { Crown } from "lucide-react";
 import { format, isSameDay } from 'date-fns';
 import { he } from "date-fns/locale";
 
@@ -13,6 +14,7 @@ export default function WaitingListModal({
                                            day,
                                            client,
                                            allAppointments,
+                                           availableSlots,
                                            businessHours,
                                            blockedTimes
                                          }) {
@@ -37,6 +39,13 @@ export default function WaitingListModal({
     return { start, end };
   };
 
+  const combineDateTime = (date, hhmm) => {
+    const [hh, mm] = String(hhmm).split(":").map(Number);
+    const d = new Date(date);
+    d.setHours(hh, mm, 0, 0);
+    return d;
+  };
+
   const generateUnavailableSlots = () => {
     if (!service || !day) return [];
     const { start, end } = toYmdBounds(day);
@@ -49,6 +58,20 @@ export default function WaitingListModal({
       return isBooked && s >= start && s < end;
     });
 
+    const memberOnlySlots = (availableSlots || [])
+      .filter((slot) => Boolean(slot?.memberOnly ?? slot?.membersOnly ?? slot?.member_only))
+      .map((slot) => {
+        const timeValue = slot?.hhmm ?? slot?.formatted ?? slot?.time ?? slot;
+        if (!timeValue || typeof timeValue !== 'string' || !timeValue.includes(':')) return null;
+        const t = combineDateTime(day, timeValue);
+        return {
+          time: t,
+          formatted: slot?.formatted ?? timeValue,
+          memberOnly: true,
+        };
+      })
+      .filter(Boolean);
+
     // הפוך לרשימת שעות ("HH:mm") עם ייחוד ומיון
     const seen = new Set();
     const slots = [];
@@ -57,7 +80,13 @@ export default function WaitingListModal({
       const label = format(t, 'HH:mm');
       if (!seen.has(label)) {
         seen.add(label);
-        slots.push({ time: t, formatted: label });
+        slots.push({ time: t, formatted: label, memberOnly: false });
+      }
+    }
+    for (const slot of memberOnlySlots) {
+      if (!seen.has(slot.formatted)) {
+        seen.add(slot.formatted);
+        slots.push(slot);
       }
     }
     slots.sort((a, b) => a.time - b.time);
@@ -75,7 +104,7 @@ export default function WaitingListModal({
     // אם זה היום – רק שעות עתידיות (מרווח בטיחות קטן)
     const cutoff = now.getTime() + 60 * 1000;
     return list.filter(s => s.time.getTime() > cutoff);
-  }, [day, allAppointments, service]);
+  }, [day, allAppointments, availableSlots, service]);
 
   const handleSubmit = async () => {
     if (!selectedSlot || !client || !service) return;
@@ -127,9 +156,15 @@ export default function WaitingListModal({
                                 key={slot.formatted}
                                 variant={selectedSlot?.formatted === slot.formatted ? 'default' : 'outline'}
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`h-10 text-sm rounded-lg ${selectedSlot?.formatted === slot.formatted ? 'bg-black text-white' : ''}`}
+                                className={`h-12 text-sm rounded-lg flex flex-col items-center justify-center gap-1 ${selectedSlot?.formatted === slot.formatted ? 'bg-black text-white' : ''}`}
                             >
-                              {slot.formatted}
+                              <span className="text-sm leading-none">{slot.formatted}</span>
+                              {slot.memberOnly && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px] font-semibold">
+                                  <Crown className="w-3 h-3" />
+                                  שעות מועדון
+                                </span>
+                              )}
                             </Button>
                         ))
                     ) : (

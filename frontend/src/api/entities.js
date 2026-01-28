@@ -11,8 +11,6 @@ import api, { invalidateCacheByPathPrefix,
     Auth,
 } from './base44Client.js';
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-
 /* ---------------- Clients (CRUD) ---------------- */
 export const Client = {
     list: async () => {
@@ -263,34 +261,6 @@ const normTestimonial = (t = {}) => {
 };
 const normTestimonialArr = (arr) => Array.isArray(arr) ? arr.map(normTestimonial) : [];
 
-async function req(method, path, body) {
-    const res = await fetch(`${API_URL}${path}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
-    });
-    const ct = res.headers.get("content-type") || "";
-    const isJson = ct.includes("application/json");
-    const payload = isJson ? await res.json().catch(() => null) : null;
-    if (!res.ok) {
-        const msg =
-            payload?.message ||
-            payload?.error ||
-            (typeof payload === "string" ? payload : "") ||
-            `HTTP ${res.status}`;
-        const err = new Error(msg);
-        err.status = res.status;
-        err.payload = payload;
-        throw err;
-    }
-    return payload;
-}
-const getJson = (p) => req("GET", p);
-const postJson = (p, b) => req("POST", p, b);
-const putJson = (p, b) => req("PUT", p, b);
-const delJson = (p) => req("DELETE", p);
-
-
 export const Testimonial = {
     async list(order = "order_index") {
         const res = await api.get("/testimonials"); // או /admin/testimonials אם בחרת
@@ -353,7 +323,7 @@ export const WaitingList = {
      * { client_id?, client_name, phone, service_id, desired_starts_at (ISO), status? }
      */
     async create(payload) {
-        return postJson("/waiting-list", payload);
+        return api.post("/waiting-list", payload);
     },
 
     /**
@@ -366,17 +336,17 @@ export const WaitingList = {
         if (filters.date) q.set("date", filters.date);           // yyyy-MM-dd
         if (filters.serviceId) q.set("serviceId", String(filters.serviceId));
         const qs = q.toString() ? `?${q.toString()}` : "";
-        return getJson(`/admin/waiting-list${qs}`);
+        return api.get(`/admin/waiting-list${qs}`);
     },
 
     /** עדכון סטטוס/זמן (אדמין) */
     async update(id, patch) {
-        return putJson(`/admin/waiting-list/${id}`, patch);
+        return api.put(`/admin/waiting-list/${id}`, patch);
     },
 
     /** מחיקה (לא חובה) */
     async remove(id) {
-        return delJson(`/admin/waiting-list/${id}`);
+        return api.delete(`/admin/waiting-list/${id}`);
     },
 };
 

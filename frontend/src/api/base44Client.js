@@ -588,6 +588,13 @@ const api = {
       return (await httpGet('/appointments/available?' + params.toString())) || [];
     },
 
+    listByDate: async (date) => {
+      const day = normalizeDateForApi(date);
+      if (!day) return [];
+      const res = await httpGet('/appointments?date=' + encodeURIComponent(day));
+      return Array.isArray(res) ? res : [];
+    },
+
     // list – קודם ציבורי, פולבק ל־admin
     list: async (sort) => {
       try {

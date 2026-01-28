@@ -15,9 +15,8 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
-import api, { API_ROOT } from "@/api/base44Client";
+import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
-const API_URL = API_ROOT ?? "http://localhost:3001";
 
 
 /* ---------------- utils ---------------- */
@@ -425,8 +424,7 @@ export default function Book() {
       try {
         setAptsLoading(true);
         const ymd = toYMD(selectedDate);           // "yyyy-MM-dd"
-        const res = await fetch(`${API_URL}/appointments?date=${ymd}`);
-        const data = await res.json();
+        const data = await api.Appointment.listByDate(ymd);
         // ה־WaitingListModal מצפה לרשימה מלאה של תורים של אותו יום
         setAppointments(Array.isArray(data) ? data : []);
       } catch (e) {

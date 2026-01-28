@@ -2172,13 +2172,20 @@ async function router(req, res) {
 // GET /admin/waiting-list – רשימת המתנה לניהול
     if (req.method === 'GET' && pathname === '/admin/waiting-list') {
         const q = await pool.query(`
-    select w.*, s.name as service_name, s.duration_minutes
+    select w.*, s.name as service_name, s.duration_minutes,
+           coalesce(c.is_member, false) as is_member
     from waiting_list w
     left join services s on s.id = w.service_id
+    left join clients c on c.id = w.client_id
     where w.status in ('waiting','notified')
-    order by w.created_at desc
+    order by w.desired_starts_at asc, coalesce(c.is_member,false) desc, w.created_at asc
   `);
-        return json(res, 200, q.rows);
+        const rows = (q.rows || []).map((row) => ({
+            ...row,
+            is_member: !!row.is_member,
+            isMember: !!row.is_member,
+        }));
+        return json(res, 200, rows);
     }
 
 // PUT /admin/waiting-list/:id – עדכון סטטוס/שעה

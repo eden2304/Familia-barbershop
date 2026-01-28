@@ -993,7 +993,16 @@ const extractRecurringSchedules = (client) => {
   const getWaitingListForDay = (date) => {
     return waitingList.filter(entry =>
         isSameDay(new Date(entry.desired_starts_at), date)
-    ).sort((a, b) => new Date(a.desired_starts_at) - new Date(b.desired_starts_at));
+    ).sort((a, b) => {
+      const timeDiff = new Date(a.desired_starts_at) - new Date(b.desired_starts_at);
+      if (timeDiff !== 0) return timeDiff;
+      const aMember = Boolean(a.is_member ?? a.isMember);
+      const bMember = Boolean(b.is_member ?? b.isMember);
+      if (aMember !== bMember) return aMember ? -1 : 1;
+      const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return aCreated - bCreated;
+    });
   };
 
 
@@ -1764,6 +1773,7 @@ const extractRecurringSchedules = (client) => {
                         {getWaitingListForDay(selectedDate).length > 0 ? (
                             getWaitingListForDay(selectedDate).map(entry => {
                               const service = services.find(s => s.id === entry.service_id);
+                              const isMember = Boolean(entry.is_member ?? entry.isMember);
                               return (
                                   <motion.div
                                       key={entry.id}
@@ -1780,9 +1790,16 @@ const extractRecurringSchedules = (client) => {
                                     </div>
                                     <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
                                     <div className="flex-1">
-                                      <h4 className="font-bold text-gray-900">
-                                        {entry.client_name}
-                                      </h4>
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="font-bold text-gray-900">
+                                          {entry.client_name}
+                                        </h4>
+                                        {isMember && (
+                                            <span className="text-[10px] font-semibold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-200">
+                                              מועדון
+                                            </span>
+                                        )}
+                                      </div>
                                       <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
                                     </div>
                                     <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>

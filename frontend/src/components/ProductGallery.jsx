@@ -7,16 +7,22 @@ export default function ProductGallery() {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchProducts = async () => {
       try {
-        const productData = await Product.list();
-        setProducts(productData || []);
+        const productData = await Product.list({ signal: controller.signal });
+        if (!controller.signal.aborted) {
+          setProducts(productData || []);
+        }
       } catch (error) {
-        console.error("Error fetching products:", error);
+        if (error?.name !== 'AbortError') {
+          console.error("Error fetching products:", error);
+        }
       }
     };
 
     fetchProducts();
+    return () => controller.abort();
   }, []);
 
   if (products.length === 0) {

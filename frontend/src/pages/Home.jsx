@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, MessageCircle, X } from "lucide-react";
@@ -8,6 +8,7 @@ import ProductGallery from "../components/ProductGallery.jsx";
 import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import api from "@/api/base44Client";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const resolveVideoUrl = (value) => {
@@ -29,9 +30,14 @@ export default function Home() {
   const [showAboutText, setShowAboutText] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(false);
 
+  const hasLoadedRef = useRef(false);
+
   useEffect(() => {
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
     setShowLoadingScreen(true);
     const t = setTimeout(() => setShowLoadingScreen(false), 1500);
+    const controller = new AbortController();
 
     const storedClient = localStorage.getItem("familiaClient");
     const token = getStoredAuthToken();
@@ -51,17 +57,18 @@ export default function Home() {
     }
 
 
-    loadData();
-    return () => clearTimeout(t);
+    loadData(controller.signal);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (signal) => {
     setLoading(true);
     try {
       // Testimonials דרך REST
-      const raw = await fetch(`${API_URL}/testimonials`)
-          .then((r) => r.json())
-          .catch(() => []);
+      const raw = await api.get('/testimonials', { signal }).catch(() => []);
 
       const testiFromApi = Array.isArray(raw)
           ? raw.map((t, idx) => ({
@@ -73,17 +80,19 @@ export default function Home() {
           }))
           : [];
 
-      setTestimonials(testiFromApi);
+      if (!signal?.aborted) setTestimonials(testiFromApi);
 
       // Background videos
-      const bg = await fetch(`${API_URL}/background-videos`).then((r) => r.json()).catch(() => []);
+      const bg = await api.get('/background-videos', { signal }).catch(() => []);
       const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
       const rawUrl = active?.videoUrl || active?.video_url || active?.url || "";
-      setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
+      if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
     } catch (err) {
-      console.error("Error loading data:", err);
+      if (err?.name !== 'AbortError') {
+        console.error("Error loading data:", err);
+      }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   };
 

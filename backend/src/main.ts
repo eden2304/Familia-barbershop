@@ -5,27 +5,90 @@ import { Request, Response, NextFunction } from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as jwt from 'jsonwebtoken';
 
 const logger = new Logger('Bootstrap');
 
 interface Bucket { count: number; reset: number; }
+type RateLimitKey = { key: string; type: 'ip' | 'user' | 'unknown'; masked: string };
+type RateLimitOptions = {
+    limit: number;
+    windowMs: number;
+    name: string;
+    keyGenerator?: (req: Request) => RateLimitKey;
+    skip?: (req: Request) => boolean;
+};
 
-function createMemoryRateLimiter(limit: number, windowMs: number, name: string) {
+function extractBearerToken(req: Request): string | null {
+    const auth = req.headers['authorization'] || req.headers['Authorization'];
+    if (typeof auth !== 'string') return null;
+    const [scheme, token] = auth.split(' ');
+    if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+    return token;
+}
+
+function getClientIp(req: Request): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+        return forwarded.split(',')[0].trim();
+    }
+    if (Array.isArray(forwarded) && forwarded.length > 0) {
+        return String(forwarded[0]).trim();
+    }
+    return req.ip || (req.connection as any)?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+}
+
+function maskIp(ip: string): string {
+    if (!ip) return 'unknown';
+    if (ip.includes('.')) {
+        const parts = ip.split('.');
+        if (parts.length === 4) return `${parts[0]}.${parts[1]}.${parts[2]}.x`;
+    }
+    if (ip.includes(':')) {
+        const parts = ip.split(':').filter(Boolean);
+        return parts.slice(0, 3).join(':') + '::';
+    }
+    return 'unknown';
+}
+
+function maskUser(value: string): string {
+    if (!value) return 'unknown';
+    const tail = value.slice(-3);
+    return `***${tail}`;
+}
+
+function createMemoryRateLimiter(options: RateLimitOptions) {
     const buckets = new Map<string, Bucket>();
     return (req: Request, res: Response, next: NextFunction) => {
-        const ip = req.ip || (req.connection as any)?.remoteAddress || 'unknown';
+        if (options.skip?.(req)) return next();
+
+        const keyInfo = options.keyGenerator?.(req) ?? {
+            key: getClientIp(req),
+            type: 'ip' as const,
+            masked: maskIp(getClientIp(req)),
+        };
         const now = Date.now();
-        const bucket = buckets.get(ip) || { count: 0, reset: now + windowMs };
+        const bucketKey = `${options.name}:${keyInfo.key}`;
+        const bucket = buckets.get(bucketKey) || { count: 0, reset: now + options.windowMs };
         if (now > bucket.reset) {
             bucket.count = 0;
-            bucket.reset = now + windowMs;
+            bucket.reset = now + options.windowMs;
         }
         bucket.count += 1;
-        buckets.set(ip, bucket);
-        if (bucket.count > limit) {
-            const retry = Math.ceil((bucket.reset - now) / 1000);
+        buckets.set(bucketKey, bucket);
+
+        if (bucket.count > options.limit) {
+            const retry = Math.max(1, Math.ceil((bucket.reset - now) / 1000));
+            const remaining = Math.max(0, options.limit - bucket.count);
             res.setHeader('Retry-After', retry.toString());
-            logger.warn(`[RateLimit:${name}] blocked request from ${ip}`);
+            res.setHeader('RateLimit-Limit', options.limit.toString());
+            res.setHeader('RateLimit-Remaining', remaining.toString());
+            res.setHeader('RateLimit-Reset', Math.ceil(bucket.reset / 1000).toString());
+
+            logger.warn(
+                `[RateLimit:${options.name}] blocked ${req.method} ${req.originalUrl} ` +
+                `keyType=${keyInfo.type} key=${keyInfo.masked} count=${bucket.count} windowMs=${options.windowMs}`,
+            );
             res.status(429).json({ message: 'Too Many Requests' });
             return;
         }
@@ -48,7 +111,7 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
 
 async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
-    app.set('trust proxy', 1);
+    app.set('trust proxy', true);
 
     const uploadDir = path.resolve(process.cwd(), 'uploads');
     if (!fs.existsSync(uploadDir)) {
@@ -92,12 +155,99 @@ async function bootstrap() {
     app.use(securityHeaders);
     app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
-    const globalLimiter = createMemoryRateLimiter(100, 60_000, 'global');
-    const authLimiter = createMemoryRateLimiter(10, 60_000, 'auth');
-    const otpLimiter = createMemoryRateLimiter(10, 60_000, 'otp');
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 64) {
+        logger.error('FATAL: JWT_SECRET missing or too short');
+        process.exit(1);
+    }
 
+    const authKeyGenerator = (req: Request): RateLimitKey => {
+        const token = extractBearerToken(req);
+        if (token) {
+            try {
+                const payload = jwt.verify(token, secret) as { sub?: string | number; phone?: string };
+                const userKey = payload?.sub ? String(payload.sub) : String(payload?.phone || '');
+                if (userKey) {
+                    return { key: userKey, type: 'user', masked: maskUser(userKey) };
+                }
+            } catch {
+                // ignore invalid token
+            }
+        }
+        const ip = getClientIp(req);
+        return { key: ip, type: 'ip', masked: maskIp(ip) };
+    };
+
+    const isOptions = (req: Request) => req.method.toUpperCase() === 'OPTIONS';
+    const isStaticReadOnly = (req: Request) => {
+        if (req.method.toUpperCase() !== 'GET') return false;
+        const path = req.path || '';
+        return (
+            path === '/services' ||
+            path === '/products' ||
+            path === '/gallery-videos' ||
+            path === '/background-videos' ||
+            path === '/testimonials' ||
+            path === '/business-hours' ||
+            path.startsWith('/settings/')
+        );
+    };
+
+    const globalLimiter = createMemoryRateLimiter({
+        limit: 300,
+        windowMs: 60_000,
+        name: 'global',
+        keyGenerator: authKeyGenerator,
+        skip: (req) => isOptions(req) || isStaticReadOnly(req),
+    });
+
+    const staticLimiter = createMemoryRateLimiter({
+        limit: 1200,
+        windowMs: 60_000,
+        name: 'static-get',
+        keyGenerator: (req) => {
+            const ip = getClientIp(req);
+            return { key: ip, type: 'ip', masked: maskIp(ip) };
+        },
+        skip: (req) => isOptions(req) || !isStaticReadOnly(req),
+    });
+
+    const authLimiter = createMemoryRateLimiter({
+        limit: 20,
+        windowMs: 60_000,
+        name: 'auth',
+        keyGenerator: (req) => {
+            const ip = getClientIp(req);
+            return { key: ip, type: 'ip', masked: maskIp(ip) };
+        },
+        skip: isOptions,
+    });
+
+    const otpLimiter = createMemoryRateLimiter({
+        limit: 6,
+        windowMs: 10 * 60_000,
+        name: 'otp',
+        keyGenerator: (req) => {
+            const ip = getClientIp(req);
+            return { key: ip, type: 'ip', masked: maskIp(ip) };
+        },
+        skip: isOptions,
+    });
+
+    const appointmentLimiter = createMemoryRateLimiter({
+        limit: 20,
+        windowMs: 60_000,
+        name: 'appointment',
+        keyGenerator: authKeyGenerator,
+        skip: (req) => isOptions(req) || req.method.toUpperCase() === 'GET',
+    });
+
+    app.use(staticLimiter);
     app.use(globalLimiter);
-    app.use(['/auth', '/users', '/clients'], authLimiter);
+    app.use(['/auth', '/users'], authLimiter);
+    app.use('/admin/verify-code', authLimiter);
+    app.use('/appointments', appointmentLimiter);
+    app.use(['/admin/appointments', '/admin/recurring-appointments'], appointmentLimiter);
     app.use([
         '/auth/request-code',
         '/auth/verify-code',
@@ -113,12 +263,6 @@ async function bootstrap() {
         transform: true,
         forbidUnknownValues: true,
     }));
-
-    const secret = process.env.JWT_SECRET;
-    if (!secret || secret.length < 32) {
-        logger.error('FATAL: JWT_SECRET missing or too short');
-        process.exit(1);
-    }
 
     const port = process.env.PORT || 3001;
     await app.listen(port);

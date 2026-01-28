@@ -60,6 +60,7 @@ function handleUnauthorized(status, path, payload) {
 
 // ---------------- Simple GET cache with TTL ----------------
 const __getCache = new Map();
+const __storagePrefix = 'familia_api_cache::';
 
 function __cacheKey(path, headers) {
   // Base URL + path is enough; if you want, add auth header to avoid cross-user mixing
@@ -82,14 +83,31 @@ function __defaultTtlMs(path) {
   const p = String(path || '');
   // זמינות משתנה מהר -> TTL קצר
   if (p.startsWith('/appointments/available')) return 15_000; // 15s
-  // דברים יחסית סטטיים
-  if (p.startsWith('/services')) return 5 * 60_000; // 5m
-  if (p.startsWith('/business-hours')) return 5 * 60_000; // 5m
-  if (p.startsWith('/settings/')) return 60_000; // 1m
+  // דברים יחסית סטטיים (30-120s)
+  if (p.startsWith('/services')) return 60_000; // 60s
+  if (p.startsWith('/products')) return 60_000; // 60s
+  if (p.startsWith('/gallery-videos')) return 60_000; // 60s
+  if (p.startsWith('/background-videos')) return 60_000; // 60s
+  if (p.startsWith('/testimonials')) return 60_000; // 60s
+  if (p.startsWith('/business-hours')) return 60_000; // 60s
+  if (p.startsWith('/settings/')) return 60_000; // 60s
   return 0; // ברירת מחדל: בלי cache
 }
 
-function __getCached(key) {
+function __shouldPersist(path) {
+  const p = String(path || '');
+  return (
+    p.startsWith('/services') ||
+    p.startsWith('/products') ||
+    p.startsWith('/gallery-videos') ||
+    p.startsWith('/background-videos') ||
+    p.startsWith('/testimonials') ||
+    p.startsWith('/business-hours') ||
+    p.startsWith('/settings/')
+  );
+}
+
+function __getCached(key, path) {
   const entry = __getCache.get(key);
   if (!entry) return undefined;
   if (Date.now() > entry.expiresAt) {
@@ -99,14 +117,48 @@ function __getCached(key) {
   return entry.value;
 }
 
-function __setCached(key, value, ttlMs) {
+function __storageKey(key) {
+  return __storagePrefix + key;
+}
+
+function __readStorageCache(key) {
+  try {
+    if (typeof localStorage === 'undefined') return undefined;
+    const raw = localStorage.getItem(__storageKey(key));
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    if (Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(__storageKey(key));
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function __writeStorageCache(key, value, ttlMs) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(__storageKey(key), JSON.stringify({ value, expiresAt: Date.now() + ttlMs }));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function __setCached(key, value, ttlMs, path) {
   if (!ttlMs || ttlMs <= 0) return;
   __getCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  if (__shouldPersist(path)) {
+    __writeStorageCache(key, value, ttlMs);
+  }
 }
 
 
 async function httpGet(path, options = {}) {
   const headers = authHeaders();
+  const signal = options?.signal;
 
   const ttlMs =
       typeof options.cacheTtlMs === 'number'
@@ -117,20 +169,28 @@ async function httpGet(path, options = {}) {
 
   // TTL cache HIT
   if (ttlMs > 0) {
-    const cached = __getCached(key);
+    const cached = __getCached(key, path);
     if (cached !== undefined) return cached;
+    if (__shouldPersist(path)) {
+      const stored = __readStorageCache(key);
+      if (stored !== undefined) {
+        __getCache.set(key, { value: stored.value, expiresAt: stored.expiresAt });
+        return stored.value;
+      }
+    }
   }
 
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'GET',
     headers,
+    signal,
     // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
     cache: 'no-store',
   });
 
   // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
   if (res.status === 304) {
-    const cached = __getCached(key);
+    const cached = __getCached(key, path);
     if (cached !== undefined) return cached;
     return null;
   }
@@ -149,7 +209,7 @@ async function httpGet(path, options = {}) {
   }
 
   // TTL cache SET
-  if (ttlMs > 0) __setCached(key, payload, ttlMs);
+  if (ttlMs > 0) __setCached(key, payload, ttlMs, path);
 
   return payload;
 }
@@ -773,8 +833,8 @@ const api = {
   },
 
   Product: {
-    list: async () => normMediaArr((await httpGet('/products')) || []),
-    adminList: async () => normMediaArr((await httpGet('/admin/products')) || []),
+    list: async (options = {}) => normMediaArr((await httpGet('/products', options)) || []),
+    adminList: async (options = {}) => normMediaArr((await httpGet('/admin/products', options)) || []),
     create: async (data) => normMedia(await httpPost('/admin/products', toProductBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/products/' + encodeURIComponent(id), toProductBody(data))),
     remove: (id) => httpDelete('/admin/products/' + encodeURIComponent(id)),
@@ -802,24 +862,24 @@ const api = {
 
 
   GalleryVideo: {
-    list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
-    adminList: async () => normMediaArr((await httpGet('/admin/gallery-videos')) || []),
+    list: async (options = {}) => normMediaArr((await httpGet('/gallery-videos', options)) || []),
+    adminList: async (options = {}) => normMediaArr((await httpGet('/admin/gallery-videos', options)) || []),
     create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
     remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
   },
   // alias: some UIs still call GalleryImage
   GalleryImage: {
-    list: async () => normMediaArr((await httpGet('/gallery-videos')) || []),
-    adminList: async () => normMediaArr((await httpGet('/admin/gallery-videos')) || []),
+    list: async (options = {}) => normMediaArr((await httpGet('/gallery-videos', options)) || []),
+    adminList: async (options = {}) => normMediaArr((await httpGet('/admin/gallery-videos', options)) || []),
     create: async (data) => normMedia(await httpPost('/admin/gallery-videos', toGalleryBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/gallery-videos/' + encodeURIComponent(id), toGalleryBody(data))),
     remove: (id) => httpDelete('/admin/gallery-videos/' + encodeURIComponent(id)),
   },
 
   BackgroundVideo: {
-    list: async () => normMediaArr((await httpGet('/background-videos')) || []),
-    adminList: async () => normMediaArr((await httpGet('/admin/background-videos')) || []),
+    list: async (options = {}) => normMediaArr((await httpGet('/background-videos', options)) || []),
+    adminList: async (options = {}) => normMediaArr((await httpGet('/admin/background-videos', options)) || []),
     create: async (data) => normMedia(await httpPost('/admin/background-videos', toBackgroundBody(data))),
     update: async (id, data) => normMedia(await httpPut('/admin/background-videos/' + encodeURIComponent(id), toBackgroundBody(data))),
     remove: (id) => httpDelete('/admin/background-videos/' + encodeURIComponent(id)),

@@ -442,6 +442,29 @@ export class AppointmentsService {
         return `${sign}${hh}:${mm}`;
     }
 
+    async getAppointmentsByDate(dateStr: string) {
+        const offset = this.israelOffsetForDate(dateStr);
+        const dayLocalStart = new Date(`${dateStr}T00:00:00${offset}`);
+        const dayLocalEnd = new Date(`${dateStr}T23:59:59${offset}`);
+
+        const appts = await this.apptRepo.find({
+            where: {
+                startsAt: LessThanOrEqual(dayLocalEnd),
+                endsAt: MoreThanOrEqual(dayLocalStart),
+            },
+            order: { startsAt: 'ASC' },
+            relations: ['service'],
+        });
+
+        return appts.map((a) => ({
+            id: a.id,
+            status: a.status ?? 'booked',
+            starts_at: a.startsAt,
+            ends_at: a.endsAt,
+            service_id: (a as any)?.service?.id ?? (a as any)?.serviceId ?? null,
+        }));
+    }
+
     async getAvailableSlots(
         serviceId: string,
         dateStr: string,

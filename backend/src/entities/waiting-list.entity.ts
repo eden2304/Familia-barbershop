@@ -2,7 +2,14 @@ import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Client } from '../clients/client.entity';
 import { ServiceEntity } from './service.entity';
 
-export type WaitingStatus = 'open' | 'matched' | 'closed';
+export type WaitingStatus =
+    | 'open'
+    | 'matched'
+    | 'closed'
+    | 'waiting'
+    | 'notified'
+    | 'booked'
+    | 'canceled';
 
 @Entity('waiting_list')
 export class WaitingList {

@@ -40,6 +40,13 @@ export class AppointmentsController {
         return this.svc.getAvailableSlots(serviceId, norm, { isMember: isMemberFlag });
     }
 
+    @Public()
+    @Get()
+    async listByDate(@Query('date') date: string) {
+        const norm = this.normDate(date);
+        return this.svc.getAppointmentsByDate(norm);
+    }
+
     @Post()
     async create(@Body() body: any) {
         // (ללא שינוי מהגרסה האחרונה ששלחתי)

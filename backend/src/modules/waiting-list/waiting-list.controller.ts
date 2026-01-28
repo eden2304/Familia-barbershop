@@ -13,7 +13,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DateTime } from 'luxon';
-import { WaitingList } from '../../entities/waiting-list.entity';
+import { WaitingList, WaitingStatus } from '../../entities/waiting-list.entity';
 import { Client } from '../../clients/client.entity';
 import { ServiceEntity } from '../../entities/service.entity';
 import { Public } from '../auth/public.decorator';
@@ -80,8 +80,8 @@ export class WaitingListController {
         if (!client) {
             const [firstName, lastName] = splitName(clientName);
             client = this.clientRepo.create({
-                firstName: firstName || 'לקוח',
-                lastName: lastName || '',
+                first_name: firstName || 'לקוח',
+                last_name: lastName || '',
                 phone,
             });
             client = await this.clientRepo.save(client);
@@ -98,14 +98,14 @@ export class WaitingListController {
             service: service ?? undefined,
             date,
             time,
-            status: String(body?.status ?? 'waiting'),
+            status: (body?.status ?? 'waiting') as WaitingStatus,
         });
         const saved = await this.waitRepo.save(entry);
 
         return {
             id: saved.id,
             client_id: client?.id ?? null,
-            client_name: clientName || `${client?.firstName ?? ''} ${client?.lastName ?? ''}`.trim(),
+            client_name: clientName || `${client?.first_name ?? ''} ${client?.last_name ?? ''}`.trim(),
             phone: client?.phone ?? phone,
             service_id: service?.id ?? serviceId ?? null,
             desired_starts_at: desiredAtIso,
@@ -143,7 +143,7 @@ export class WaitingListController {
             return {
                 id: row.id,
                 client_id: row.client?.id ?? null,
-                client_name: row.client ? `${row.client.firstName ?? ''} ${row.client.lastName ?? ''}`.trim() : '',
+                client_name: row.client ? `${row.client.first_name ?? ''} ${row.client.last_name ?? ''}`.trim() : '',
                 phone: row.client?.phone ?? '',
                 service_id: row.service?.id ?? null,
                 desired_starts_at: desired,
@@ -176,7 +176,7 @@ export class WaitingListController {
             nextTime = parts.time;
         }
 
-        entry.status = String(nextStatus);
+        entry.status = String(nextStatus) as WaitingStatus;
         entry.date = nextDate;
         entry.time = nextTime;
         const saved = await this.waitRepo.save(entry);
@@ -186,7 +186,7 @@ export class WaitingListController {
         return {
             id: saved.id,
             client_id: saved.client?.id ?? null,
-            client_name: saved.client ? `${saved.client.firstName ?? ''} ${saved.client.lastName ?? ''}`.trim() : '',
+            client_name: saved.client ? `${saved.client.first_name ?? ''} ${saved.client.last_name ?? ''}`.trim() : '',
             phone: saved.client?.phone ?? '',
             service_id: saved.service?.id ?? null,
             desired_starts_at: desiredAt,

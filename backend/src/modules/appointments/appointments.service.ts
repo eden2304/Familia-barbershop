@@ -458,7 +458,7 @@ export class AppointmentsService {
 
         return appts.map((a) => ({
             id: a.id,
-            status: a.status ?? 'booked',
+            status: 'booked',
             starts_at: a.startsAt,
             ends_at: a.endsAt,
             service_id: (a as any)?.service?.id ?? (a as any)?.serviceId ?? null,

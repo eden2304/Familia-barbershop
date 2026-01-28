@@ -8,18 +8,26 @@ export default function VideoGallery() {
   const [selectedVideo, setSelectedVideo] = useState(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchVideos = async () => {
       try {
         // אותו API כמו אצלך, רק דרך ה-index
-        const galleryData = await GalleryImage.list("order_index");
-        setVideos(Array.isArray(galleryData) ? galleryData : []);
+        const galleryData = await GalleryImage.list({ signal: controller.signal });
+        if (!controller.signal.aborted) {
+          setVideos(Array.isArray(galleryData) ? galleryData : []);
+        }
       } catch (error) {
-        console.error("Error fetching gallery videos:", error);
-        setVideos([]);
+        if (error?.name !== 'AbortError') {
+          console.error("Error fetching gallery videos:", error);
+        }
+        if (!controller.signal.aborted) {
+          setVideos([]);
+        }
       }
     };
 
     fetchVideos();
+    return () => controller.abort();
   }, []);
 
   if (videos.length === 0) {

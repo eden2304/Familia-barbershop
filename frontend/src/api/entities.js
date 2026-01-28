@@ -396,7 +396,15 @@ async function hydrateArray(target, fetcher) {
         console.warn('[entities] hydrateArray failed', e);
     }
 }
-if (typeof window !== 'undefined') {
+function shouldHydratePublicCollections() {
+    if (typeof window === 'undefined') return false;
+    const path = String(window.location?.pathname || '').toLowerCase();
+    if (!path) return true;
+    if (path.startsWith('/admin')) return false;
+    return true;
+}
+
+if (shouldHydratePublicCollections()) {
     hydrateArray(Products,         () => Product.list?.());
     hydrateArray(Testimonials,     () => Testimonial.list?.());
     hydrateArray(GalleryVideos,    () => GalleryVideo.list?.());

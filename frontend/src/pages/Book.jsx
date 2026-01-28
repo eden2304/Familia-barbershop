@@ -15,9 +15,9 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
-import api from "@/api/base44Client";
+import api, { API_ROOT } from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API_URL = API_ROOT ?? "http://localhost:3001";
 
 
 /* ---------------- utils ---------------- */

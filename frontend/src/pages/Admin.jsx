@@ -322,6 +322,35 @@ export default function Admin() { // Removed props
     return { name, phone: clientPhone, client: normalizedClient };
   };
 
+  const waitingListClientIndex = useMemo(() => {
+    const byId = new Map();
+    const byPhone = new Map();
+    (allClients || []).forEach((client) => {
+      if (!client) return;
+      const id = client.id ?? client.client_id;
+      if (id !== undefined && id !== null) {
+        byId.set(String(id), client);
+      }
+      const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
+      if (normalizedPhone) {
+        byPhone.set(normalizedPhone, client);
+      }
+    });
+    return { byId, byPhone };
+  }, [allClients]);
+
+  const getWaitingListMemberInfo = (entry) => {
+    if (!entry) return { isMember: false, client: null };
+    const entryClientId = entry.client_id ?? entry.clientId;
+    const entryPhone = normalizePhone(entry.phone ?? entry.client_phone ?? "");
+    const matched =
+      (entryClientId != null && waitingListClientIndex.byId.get(String(entryClientId))) ||
+      (entryPhone && waitingListClientIndex.byPhone.get(entryPhone)) ||
+      null;
+    const isMember = Boolean(matched?.isMember ?? matched?.is_member ?? false);
+    return { isMember, client: matched };
+  };
+
   const [showAddAppointmentForm, setShowAddAppointmentForm] = useState(false);
   const [showBlockingForm, setShowBlockingForm] = useState(false);
 
@@ -991,9 +1020,30 @@ const extractRecurringSchedules = (client) => {
   };
 
   const getWaitingListForDay = (date) => {
-    return waitingList.filter(entry =>
+    return waitingList
+      .map((entry) => {
+        const meta = getWaitingListMemberInfo(entry);
+        return {
+          ...entry,
+          isMember: meta.isMember,
+          matchedClient: meta.client,
+          createdAt: entry.created_at ?? entry.createdAt ?? entry.updated_at ?? entry.updatedAt,
+        };
+      })
+      .filter(entry =>
         isSameDay(new Date(entry.desired_starts_at), date)
-    ).sort((a, b) => new Date(a.desired_starts_at) - new Date(b.desired_starts_at));
+      )
+      .sort((a, b) => {
+        const timeDiff = new Date(a.desired_starts_at) - new Date(b.desired_starts_at);
+        if (timeDiff !== 0) return timeDiff;
+        if (a.isMember !== b.isMember) return a.isMember ? -1 : 1;
+        const aCreated = a.createdAt ? new Date(a.createdAt) : null;
+        const bCreated = b.createdAt ? new Date(b.createdAt) : null;
+        if (aCreated && bCreated) return aCreated - bCreated;
+        if (aCreated) return -1;
+        if (bCreated) return 1;
+        return 0;
+      });
   };
 
 
@@ -1780,9 +1830,20 @@ const extractRecurringSchedules = (client) => {
                                     </div>
                                     <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
                                     <div className="flex-1">
-                                      <h4 className="font-bold text-gray-900">
-                                        {entry.client_name}
-                                      </h4>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="font-bold text-gray-900">
+                                          {entry.client_name}
+                                        </h4>
+                                        {entry.isMember && (
+                                          <Badge
+                                            variant="secondary"
+                                            className="flex items-center gap-1 bg-amber-100 text-amber-700"
+                                          >
+                                            <Crown className="w-3.5 h-3.5" />
+                                            <span>חבר מועדון</span>
+                                          </Badge>
+                                        )}
+                                      </div>
                                       <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
                                     </div>
                                     <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>

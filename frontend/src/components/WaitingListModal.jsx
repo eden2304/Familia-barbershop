@@ -45,7 +45,8 @@ export default function WaitingListModal({
     const dayAppointments = (allAppointments || []).filter(apt => {
       const s = new Date(apt.starts_at);
       const status = (apt.status || 'booked').toLowerCase();
-      return status !== 'canceled' && s >= start && s < end;
+      const isBooked = status === 'booked' || status === 'confirmed';
+      return isBooked && s >= start && s < end;
     });
 
     // הפוך לרשימת שעות ("HH:mm") עם ייחוד ומיון

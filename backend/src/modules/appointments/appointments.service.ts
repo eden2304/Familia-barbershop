@@ -562,6 +562,65 @@ export class AppointmentsService {
         return Array.from(unique.values()).sort((a, b) => a.hhmm.localeCompare(b.hhmm));
     }
 
+    async getOccupiedSlots(
+        serviceId: string,
+        dateStr: string,
+    ): Promise<Array<{ time: string; startsAt: Date; endsAt: Date | null }>> {
+        const service = await this.svcRepo.findOne({ where: { id: serviceId } });
+        if (!service) throw new NotFoundException('Service not found');
+
+        const dayStart = DateTime.fromISO(dateStr, { zone: TZ }).startOf('day').toUTC().toJSDate();
+        const dayEnd = DateTime.fromISO(dateStr, { zone: TZ }).endOf('day').toUTC().toJSDate();
+
+        const appts = await this.apptRepo.find({
+            where: {
+                service: { id: serviceId } as any,
+                startsAt: LessThanOrEqual(dayEnd),
+                endsAt: MoreThanOrEqual(dayStart),
+            },
+            order: { startsAt: 'ASC' },
+            relations: ['client', 'service'],
+        });
+
+        const blocks = await this.blockRepo.find({
+            where: {
+                startsAt: LessThanOrEqual(dayEnd),
+                endsAt: MoreThanOrEqual(dayStart),
+            },
+        });
+
+        const fmtTime = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        });
+
+        const blockedOverlaps = (start: Date, end: Date) =>
+            blocks.some(block => !(end <= block.startsAt || start >= block.endsAt));
+
+        const slots = appts
+            .map(appt => {
+                const start = appt.startsAt;
+                const end =
+                    appt.endsAt ??
+                    new Date(appt.startsAt.getTime() + (appt.service?.durationMinutes ?? service.durationMinutes) * 60000);
+                return { start, end };
+            })
+            .filter(({ start, end }) => !blockedOverlaps(start, end))
+            .map(({ start, end }) => ({
+                time: fmtTime.format(start),
+                startsAt: start,
+                endsAt: end,
+            }));
+
+        const unique = new Map<string, { time: string; startsAt: Date; endsAt: Date | null }>();
+        for (const slot of slots) {
+            if (!unique.has(slot.time)) unique.set(slot.time, slot);
+        }
+        return Array.from(unique.values()).sort((a, b) => a.time.localeCompare(b.time));
+    }
+
     async getMyAppointmentsByPhone(phoneRaw: string) {
         const norm = this.normalizePhone(phoneRaw);
         return this.apptRepo.find({

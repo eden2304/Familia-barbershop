@@ -189,7 +189,7 @@ export default function Book() {
 
   // נשארים עבור מודל רשימת המתנה בלבד (לא נחוצים לזמינות/קביעת תור)
   const [businessHours, setBusinessHours] = useState([]);
-  const [appointments, setAppointments] = useState([]);
+  const [occupiedSlots, setOccupiedSlots] = useState([]);
   const [blockedTimes, setBlockedTimes] = useState([]);
   const [bookingRules, setBookingRules] = useState(() => ({ ...DEFAULT_BOOKING_RULES }));
 
@@ -419,26 +419,25 @@ export default function Book() {
     // נטען תורים רק אם:
     // - המודאל של רשימת המתנה פתוח
     // - ויש תאריך נבחר
-    if (!showWaitingList || !selectedDate) return;
+    if (!showWaitingList || !selectedDate || !selectedService?.id) return;
 
     const fetchDayAppointments = async () => {
       try {
         setAptsLoading(true);
         const ymd = toYMD(selectedDate);           // "yyyy-MM-dd"
-        const res = await fetch(`${API_URL}/appointments?date=${ymd}`);
+        const res = await fetch(`${API_URL}/appointments/occupied?date=${ymd}&serviceId=${selectedService?.id}`);
         const data = await res.json();
-        // ה־WaitingListModal מצפה לרשימה מלאה של תורים של אותו יום
-        setAppointments(Array.isArray(data) ? data : []);
+        setOccupiedSlots(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error("Failed to load day appointments for waiting list:", e);
-        setAppointments([]); // לא להפיל את ה־UI
+        setOccupiedSlots([]); // לא להפיל את ה־UI
       } finally {
         setAptsLoading(false);
       }
     };
 
     fetchDayAppointments();
-  }, [showWaitingList, selectedDate]);
+  }, [showWaitingList, selectedDate, selectedService?.id]);
 
   useEffect(() => {
     // כשנכנסים למסך ימים/שעות, נבטל פוקוס אוטומטי שאולי נשאר מכפתורים
@@ -620,7 +619,7 @@ export default function Book() {
                 service={selectedService}
                 day={selectedDate}
                 client={client}
-                allAppointments={appointments}
+                occupiedSlots={occupiedSlots}
                 businessHours={businessHours}
                 blockedTimes={blockedTimes}
             />

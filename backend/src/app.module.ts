@@ -23,6 +23,7 @@ import { SeedModule } from './seeds/seed.module';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
+import { WaitingListModule } from './modules/waiting-list/waiting-list.module';
 
 @Module({
     imports: [
@@ -54,6 +55,7 @@ import { ClientsModule } from './clients/clients.module';
         SeedModule,
         AuthModule,
         ClientsModule,
+        WaitingListModule,
     ],
 })
 export class AppModule {}

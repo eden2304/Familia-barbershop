@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Client } from '../clients/client.entity';
 import { ServiceEntity } from './service.entity';
 
@@ -9,18 +9,30 @@ export class WaitingList {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @ManyToOne(() => Client, { eager: true })
-    client: Client;
+    @ManyToOne(() => Client, { eager: true, nullable: true })
+    client?: Client;
+
+    @Column({ name: 'client_name', type: 'varchar', length: 200, nullable: true })
+    clientName?: string;
+
+    @Column({ type: 'varchar', length: 20, nullable: true })
+    phone?: string;
 
     @ManyToOne(() => ServiceEntity, { eager: true, nullable: true })
     service?: ServiceEntity;
 
-    @Column({ type: 'date' })
-    date: string; // YYYY-MM-DD
+    @Column({ name: 'desired_date', type: 'date' })
+    desiredDate: string; // YYYY-MM-DD
 
-    @Column({ length: 5 }) // "14:00"
-    time: string;
+    @Column({ name: 'desired_time', length: 5 }) // "14:00"
+    desiredTime: string;
+
+    @Column({ name: 'is_club_member', type: 'boolean', default: false })
+    isClubMember: boolean;
 
     @Column({ type: 'varchar', length: 16, default: 'open' })
     status: WaitingStatus;
+
+    @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+    createdAt: Date;
 }

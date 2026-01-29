@@ -177,7 +177,7 @@ export class WaitingListService {
                 first_name: names.first,
                 last_name: names.last || '',
                 is_member: Boolean(entry.isClubMember),
-            } as any);
+            } as Partial<Client>);
             client = await this.clientRepo.save(created);
         }
 

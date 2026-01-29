@@ -7,9 +7,10 @@ import { Appointment } from '../../entities/appointment.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { WaitingListController } from './waiting-list.controller';
 import { WaitingListService } from './waiting-list.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([WaitingList, Client, ServiceEntity, Appointment, BlockedTime])],
+    imports: [TypeOrmModule.forFeature([WaitingList, Client, ServiceEntity, Appointment, BlockedTime]), AuthModule],
     controllers: [WaitingListController],
     providers: [WaitingListService],
 })

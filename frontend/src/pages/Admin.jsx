@@ -1473,6 +1473,12 @@ const extractRecurringSchedules = (client) => {
     return (allClients || []).map(c => {
       // לא מסננים לקוחות בלי טלפון – פשוט לא תהיה להם היסטוריה תורים
       const cPhone = normalizePhone(c.phone ?? c.client_phone ?? "");
+      const apiLastAppointment =
+          c.lastAppointmentAt ??
+          c.last_appointment_at ??
+          c.last_appointment ??
+          c.lastAppointment ??
+          null;
 
       const clientApts = (appointments || [])
           .filter(apt => {
@@ -1486,7 +1492,15 @@ const extractRecurringSchedules = (client) => {
           .sort((a,b) => new Date(b.starts_at) - new Date(a.starts_at));
 
       const last = clientApts[0] || null;
-      const lastDate = last ? new Date(last.starts_at) : null;
+      const lastDateFromAppointments = last ? new Date(last.starts_at) : null;
+      const lastDateFromApi = apiLastAppointment ? new Date(apiLastAppointment) : null;
+      const normalizedApiDate =
+          lastDateFromApi && !Number.isNaN(lastDateFromApi.getTime()) ? lastDateFromApi : null;
+      const lastDateFromSchedule =
+          lastDateFromAppointments && !Number.isNaN(lastDateFromAppointments.getTime())
+              ? lastDateFromAppointments
+              : null;
+      const lastDate = normalizedApiDate ?? lastDateFromSchedule;
       const isRecent = lastDate ? differenceInDays(now, lastDate) <= 30 : false;
 
       return { ...c, lastAppointmentDate: lastDate, lastAppointmentRecent: isRecent };

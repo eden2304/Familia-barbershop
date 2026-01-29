@@ -633,6 +633,17 @@ export default function Admin() { // Removed props
     setAppointments(normalizeAppointmentsForDay(data));
   };
 
+  const loadWaitingListForDate = async (date) => {
+    try {
+      const ymd = format(startOfDay(date), "yyyy-MM-dd");
+      const data = await WaitingList.listAdmin({ date: ymd }).catch(() => []);
+      setWaitingList(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error loading waiting list:", error);
+      setWaitingList([]);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -640,7 +651,7 @@ export default function Admin() { // Removed props
       const [
         allAppointmentsData, servicesData, testimonialsData,
         galleryData, hoursData, clientsData, backgroundVideosData,
-        productsData, waitingListData, bookingRulesSetting
+        productsData, bookingRulesSetting
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAdminPreferred(Service, "order_index").catch(() => []),
@@ -650,10 +661,6 @@ export default function Admin() { // Removed props
         loadClients(),                                // ← לקוחות
         listAdminPreferred(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
         listAdminPreferred(Product, "order_index").catch(() => []),
-        (WaitingList.filter
-                ? WaitingList.filter({ status: 'waiting' }, '-desired_starts_at')
-                : listAny(WaitingList, '-desired_starts_at')
-        ).catch(() => []),
         Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
       ]);
 
@@ -678,7 +685,6 @@ export default function Admin() { // Removed props
       setAllClients(clientsData || []);
       setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
-      setWaitingList(waitingListData || []);
 
       const normalizedBookingRules = normalizeBookingRules(bookingRulesSetting?.value);
       setMemberSettings(normalizedBookingRules);
@@ -694,6 +700,11 @@ export default function Admin() { // Removed props
   useEffect(() => {
     if (!isAuthenticated) return;
     loadAppointmentsForDate(selectedDate);
+  }, [isAuthenticated, selectedDate]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadWaitingListForDate(selectedDate);
   }, [isAuthenticated, selectedDate]);
 
   const sanitizeTimeInput = (value) => {
@@ -991,10 +1002,45 @@ const extractRecurringSchedules = (client) => {
   };
 
   const getWaitingListForDay = (date) => {
-    return waitingList.filter(entry =>
-        isSameDay(new Date(entry.desired_starts_at), date)
-    ).sort((a, b) => new Date(a.desired_starts_at) - new Date(b.desired_starts_at));
+    return waitingList
+        .filter(entry => {
+          const desiredDate = entry.desired_date ?? entry.desiredDate;
+          if (desiredDate) {
+            return isSameDay(new Date(desiredDate), date);
+          }
+          const desiredStartsAt = entry.desired_starts_at ?? entry.desiredStartsAt;
+          return desiredStartsAt ? isSameDay(new Date(desiredStartsAt), date) : false;
+        })
+        .sort((a, b) => {
+          const timeA = a.desired_time ?? a.desiredTime ?? format(new Date(a.desired_starts_at ?? a.desiredStartsAt), 'HH:mm');
+          const timeB = b.desired_time ?? b.desiredTime ?? format(new Date(b.desired_starts_at ?? b.desiredStartsAt), 'HH:mm');
+          if (timeA !== timeB) return String(timeA).localeCompare(String(timeB));
+          const memberA = Boolean(a.is_club_member ?? a.isClubMember);
+          const memberB = Boolean(b.is_club_member ?? b.isClubMember);
+          if (memberA !== memberB) return memberA ? -1 : 1;
+          const createdA = new Date(a.created_at ?? a.createdAt ?? 0).getTime();
+          const createdB = new Date(b.created_at ?? b.createdAt ?? 0).getTime();
+          return createdA - createdB;
+        });
   };
+
+  const getWaitingEntryTime = (entry) => {
+    return (
+        entry.desired_time ??
+        entry.desiredTime ??
+        format(new Date(entry.desired_starts_at ?? entry.desiredStartsAt), 'HH:mm')
+    );
+  };
+
+  const waitingListGroups = useMemo(() => {
+    const groups = {};
+    getWaitingListForDay(selectedDate).forEach((entry) => {
+      const time = getWaitingEntryTime(entry);
+      if (!groups[time]) groups[time] = [];
+      groups[time].push(entry);
+    });
+    return groups;
+  }, [waitingList, selectedDate]);
 
 
   const handleStatusChange = async (appointment, newStatus) => {
@@ -1761,36 +1807,50 @@ const extractRecurringSchedules = (client) => {
                       </div>
 
                       <div className="space-y-3">
-                        {getWaitingListForDay(selectedDate).length > 0 ? (
-                            getWaitingListForDay(selectedDate).map(entry => {
-                              const service = services.find(s => s.id === entry.service_id);
-                              return (
-                                  <motion.div
-                                      key={entry.id}
-                                      initial={{ opacity: 0, y: 20 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      exit={{ opacity: 0 }}
-                                      onClick={() => setSelectedWaitingEntry(entry)}
-                                      className="bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50"
-                                  >
-                                    <div className="text-center w-20">
-                                      <p className="font-bold text-gray-900 text-sm">
-                                        {format(new Date(entry.desired_starts_at), 'HH:mm')}
-                                      </p>
-                                    </div>
-                                    <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
-                                    <div className="flex-1">
-                                      <h4 className="font-bold text-gray-900">
-                                        {entry.client_name}
-                                      </h4>
-                                      <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>
-                                      <MoreVertical className="w-5 h-5" />
-                                    </Button>
-                                  </motion.div>
-                              );
-                            })
+                        {Object.keys(waitingListGroups).length > 0 ? (
+                            Object.entries(waitingListGroups).map(([time, entries]) => (
+                              <div key={time} className="space-y-2">
+                                <div className="text-sm font-semibold text-gray-700 px-2">{time}</div>
+                                {entries.map(entry => {
+                                  const service = services.find(s => s.id === entry.service_id);
+                                  const isMember = Boolean(entry.is_club_member ?? entry.isClubMember);
+                                  return (
+                                      <motion.div
+                                          key={entry.id}
+                                          initial={{ opacity: 0, y: 20 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          exit={{ opacity: 0 }}
+                                          onClick={() => setSelectedWaitingEntry(entry)}
+                                          className="bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50"
+                                      >
+                                        <div className="text-center w-20">
+                                          <p className="font-bold text-gray-900 text-sm">{time}</p>
+                                        </div>
+                                        <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
+                                        <div className="flex-1">
+                                          <h4 className="font-bold text-gray-900">
+                                            {entry.client_name}
+                                          </h4>
+                                          <div className="flex items-center gap-2">
+                                            <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
+                                            {isMember && (
+                                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                                  חבר מועדון
+                                                </span>
+                                            )}
+                                          </div>
+                                          {entry.phone && (
+                                              <p className="text-xs text-gray-500">{entry.phone}</p>
+                                          )}
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>
+                                          <MoreVertical className="w-5 h-5" />
+                                        </Button>
+                                      </motion.div>
+                                  );
+                                })}
+                              </div>
+                            ))
                         ) : (
                             <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
                               <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -3243,10 +3303,10 @@ const extractRecurringSchedules = (client) => {
                 onClose={() => setSelectedWaitingEntry(null)}
                 entry={selectedWaitingEntry}
                 service={services.find(s => s.id === selectedWaitingEntry.service_id)}
-                appointments={appointments}
                 onBooked={() => {
                   setSelectedWaitingEntry(null);
-                  loadData();
+                  loadAppointmentsForDate(selectedDate);
+                  loadWaitingListForDate(selectedDate);
                 }}
             />
         )}

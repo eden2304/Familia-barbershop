@@ -40,6 +40,17 @@ export class AppointmentsController {
         return this.svc.getAvailableSlots(serviceId, norm, { isMember: isMemberFlag });
     }
 
+    @Public()
+    @Get('occupied')
+    async getOccupied(
+        @Query('serviceId') serviceId: string,
+        @Query('date') date: string,
+    ) {
+        if (!serviceId) throw new BadRequestException('serviceId is required');
+        const norm = this.normDate(date);
+        return this.svc.getOccupiedSlots(serviceId, norm);
+    }
+
     @Post()
     async create(@Body() body: any) {
         // (ללא שינוי מהגרסה האחרונה ששלחתי)

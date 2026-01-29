@@ -362,21 +362,19 @@ export const WaitingList = {
      */
     async listAdmin(filters = {}) {
         const q = new URLSearchParams();
-        if (filters.status) q.set("status", filters.status);
         if (filters.date) q.set("date", filters.date);           // yyyy-MM-dd
-        if (filters.serviceId) q.set("serviceId", String(filters.serviceId));
         const qs = q.toString() ? `?${q.toString()}` : "";
-        return getJson(`/admin/waiting-list${qs}`);
+        return getJson(`/waiting-list${qs}`);
     },
 
-    /** עדכון סטטוס/זמן (אדמין) */
-    async update(id, patch) {
-        return putJson(`/admin/waiting-list/${id}`, patch);
+    /** שיוך רשומת רשימת המתנה לתור אמיתי (אדמין) */
+    async assign(id) {
+        return postJson(`/waiting-list/${id}/assign`, {});
     },
 
     /** מחיקה (לא חובה) */
     async remove(id) {
-        return delJson(`/admin/waiting-list/${id}`);
+        return delJson(`/waiting-list/${id}`);
     },
 };
 

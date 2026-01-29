@@ -12,7 +12,7 @@ export default function WaitingListModal({
                                            service,
                                            day,
                                            client,
-                                           allAppointments,
+                                           occupiedSlots,
                                            businessHours,
                                            blockedTimes
                                          }) {
@@ -29,36 +29,35 @@ export default function WaitingListModal({
     return d.startsWith('0') ? d : '0' + d;
   };
 
-  const toYmdBounds = (d) => {
-    const start = new Date(d);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    return { start, end };
-  };
-
   const generateUnavailableSlots = () => {
-    if (!service || !day) return [];
-    const { start, end } = toYmdBounds(day);
+    if (!day) return [];
 
-    // קח רק תורים של אותו היום שאינם מבוטלים
-    const dayAppointments = (allAppointments || []).filter(apt => {
-      const s = new Date(apt.starts_at);
-      const status = (apt.status || 'booked').toLowerCase();
-      return status !== 'canceled' && s >= start && s < end;
-    });
-
-    // הפוך לרשימת שעות ("HH:mm") עם ייחוד ומיון
     const seen = new Set();
     const slots = [];
-    for (const apt of dayAppointments) {
-      const t = new Date(apt.starts_at);
-      const label = format(t, 'HH:mm');
+
+    (occupiedSlots || []).forEach((slot) => {
+      const timeLabel = slot.time ?? slot.desired_time ?? slot.desiredTime;
+      let dt = slot.startsAt ?? slot.starts_at ?? slot.desired_starts_at ?? slot.desiredStartsAt;
+
+      let time = null;
+      if (dt) {
+        const parsed = new Date(dt);
+        if (!Number.isNaN(parsed.getTime())) time = parsed;
+      } else if (timeLabel) {
+        const [hh, mm] = String(timeLabel).split(':');
+        const d = new Date(day);
+        d.setHours(Number(hh), Number(mm), 0, 0);
+        time = d;
+      }
+
+      if (!time || Number.isNaN(time.getTime())) return;
+      const label = format(time, 'HH:mm');
       if (!seen.has(label)) {
         seen.add(label);
-        slots.push({ time: t, formatted: label });
+        slots.push({ time, formatted: label });
       }
-    }
+    });
+
     slots.sort((a, b) => a.time - b.time);
     return slots;
   };
@@ -74,7 +73,7 @@ export default function WaitingListModal({
     // אם זה היום – רק שעות עתידיות (מרווח בטיחות קטן)
     const cutoff = now.getTime() + 60 * 1000;
     return list.filter(s => s.time.getTime() > cutoff);
-  }, [day, allAppointments, service]);
+  }, [day, occupiedSlots]);
 
   const handleSubmit = async () => {
     if (!selectedSlot || !client || !service) return;
@@ -84,13 +83,17 @@ export default function WaitingListModal({
       const last  = (client.last_name  ?? client.lastName  ?? '').trim();
       const client_name = `${first} ${last}`.trim() || normalizePhone05(client.phone);
 
+      const desiredDate = format(day, 'yyyy-MM-dd');
+      const desiredTime = selectedSlot.formatted;
       await WaitingList.create({
         client_id: client.id ?? null,
         client_name,
         phone: normalizePhone05(client.phone),
         service_id: Number(service.id),
+        desired_date: desiredDate,
+        desired_time: desiredTime,
         desired_starts_at: selectedSlot.time.toISOString(),
-        status: 'waiting',
+        is_club_member: Boolean(client?.is_member ?? client?.isMember ?? false),
       });
 
       setView('success');

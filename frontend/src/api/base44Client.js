@@ -737,8 +737,8 @@ const api = {
 
   WaitingList: {
     join: ({ clientId, date, time, serviceId }) =>
-        httpPost('/admin/waiting-list', { clientId: clientId, date: date, time: time, serviceId: serviceId }),
-    listByDate: (date) => httpGet('/admin/waiting-list?date=' + encodeURIComponent(date || '')),
+        httpPost('/waiting-list', { clientId: clientId, desired_date: date, desired_time: time, serviceId: serviceId }),
+    listByDate: (date) => httpGet('/waiting-list?date=' + encodeURIComponent(date || '')),
   },
 
   BusinessHours: {

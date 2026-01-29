@@ -65,6 +65,20 @@ export class WaitingListService {
         return { first, last };
     }
 
+    private async purgeExpiredEntries() {
+        const now = DateTime.now().setZone(TZ);
+        const today = now.toFormat('yyyy-LL-dd');
+        const time = now.toFormat('HH:mm');
+
+        await this.waitingRepo
+            .createQueryBuilder()
+            .delete()
+            .from(WaitingList)
+            .where('desired_date < :today', { today })
+            .orWhere('desired_date = :today AND desired_time < :time', { today, time })
+            .execute();
+    }
+
     private async resolveClient(input: WaitingListCreateInput, existing?: Client | null) {
         if (existing) return existing;
         if (input.clientId) {
@@ -80,6 +94,7 @@ export class WaitingListService {
     }
 
     async create(input: WaitingListCreateInput) {
+        await this.purgeExpiredEntries();
         const service = await this.serviceRepo.findOne({ where: { id: input.serviceId } });
         if (!service) throw new NotFoundException('Service not found');
 
@@ -136,6 +151,7 @@ export class WaitingListService {
     }
 
     async listByDate(date?: string) {
+        await this.purgeExpiredEntries();
         const where = date ? { desiredDate: this.normalizeDate(date) } : {};
         return this.waitingRepo.find({
             where,
@@ -149,6 +165,7 @@ export class WaitingListService {
     }
 
     async listByPhone(phone: string) {
+        await this.purgeExpiredEntries();
         const normalizedPhone = this.normalizePhone(phone);
         if (!normalizedPhone) return [];
 

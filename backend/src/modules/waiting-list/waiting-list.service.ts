@@ -106,14 +106,12 @@ export class WaitingListService {
                 ? {
                       desiredDate,
                       desiredTime,
-                      service: { id: service.id },
                       client: { id: client.id },
                       status: 'open',
                   }
                 : {
                       desiredDate,
                       desiredTime,
-                      service: { id: service.id },
                       phone: phone ?? undefined,
                       status: 'open',
                   },

@@ -260,6 +260,7 @@ export default function Admin() { // Removed props
   const [backgroundVideos, setBackgroundVideos] = useState([]);
   const [products, setProducts] = useState([]);
   const [waitingList, setWaitingList] = useState([]);
+  const [expandedWaitingTimes, setExpandedWaitingTimes] = useState(() => new Set());
   const [memberSettings, setMemberSettings] = useState(() => ({ ...DEFAULT_BOOKING_RULES }));
   const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
@@ -1042,6 +1043,18 @@ const extractRecurringSchedules = (client) => {
     return groups;
   }, [waitingList, selectedDate]);
 
+  const toggleWaitingTimeGroup = (time) => {
+    setExpandedWaitingTimes((prev) => {
+      const next = new Set(prev);
+      if (next.has(time)) {
+        next.delete(time);
+      } else {
+        next.add(time);
+      }
+      return next;
+    });
+  };
+
 
   const handleStatusChange = async (appointment, newStatus) => {
     try {
@@ -1808,49 +1821,82 @@ const extractRecurringSchedules = (client) => {
 
                       <div className="space-y-3">
                         {Object.keys(waitingListGroups).length > 0 ? (
-                            Object.entries(waitingListGroups).map(([time, entries]) => (
-                              <div key={time} className="space-y-2">
-                                <div className="text-sm font-semibold text-gray-700 px-2">{time}</div>
-                                {entries.map(entry => {
-                                  const service = services.find(s => s.id === entry.service_id);
-                                  const isMember = Boolean(entry.is_club_member ?? entry.isClubMember);
-                                  return (
-                                      <motion.div
-                                          key={entry.id}
-                                          initial={{ opacity: 0, y: 20 }}
-                                          animate={{ opacity: 1, y: 0 }}
-                                          exit={{ opacity: 0 }}
-                                          onClick={() => setSelectedWaitingEntry(entry)}
-                                          className="bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50"
-                                      >
-                                        <div className="text-center w-20">
-                                          <p className="font-bold text-gray-900 text-sm">{time}</p>
-                                        </div>
-                                        <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
-                                        <div className="flex-1">
-                                          <h4 className="font-bold text-gray-900">
-                                            {entry.client_name}
-                                          </h4>
-                                          <div className="flex items-center gap-2">
-                                            <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
-                                            {isMember && (
-                                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                                  חבר מועדון
-                                                </span>
-                                            )}
+                            Object.entries(waitingListGroups).map(([time, entries]) => {
+                              const isExpanded = expandedWaitingTimes.has(time);
+                              const hasMultiple = entries.length > 1;
+
+                              return (
+                                  <div key={time} className="space-y-2">
+                                    <div className="flex items-center justify-between px-2">
+                                      <div className="text-sm font-semibold text-gray-700">{time}</div>
+                                      {hasMultiple && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => toggleWaitingTimeGroup(time)}
+                                              className="text-xs text-gray-600"
+                                          >
+                                            {isExpanded ? 'סגור רשימה' : `הצג ${entries.length}`}
+                                          </Button>
+                                      )}
+                                    </div>
+
+                                    {!hasMultiple || isExpanded ? (
+                                        entries.map(entry => {
+                                          const service = services.find(s => s.id === entry.service_id);
+                                          const isMember = Boolean(entry.is_club_member ?? entry.isClubMember);
+                                          return (
+                                              <motion.div
+                                                  key={entry.id}
+                                                  initial={{ opacity: 0, y: 20 }}
+                                                  animate={{ opacity: 1, y: 0 }}
+                                                  exit={{ opacity: 0 }}
+                                                  onClick={() => setSelectedWaitingEntry(entry)}
+                                                  className="bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50"
+                                              >
+                                                <div className="text-center w-20">
+                                                  <p className="font-bold text-gray-900 text-sm">{time}</p>
+                                                </div>
+                                                <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
+                                                <div className="flex-1">
+                                                  <h4 className="font-bold text-gray-900">
+                                                    {entry.client_name}
+                                                  </h4>
+                                                  <div className="flex items-center gap-2">
+                                                    <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
+                                                    {isMember && (
+                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                                          חבר מועדון
+                                                        </span>
+                                                    )}
+                                                  </div>
+                                                  {entry.phone && (
+                                                      <p className="text-xs text-gray-500">{entry.phone}</p>
+                                                  )}
+                                                </div>
+                                                <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>
+                                                  <MoreVertical className="w-5 h-5" />
+                                                </Button>
+                                              </motion.div>
+                                          );
+                                        })
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleWaitingTimeGroup(time)}
+                                            className="w-full bg-white rounded-2xl p-3 shadow-sm flex items-center justify-between transition-colors duration-200 hover:bg-gray-50"
+                                        >
+                                          <div className="text-sm text-gray-700">
+                                            יש {entries.length} לקוחות לשעה זו
                                           </div>
-                                          {entry.phone && (
-                                              <p className="text-xs text-gray-500">{entry.phone}</p>
-                                          )}
-                                        </div>
-                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700" onClick={(e) => { e.stopPropagation(); setSelectedWaitingEntry(entry); }}>
-                                          <MoreVertical className="w-5 h-5" />
-                                        </Button>
-                                      </motion.div>
-                                  );
-                                })}
-                              </div>
-                            ))
+                                          <span className="inline-flex items-center justify-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                                            {entries.length}
+                                          </span>
+                                        </button>
+                                    )}
+                                  </div>
+                              );
+                            })
                         ) : (
                             <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
                               <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />

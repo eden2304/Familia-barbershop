@@ -424,7 +424,7 @@ export default function Book() {
       try {
         setAptsLoading(true);
         const ymd = toYMD(selectedDate);           // "yyyy-MM-dd"
-        const res = await fetch(`${API_URL}/appointments/occupied?date=${ymd}&serviceId=${selectedService?.id}`);
+        const res = await fetch(`${API_URL}/appointments/occupied?date=${ymd}`);
         const data = await res.json();
         setOccupiedSlots(Array.isArray(data) ? data : []);
       } catch (e) {

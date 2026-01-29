@@ -43,10 +43,9 @@ export class AppointmentsController {
     @Public()
     @Get('occupied')
     async getOccupied(
-        @Query('serviceId') serviceId: string,
         @Query('date') date: string,
+        @Query('serviceId') serviceId?: string,
     ) {
-        if (!serviceId) throw new BadRequestException('serviceId is required');
         const norm = this.normDate(date);
         return this.svc.getOccupiedSlots(serviceId, norm);
     }

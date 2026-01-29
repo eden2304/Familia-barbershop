@@ -101,6 +101,26 @@ export class WaitingListService {
             input.isClubMember ??
             Boolean((client as any)?.isMember ?? (client as any)?.is_member ?? false);
 
+        const duplicate = await this.waitingRepo.findOne({
+            where: client?.id
+                ? {
+                      desiredDate,
+                      desiredTime,
+                      client: { id: client.id },
+                      status: 'open',
+                  }
+                : {
+                      desiredDate,
+                      desiredTime,
+                      phone: phone ?? undefined,
+                      status: 'open',
+                  },
+        });
+
+        if (duplicate) {
+            throw new ConflictException('Already on waiting list for this time');
+        }
+
         const entry = this.waitingRepo.create({
             client: client ?? undefined,
             clientName,
@@ -128,8 +148,39 @@ export class WaitingListService {
         });
     }
 
+    async listByPhone(phone: string) {
+        const normalizedPhone = this.normalizePhone(phone);
+        if (!normalizedPhone) return [];
+
+        return this.waitingRepo
+            .createQueryBuilder('waiting')
+            .leftJoinAndSelect('waiting.client', 'client')
+            .leftJoinAndSelect('waiting.service', 'service')
+            .where('waiting.phone = :phone', { phone: normalizedPhone })
+            .orWhere('client.phone = :phone', { phone: normalizedPhone })
+            .orderBy('waiting.desiredDate', 'ASC')
+            .addOrderBy('waiting.desiredTime', 'ASC')
+            .addOrderBy('waiting.isClubMember', 'DESC')
+            .addOrderBy('waiting.createdAt', 'ASC')
+            .getMany();
+    }
+
     async remove(id: string) {
         const entry = await this.waitingRepo.findOne({ where: { id } });
+        if (!entry) throw new NotFoundException('Waiting list entry not found');
+        await this.waitingRepo.remove(entry);
+        return { ok: true };
+    }
+
+    async removeForPhone(id: string, phone: string) {
+        const normalizedPhone = this.normalizePhone(phone);
+        if (!normalizedPhone) throw new BadRequestException('Phone is required');
+        const entry = await this.waitingRepo
+            .createQueryBuilder('waiting')
+            .leftJoinAndSelect('waiting.client', 'client')
+            .where('waiting.id = :id', { id })
+            .andWhere('(waiting.phone = :phone OR client.phone = :phone)', { phone: normalizedPhone })
+            .getOne();
         if (!entry) throw new NotFoundException('Waiting list entry not found');
         await this.waitingRepo.remove(entry);
         return { ok: true };

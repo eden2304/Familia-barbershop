@@ -364,17 +364,17 @@ export const WaitingList = {
         const q = new URLSearchParams();
         if (filters.date) q.set("date", filters.date);           // yyyy-MM-dd
         const qs = q.toString() ? `?${q.toString()}` : "";
-        return getJson(`/waiting-list${qs}`);
+        return api.get(`/waiting-list${qs}`);
     },
 
     /** שיוך רשומת רשימת המתנה לתור אמיתי (אדמין) */
     async assign(id) {
-        return postJson(`/waiting-list/${id}/assign`, {});
+        return api.post(`/waiting-list/${id}/assign`, {});
     },
 
     /** מחיקה (לא חובה) */
     async remove(id) {
-        return delJson(`/waiting-list/${id}`);
+        return api.delete(`/waiting-list/${id}`);
     },
 };
 

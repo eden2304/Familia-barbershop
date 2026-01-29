@@ -563,20 +563,22 @@ export class AppointmentsService {
     }
 
     async getOccupiedSlots(
-        serviceId: string,
+        serviceId: string | undefined,
         dateStr: string,
     ): Promise<Array<{ time: string; startsAt: Date; endsAt: Date | null }>> {
-        const service = await this.svcRepo.findOne({ where: { id: serviceId } });
-        if (!service) throw new NotFoundException('Service not found');
-
         const dayStart = DateTime.fromISO(dateStr, { zone: TZ }).startOf('day').toUTC().toJSDate();
         const dayEnd = DateTime.fromISO(dateStr, { zone: TZ }).endOf('day').toUTC().toJSDate();
 
+        const service = serviceId
+            ? await this.svcRepo.findOne({ where: { id: serviceId } })
+            : null;
+        if (serviceId && !service) throw new NotFoundException('Service not found');
+
         const appts = await this.apptRepo.find({
             where: {
-                service: { id: serviceId } as any,
                 startsAt: LessThanOrEqual(dayEnd),
                 endsAt: MoreThanOrEqual(dayStart),
+                ...(serviceId ? { service: { id: serviceId } as any } : {}),
             },
             order: { startsAt: 'ASC' },
             relations: ['client', 'service'],
@@ -602,9 +604,10 @@ export class AppointmentsService {
         const slots = appts
             .map(appt => {
                 const start = appt.startsAt;
+                const durationMinutes =
+                    appt.service?.durationMinutes ?? service?.durationMinutes ?? 0;
                 const end =
-                    appt.endsAt ??
-                    new Date(appt.startsAt.getTime() + (appt.service?.durationMinutes ?? service.durationMinutes) * 60000);
+                    appt.endsAt ?? new Date(appt.startsAt.getTime() + durationMinutes * 60000);
                 return { start, end };
             })
             .filter(({ start, end }) => !blockedOverlaps(start, end))

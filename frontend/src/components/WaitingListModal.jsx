@@ -99,7 +99,11 @@ export default function WaitingListModal({
       setView('success');
     } catch (error) {
       console.error("Error joining waiting list:", error);
-      alert("שגיאה בהצטרפות לרשימת ההמתנה.");
+      if (error?.status === 409) {
+        alert("אתה כבר רשום לשעה זו.");
+      } else {
+        alert("שגיאה בהצטרפות לרשימת ההמתנה.");
+      }
     } finally {
       setLoading(false);
     }

@@ -74,6 +74,28 @@ const normAppt = (a) => {
   };
 };
 
+const normWaiting = (entry) => {
+  const desiredDate = entry?.desired_date ?? entry?.desiredDate;
+  const desiredTime = entry?.desired_time ?? entry?.desiredTime;
+  const desiredStartsAt = entry?.desired_starts_at ?? entry?.desiredStartsAt;
+  const desiredDateTime = desiredStartsAt
+      ? new Date(desiredStartsAt)
+      : desiredDate && desiredTime
+          ? new Date(`${desiredDate}T${desiredTime}:00`)
+          : null;
+
+  return {
+    id: entry?.id,
+    desiredDate,
+    desiredTime,
+    desiredDateTime,
+    serviceId: entry?.service_id ?? entry?.serviceId ?? null,
+    serviceName: entry?.service_name ?? entry?.serviceName ?? '',
+    isClubMember: Boolean(entry?.is_club_member ?? entry?.isClubMember ?? false),
+    createdAt: entry?.created_at ?? entry?.createdAt ?? null,
+  };
+};
+
 
 const StatusChip = ({ apt }) => {
   const pill = statusPill(apt);
@@ -92,6 +114,7 @@ export default function MyAppointmentsPage() {
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
   const [items, setItems] = useState([]);
+  const [waitingItems, setWaitingItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [showVerification, setShowVerification] = useState(false);
@@ -128,10 +151,17 @@ export default function MyAppointmentsPage() {
     setLoading(true);
     setErr("");
     try {
-      const arr = (await api.Appointment.listMine()) || [];
-      const normalized = arr.map(normAppt).filter((x) => x.startsAt);
+      const [appointmentsData, waitingData] = await Promise.all([
+        api.Appointment.listMine().catch(() => []),
+        api.WaitingList?.listMine ? api.WaitingList.listMine().catch(() => []) : Promise.resolve([]),
+      ]);
+      const normalized = (appointmentsData || []).map(normAppt).filter((x) => x.startsAt);
       normalized.sort((a, b) => compareAsc(a.startsAt, b.startsAt)); // מהקרוב לרחוק
       setItems(normalized);
+
+      const waitingNormalized = (waitingData || []).map(normWaiting).filter((x) => x.desiredDateTime);
+      waitingNormalized.sort((a, b) => compareAsc(a.desiredDateTime, b.desiredDateTime));
+      setWaitingItems(waitingNormalized);
     } catch (e) {
       console.error("fetch appointments failed", e);
       setErr("שגיאה בטעינת התורים");
@@ -172,6 +202,16 @@ export default function MyAppointmentsPage() {
     const barberPhone = "0523767851"; // אם תרצה—נחבר ל-Setting מהשרת
     const whatsappUrl = `https://wa.me/972${barberPhone.slice(1)}?text=${encodeURIComponent(msg)}`;
     window.open(whatsappUrl, "_blank");
+  };
+
+  const handleWaitingCancel = async (entry) => {
+    try {
+      await api.WaitingList.removeMine(entry.id);
+      await fetchMine();
+    } catch (e) {
+      console.error("failed to cancel waiting list", e);
+      alert("לא ניתן לבטל את ההרשמה לרשימת ההמתנה. נסה שוב.");
+    }
   };
 
   /* ---------------- renders ---------------- */
@@ -221,7 +261,7 @@ export default function MyAppointmentsPage() {
         )}
 
         {/* אין בכלל תורים */}
-        {items.length === 0 && !err ? (
+        {items.length === 0 && waitingItems.length === 0 && !err ? (
             <Card className="p-8 rounded-3xl text-center shadow-sm">
               <History className="w-10 h-10 mx-auto mb-3 text-gray-400" />
               <h3 className="font-bold text-gray-900 mb-1">אין לך תורים כרגע</h3>
@@ -235,6 +275,50 @@ export default function MyAppointmentsPage() {
             </Card>
         ) : (
             <>
+              {waitingItems.length > 0 && (
+                  <>
+                    <h2 className="text-lg font-bold text-gray-900 mb-3 text-right">רשימת המתנה</h2>
+                    <div className="space-y-3 mb-8">
+                      {waitingItems.map((entry) => (
+                          <Card key={entry.id} className="p-5 rounded-2xl border-gray-200">
+                            <CardContent className="p-0">
+                              <div className="flex items-start justify-between">
+                                <div className="text-right">
+                                  <div className="text-base font-bold text-gray-900">
+                                    {entry.serviceName || "שירות"}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-gray-600 mt-1">
+                                    <Calendar className="w-4 h-4" />
+                                    <span className="text-sm">
+                                      {entry.desiredDateTime
+                                          ? format(entry.desiredDateTime, "EEEE, dd/MM", { locale: he })
+                                          : "-"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-gray-600">
+                                    <Clock className="w-4 h-4" />
+                                    <span className="text-sm">
+                                      {entry.desiredDateTime ? format(entry.desiredDateTime, "HH:mm") : "-"}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  <Button
+                                      variant="outline"
+                                      className="rounded-full text-xs"
+                                      onClick={() => handleWaitingCancel(entry)}
+                                  >
+                                    ביטול הרשמה
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                      ))}
+                    </div>
+                  </>
+              )}
+
               {/* תורים קרובים */}
               {upcoming.length > 0 && (
                   <>

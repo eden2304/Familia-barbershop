@@ -592,7 +592,14 @@ const api = {
       const day = normalizeDateForApi(date);
       if (!day) return [];
       const res = await httpGet('/appointments?date=' + encodeURIComponent(day));
-      return Array.isArray(res) ? res : [];
+      if (Array.isArray(res)) return res;
+      const base = String(BASE_URL || '');
+      const hasApiSuffix = /\/api\/?$/.test(base);
+      if (!hasApiSuffix) {
+        const fallback = await httpGet('/api/appointments?date=' + encodeURIComponent(day));
+        return Array.isArray(fallback) ? fallback : [];
+      }
+      return [];
     },
 
     // list – קודם ציבורי, פולבק ל־admin

@@ -50,14 +50,26 @@ export default function WaitingListModal({
     });
 
     // הפוך לרשימת שעות ("HH:mm") עם ייחוד ומיון
-    const seen = new Set();
+    const seen = new Map();
     const slots = [];
     for (const apt of dayAppointments) {
       const t = new Date(apt.starts_at);
       const label = format(t, 'HH:mm');
+      const memberFlag = Boolean(
+          apt.client_is_member ??
+          apt.clientIsMember ??
+          apt.client?.is_member ??
+          apt.client?.isMember ??
+          false
+      );
       if (!seen.has(label)) {
-        seen.add(label);
-        slots.push({ time: t, formatted: label });
+        seen.set(label, { time: t, formatted: label, isMemberSlot: memberFlag });
+        slots.push({ time: t, formatted: label, isMemberSlot: memberFlag });
+      } else if (memberFlag) {
+        const idx = slots.findIndex((slot) => slot.formatted === label);
+        if (idx !== -1) {
+          slots[idx] = { ...slots[idx], isMemberSlot: true };
+        }
       }
     }
     slots.sort((a, b) => a.time - b.time);
@@ -127,9 +139,14 @@ export default function WaitingListModal({
                                 key={slot.formatted}
                                 variant={selectedSlot?.formatted === slot.formatted ? 'default' : 'outline'}
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`h-10 text-sm rounded-lg ${selectedSlot?.formatted === slot.formatted ? 'bg-black text-white' : ''}`}
+                                className={`h-10 text-sm rounded-lg flex flex-col items-center justify-center leading-none ${selectedSlot?.formatted === slot.formatted ? 'bg-black text-white' : ''}`}
                             >
-                              {slot.formatted}
+                              <span>{slot.formatted}</span>
+                              {slot.isMemberSlot && (
+                                  <span className={`text-[10px] mt-1 ${selectedSlot?.formatted === slot.formatted ? 'text-yellow-200' : 'text-amber-600'}`}>
+                                    מועדון
+                                  </span>
+                              )}
                             </Button>
                         ))
                     ) : (

@@ -1434,7 +1434,8 @@ async function router(req, res) {
             const q = await pool.query(`
                 select a.id, a.starts_at, a.ends_at, a.status, a.note,
                        s.id as service_id, s.name as service_name, s.duration_minutes,
-                       c.id as client_id, c.first_name, c.last_name, c.phone
+                       c.id as client_id, c.first_name, c.last_name, c.phone,
+                       coalesce(c.is_member, false) as client_is_member
                 from appointments a
                          left join services s on s.id=a.service_id
                          left join clients c  on c.id=a.client_id
@@ -1446,7 +1447,8 @@ async function router(req, res) {
             const q = await pool.query(`
                 select a.id, a.starts_at, a.ends_at, a.status, a.note,
                        s.id as service_id, s.name as service_name, s.duration_minutes,
-                       c.id as client_id, c.first_name, c.last_name, c.phone
+                       c.id as client_id, c.first_name, c.last_name, c.phone,
+                       coalesce(c.is_member, false) as client_is_member
                 from appointments a
                          left join services s on s.id=a.service_id
                          left join clients c  on c.id=a.client_id
@@ -1465,7 +1467,8 @@ async function router(req, res) {
             const q = await pool.query(`
                 select a.id, a.starts_at, a.ends_at, a.status, a.note,
                        s.id as service_id, s.name as service_name, s.duration_minutes,
-                       c.id as client_id, c.first_name, c.last_name, c.phone
+                       c.id as client_id, c.first_name, c.last_name, c.phone,
+                       coalesce(c.is_member, false) as client_is_member
                 from appointments a
                          left join services s on s.id=a.service_id
                          left join clients c  on c.id=a.client_id
@@ -1477,7 +1480,8 @@ async function router(req, res) {
             const q = await pool.query(`
                 select a.id, a.starts_at, a.ends_at, a.status, a.note,
                        s.id as service_id, s.name as service_name, s.duration_minutes,
-                       c.id as client_id, c.first_name, c.last_name, c.phone
+                       c.id as client_id, c.first_name, c.last_name, c.phone,
+                       coalesce(c.is_member, false) as client_is_member
                 from appointments a
                          left join services s on s.id=a.service_id
                          left join clients c  on c.id=a.client_id
@@ -2651,11 +2655,14 @@ function compatAppointmentRow(r) {
         name: r.service_name || 'שירות',
         durationMinutes: r.duration_minutes || 30,
     };
+    const clientMember = Boolean(r.client_is_member);
     const client = {
         id: r.client_id || null,
         firstName: r.first_name || '',
         lastName: r.last_name || '',
         phone: r.phone || '',
+        is_member: clientMember,
+        isMember: clientMember,
     };
 
     return {
@@ -2670,6 +2677,8 @@ function compatAppointmentRow(r) {
         durationMinutes: r.duration_minutes,
         client_id: r.client_id,
         clientId: r.client_id,
+        client_is_member: clientMember,
+        clientIsMember: clientMember,
         client_first_name: r.first_name,
         client_last_name: r.last_name,
         client_phone: r.phone,

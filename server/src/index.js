@@ -270,6 +270,9 @@ async function migrate() {
             phone text not null,
             service_id integer references services(id) on delete set null,
             desired_starts_at timestamptz not null,
+            desired_date date,
+            desired_time time,
+            is_club_member boolean not null default false,
             status text not null default 'waiting',
             created_at timestamptz not null default now()
             );
@@ -294,6 +297,9 @@ async function migrate() {
     phone text not null,
     service_id ${serviceIdTypeDDL} references services(id) on delete set null,
     desired_starts_at timestamptz not null,
+    desired_date date,
+    desired_time time,
+    is_club_member boolean not null default false,
     status text not null default 'waiting', -- waiting | notified | booked | canceled
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -314,6 +320,13 @@ async function migrate() {
   before update on waiting_list
   for each row execute procedure touch_updated_at();
 `);
+
+  await pool.query(`
+    update waiting_list
+    set desired_date = coalesce(desired_date, desired_starts_at::date),
+        desired_time = coalesce(desired_time, desired_starts_at::time),
+        is_club_member = coalesce(is_club_member, false)
+  `);
 
   await pool.query(`
     create table if not exists business_hours (
@@ -1459,6 +1472,36 @@ async function router(req, res) {
         return json(res, 200, rows.map(compatAppointmentRow));
     }
 
+    if (req.method === 'GET' && pathname === '/appointments/occupied') {
+        const date = url.searchParams.get('date');
+        const serviceId = url.searchParams.get('serviceId');
+        if (!date) return json(res, 400, { error: 'Missing date' });
+        const { start, end } = dayBounds(date);
+        const params = [start, end];
+        let serviceSql = '';
+        if (serviceId) {
+            params.push(serviceId);
+            serviceSql = `and a.service_id = $3`;
+        }
+        const q = await pool.query(
+            `
+        select a.id, a.starts_at, a.ends_at, a.status, a.note,
+               s.id as service_id, s.name as service_name, s.duration_minutes,
+               c.id as client_id, c.first_name, c.last_name, c.phone,
+               coalesce(c.is_member, false) as client_is_member
+        from appointments a
+                 left join services s on s.id=a.service_id
+                 left join clients c  on c.id=a.client_id
+        where a.starts_at >= $1 and a.starts_at < $2
+          and coalesce(a.status, 'booked') = 'booked'
+          ${serviceSql}
+        order by a.starts_at asc
+      `,
+            params
+        );
+        return json(res, 200, q.rows.map(compatAppointmentRow));
+    }
+
     if (req.method === 'GET' && pathname === '/admin/appointments') {
         const date = url.searchParams.get('date');
         let rows;
@@ -1517,6 +1560,22 @@ async function router(req, res) {
 
             const clientRec = await upsertClient(client_first_name, client_last_name, client_phone);
             const clientId = clientRec.id;
+            const clientIsMember = !!clientRec.is_member;
+            const conflict = await pool.query(
+                `select 1 from appointments where starts_at < $2 and ends_at > $1 and coalesce(status, 'booked') <> 'canceled' limit 1`,
+                [sLegacy, eLegacy]
+            );
+            if (conflict.rows.length > 0) {
+                return json(res, 409, { error: 'TIME_SLOT_OCCUPIED' });
+            }
+            const blockRows = await pool.query(
+                `select coalesce(members_only,false) as members_only from blocked_times where start_at < $2 and end_at > $1`,
+                [sLegacy, eLegacy]
+            );
+            const hasBlocking = blockRows.rows.some((row) => !(row.members_only && clientIsMember));
+            if (hasBlocking) {
+                return json(res, 409, { error: 'TIME_SLOT_BLOCKED' });
+            }
             const q = await pool.query(
                 `insert into appointments (service_id, client_id, starts_at, ends_at, status, note)
                  values ($1,$2,$3,$4,$5,$6)
@@ -1612,6 +1671,23 @@ async function router(req, res) {
                     return json(res, 400, { error: 'OUTSIDE_BUSINESS_HOURS' });
                 }
             }
+        }
+
+        const conflict = await pool.query(
+            `select 1 from appointments where starts_at < $2 and ends_at > $1 and coalesce(status, 'booked') <> 'canceled' limit 1`,
+            [start, end]
+        );
+        if (conflict.rows.length > 0) {
+            return json(res, 409, { error: 'TIME_SLOT_OCCUPIED' });
+        }
+
+        const blockRows = await pool.query(
+            `select coalesce(members_only,false) as members_only from blocked_times where start_at < $2 and end_at > $1`,
+            [start, end]
+        );
+        const hasBlocking = blockRows.rows.some((row) => !(row.members_only && clientIsMember));
+        if (hasBlocking) {
+            return json(res, 409, { error: 'TIME_SLOT_BLOCKED' });
         }
 
         const ins = await pool.query(
@@ -2155,6 +2231,7 @@ async function router(req, res) {
 
         // קישור לקוח קיים/יצירה (אופציונלי)
         let clientId = null;
+        let isClubMember = false;
         try {
             const ensured = await upsertClient(
                 name.split(' ')[0] || '',
@@ -2162,15 +2239,50 @@ async function router(req, res) {
                 phone
             );
             clientId = ensured.id;
+            isClubMember = !!ensured.is_member;
         } catch {}
 
         const q = await pool.query(
-            `insert into waiting_list (client_id, client_name, phone, service_id, desired_starts_at, status)
-     values ($1,$2,$3,$4,$5,'waiting')
+            `insert into waiting_list (client_id, client_name, phone, service_id, desired_starts_at, desired_date, desired_time, is_club_member, status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,'waiting')
      returning *`,
-            [clientId, name, phone, serviceId, desired]
+            [clientId, name, phone, serviceId, desired, desired, desired, isClubMember]
         );
         return json(res, 200, { ok:true, entry:q.rows[0] });
+    }
+
+    // GET /waiting-list – רשימת המתנה לפי תאריך (צד לקוח/כללי)
+    if (req.method === 'GET' && pathname === '/waiting-list') {
+        const date = url.searchParams.get('date');
+        const serviceId = url.searchParams.get('serviceId');
+        const params = [];
+        let whereSql = `where w.status in ('waiting','notified')`;
+        if (date) {
+            params.push(date);
+            whereSql += ` and w.desired_date = $${params.length}`;
+        }
+        if (serviceId) {
+            params.push(serviceId);
+            whereSql += ` and w.service_id = $${params.length}`;
+        }
+        const q = await pool.query(
+            `
+    select w.*, s.name as service_name, s.duration_minutes,
+           coalesce(c.is_member, false) as is_member
+    from waiting_list w
+    left join services s on s.id = w.service_id
+    left join clients c on c.id = w.client_id
+    ${whereSql}
+    order by w.desired_starts_at asc, coalesce(c.is_member,false) desc, w.created_at asc
+  `,
+            params
+        );
+        const rows = (q.rows || []).map((row) => ({
+            ...row,
+            is_member: !!row.is_member,
+            isMember: !!row.is_member,
+        }));
+        return json(res, 200, rows);
     }
 
 // GET /admin/waiting-list – רשימת המתנה לניהול
@@ -2202,7 +2314,9 @@ async function router(req, res) {
         await pool.query(
             `update waiting_list
              set status = coalesce($2,status),
-                 desired_starts_at = coalesce($3,desired_starts_at)
+                 desired_starts_at = coalesce($3,desired_starts_at),
+                 desired_date = case when $3 is null then desired_date else $3::date end,
+                 desired_time = case when $3 is null then desired_time else $3::time end
              where id = $1`,
             [id, status, desired ? new Date(desired) : null]
         );
@@ -2212,6 +2326,12 @@ async function router(req, res) {
 
 // DELETE /admin/waiting-list/:id – מחיקה (לא חובה)
     if (req.method === 'DELETE' && pathname.startsWith('/admin/waiting-list/')) {
+        const id = pathname.split('/').pop();
+        await pool.query(`delete from waiting_list where id=$1`, [id]);
+        return json(res, 200, { ok:true });
+    }
+
+    if (req.method === 'DELETE' && pathname.startsWith('/waiting-list/')) {
         const id = pathname.split('/').pop();
         await pool.query(`delete from waiting_list where id=$1`, [id]);
         return json(res, 200, { ok:true });

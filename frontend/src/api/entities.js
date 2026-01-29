@@ -1,6 +1,6 @@
 // src/api/entities.js
 // ייבוא יחיד – בלי resolverים כפולים ובלי דאבלים
-import api, { invalidateCacheByPathPrefix,
+import api, { invalidateCacheByPathPrefix, API_ROOT,
     Service,
     Appointment,
     Admin,
@@ -11,7 +11,11 @@ import api, { invalidateCacheByPathPrefix,
     Auth,
 } from './base44Client.js';
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API_URL =
+    API_ROOT ??
+    import.meta.env.VITE_API_BASE ??
+    import.meta.env.VITE_API_URL ??
+    "http://localhost:3001";
 
 /* ---------------- Clients (CRUD) ---------------- */
 export const Client = {

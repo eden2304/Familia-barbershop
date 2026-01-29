@@ -418,13 +418,13 @@ export default function Book() {
     // נטען תורים רק אם:
     // - המודאל של רשימת המתנה פתוח
     // - ויש תאריך נבחר
-    if (!showWaitingList || !selectedDate) return;
+    if (!showWaitingList || !selectedDate || !selectedService?.id) return;
 
     const fetchDayAppointments = async () => {
       try {
         setAptsLoading(true);
         const ymd = toYMD(selectedDate);           // "yyyy-MM-dd"
-        const data = await api.Appointment.listByDate(ymd);
+        const data = await api.Appointment.listOccupied(selectedService.id, ymd);
         // ה־WaitingListModal מצפה לרשימה מלאה של תורים של אותו יום
         setAppointments(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -436,7 +436,7 @@ export default function Book() {
     };
 
     fetchDayAppointments();
-  }, [showWaitingList, selectedDate]);
+  }, [showWaitingList, selectedDate, selectedService?.id]);
 
   useEffect(() => {
     // כשנכנסים למסך ימים/שעות, נבטל פוקוס אוטומטי שאולי נשאר מכפתורים

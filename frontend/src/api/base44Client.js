@@ -602,6 +602,24 @@ const api = {
       return [];
     },
 
+    listOccupied: async (serviceId, date) => {
+      const day = normalizeDateForApi(date);
+      if (!day) return [];
+      const params = new URLSearchParams({ date: day });
+      if (serviceId != null && serviceId !== '') {
+        params.set('serviceId', String(serviceId));
+      }
+      const res = await httpGet('/appointments/occupied?' + params.toString());
+      if (Array.isArray(res)) return res;
+      const base = String(BASE_URL || '');
+      const hasApiSuffix = /\/api\/?$/.test(base);
+      if (!hasApiSuffix) {
+        const fallback = await httpGet('/api/appointments/occupied?' + params.toString());
+        return Array.isArray(fallback) ? fallback : [];
+      }
+      return [];
+    },
+
     // list – קודם ציבורי, פולבק ל־admin
     list: async (sort) => {
       try {

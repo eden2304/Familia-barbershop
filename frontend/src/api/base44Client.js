@@ -591,12 +591,19 @@ const api = {
     listByDate: async (date) => {
       const day = normalizeDateForApi(date);
       if (!day) return [];
-      const res = await httpGet('/appointments?date=' + encodeURIComponent(day));
-      if (Array.isArray(res)) return res;
       const base = String(BASE_URL || '');
+      const baseHasAppointments = /\/appointments\/?$/.test(base);
+      const primaryPath = baseHasAppointments
+          ? '/?date=' + encodeURIComponent(day)
+          : '/appointments?date=' + encodeURIComponent(day);
+      const res = await httpGet(primaryPath);
+      if (Array.isArray(res)) return res;
       const hasApiSuffix = /\/api\/?$/.test(base);
       if (!hasApiSuffix) {
-        const fallback = await httpGet('/api/appointments?date=' + encodeURIComponent(day));
+        const fallbackPath = baseHasAppointments
+            ? '/api/appointments?date=' + encodeURIComponent(day)
+            : '/api/appointments?date=' + encodeURIComponent(day);
+        const fallback = await httpGet(fallbackPath);
         return Array.isArray(fallback) ? fallback : [];
       }
       return [];
@@ -609,12 +616,19 @@ const api = {
       if (serviceId != null && serviceId !== '') {
         params.set('serviceId', String(serviceId));
       }
-      const res = await httpGet('/appointments/occupied?' + params.toString());
-      if (Array.isArray(res)) return res;
       const base = String(BASE_URL || '');
+      const baseHasAppointments = /\/appointments\/?$/.test(base);
+      const primaryPath = baseHasAppointments
+          ? '/occupied?' + params.toString()
+          : '/appointments/occupied?' + params.toString();
+      const res = await httpGet(primaryPath);
+      if (Array.isArray(res)) return res;
       const hasApiSuffix = /\/api\/?$/.test(base);
       if (!hasApiSuffix) {
-        const fallback = await httpGet('/api/appointments/occupied?' + params.toString());
+        const fallbackPath = baseHasAppointments
+            ? '/api/appointments/occupied?' + params.toString()
+            : '/api/appointments/occupied?' + params.toString();
+        const fallback = await httpGet(fallbackPath);
         return Array.isArray(fallback) ? fallback : [];
       }
       return [];

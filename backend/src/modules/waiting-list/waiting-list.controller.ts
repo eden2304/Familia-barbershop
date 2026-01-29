@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { WaitingListService } from './waiting-list.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
 import { DateTime } from 'luxon';
+import { Request } from 'express';
+import { AuthTokenPayload } from '../auth/auth.types';
 
 const TZ = 'Asia/Jerusalem';
 
@@ -53,10 +55,29 @@ export class WaitingListController {
     }
 
     @UseGuards(JwtAuthGuard)
+    @Roles('client')
+    @Get('mine')
+    async listMine(@Req() req: Request & { user?: AuthTokenPayload }) {
+        const phone = req.user?.phone;
+        if (!phone) return [];
+        const list = await this.waitingService.listByPhone(phone);
+        return list.map(entry => this.present(entry));
+    }
+
+    @UseGuards(JwtAuthGuard)
     @Roles('admin')
     @Delete(':id')
     async remove(@Param('id') id: string) {
         return this.waitingService.remove(id);
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Roles('client')
+    @Delete('mine/:id')
+    async removeMine(@Req() req: Request & { user?: AuthTokenPayload }, @Param('id') id: string) {
+        const phone = req.user?.phone;
+        if (!phone) throw new BadRequestException('Phone required');
+        return this.waitingService.removeForPhone(id, phone);
     }
 
     @UseGuards(JwtAuthGuard)
@@ -86,6 +107,7 @@ export class WaitingListController {
             client_name: entry.clientName ?? entry.client_name ?? '',
             phone: entry.phone ?? '',
             service_id: entry.service?.id ?? entry.serviceId ?? entry.service_id ?? null,
+            service_name: entry.service?.name ?? null,
             desired_date: desiredDate,
             desired_time: desiredTime,
             desired_starts_at: desiredStartsAt,

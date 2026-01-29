@@ -346,7 +346,6 @@ export default function Book() {
 
       // לשימוש עתידי במודלים אחרים – משאירים ריק כאן
       setBusinessHours(Array.isArray(bh) ? bh : []);
-      setAppointments([]);
       setBlockedTimes([]);
     } catch (e) {
       console.error("Error loading initial data:", e);

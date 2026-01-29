@@ -3308,6 +3308,10 @@ const extractRecurringSchedules = (client) => {
                   loadAppointmentsForDate(selectedDate);
                   loadWaitingListForDate(selectedDate);
                 }}
+                onRemoved={() => {
+                  setSelectedWaitingEntry(null);
+                  loadWaitingListForDate(selectedDate);
+                }}
             />
         )}
 

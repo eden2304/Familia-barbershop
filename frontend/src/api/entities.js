@@ -369,12 +369,12 @@ export const WaitingList = {
 
     /** שיוך רשומת רשימת המתנה לתור אמיתי (אדמין) */
     async assign(id) {
-        return postJson(`/waiting-list/${id}/assign`, {});
+        return api.post(`/waiting-list/${id}/assign`, {});
     },
 
     /** מחיקה (לא חובה) */
     async remove(id) {
-        return delJson(`/waiting-list/${id}`);
+        return api.delete(`/waiting-list/${id}`);
     },
 };
 

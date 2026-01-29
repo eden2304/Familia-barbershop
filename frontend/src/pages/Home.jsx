@@ -418,7 +418,7 @@ export default function Home() {
                   <h3 className="text-lg font-bold text-gray-800 mb-6">הישארו מעודכנים</h3>
                   <div className="flex justify-center gap-12">
                     <a
-                        href="https://www.instagram.com/familia_barbershop_/"
+                        href="https://www.instagram.com/familia.barber8?igsh=d3hpdDFkNTZ5dHRw"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-gray-500 hover:text-black transition-colors"

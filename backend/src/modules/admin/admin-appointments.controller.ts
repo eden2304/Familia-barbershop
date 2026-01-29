@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -100,5 +100,15 @@ export class AdminAppointmentsController {
                 client_phone: phone,
             };
         });
+    }
+
+    @Delete('appointments/:id')
+    async remove(@Param('id') id: string) {
+        if (!id) throw new BadRequestException('Missing id');
+        const result = await this.apptRepo.delete({ id });
+        if (!result.affected) {
+            throw new NotFoundException('Appointment not found');
+        }
+        return { ok: true, id };
     }
 }

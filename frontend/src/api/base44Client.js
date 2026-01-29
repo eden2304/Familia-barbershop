@@ -785,7 +785,7 @@ const api = {
 
     appointments: {
       async delete(id) {
-        return api.delete(`/admin/appointments/${id}`);
+        return httpDelete(`/admin/appointments/${id}`);
       },
       async createRecurring(id, intervalWeeks) {
         return httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, {

@@ -329,6 +329,7 @@ export default function Admin() { // Removed props
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
+  const [recurringConflictModal, setRecurringConflictModal] = useState({ isOpen: false, message: '', conflicts: [], hasMore: false });
 
   const [rescheduleData, setRescheduleData] = useState({ isOpen: false, appointment: null, service: null });
 
@@ -847,22 +848,32 @@ const describeRecurringSchedule = (recurring, clientId) => {
   const boundedWeekday = Number.isInteger(weekdayIndex) && weekdayIndex >= 0 && weekdayIndex < WEEKDAY_LABELS.length
       ? weekdayIndex
       : 0;
-  const dayLabel = WEEKDAY_LABELS[boundedWeekday];
   const timeLabel = recurring.start_time ?? recurring.startTime ?? '';
   const intervalWeeks = Number(recurring.intervalWeeks ?? recurring.interval_weeks ?? recurring.every ?? 1) || 1;
-  const intervalLabel = intervalWeeks === 1
-      ? 'כל שבוע'
-      : intervalWeeks === 2
-          ? 'כל שבועיים'
-          : `כל ${intervalWeeks} שבועות`;
+  const intervalMonths = Number(recurring.intervalMonths ?? recurring.interval_months ?? 0) || 0;
+  const usesMonthly = intervalMonths > 0;
+  const dayOfMonth = Number(recurring.day_of_month ?? recurring.dayOfMonth ?? recurring.day) || 0;
+  const dayLabel = usesMonthly
+      ? (dayOfMonth > 0 ? `${dayOfMonth} בחודש` : 'בחודש')
+      : WEEKDAY_LABELS[boundedWeekday];
+  const intervalLabel = usesMonthly
+      ? intervalMonths === 1
+          ? 'כל חודש'
+          : `כל ${intervalMonths} חודשים`
+      : intervalWeeks === 1
+          ? 'כל שבוע'
+          : intervalWeeks === 2
+              ? 'כל שבועיים'
+              : `כל ${intervalWeeks} שבועות`;
   const serviceLabel = recurring.service_name ?? recurring.serviceName ?? '';
   const id = getRecurringScheduleId(recurring);
-  const scheduleKey = id ?? `${clientId}-${boundedWeekday}-${timeLabel || '00:00'}`;
+  const scheduleKey = id ?? `${clientId}-${usesMonthly ? `month-${dayOfMonth}` : `week-${boundedWeekday}`}-${timeLabel || '00:00'}`;
   return {
     id,
     dayLabel,
     timeLabel,
     intervalWeeks,
+    intervalMonths,
     intervalLabel,
     serviceLabel,
     scheduleKey,
@@ -1066,8 +1077,36 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const formatRecurringConflict = (conflict) => {
+    if (!conflict) return '';
+    const startRaw = conflict.starts_at ?? conflict.startsAt ?? conflict.start_at ?? conflict.startAt ?? conflict.start;
+    let dateLabel = '';
+    let timeLabel = '';
+    if (startRaw) {
+      try {
+        const startDate = new Date(startRaw);
+        if (!Number.isNaN(startDate.getTime())) {
+          dateLabel = format(startDate, 'dd/MM/yyyy', { locale: he });
+          timeLabel = format(startDate, 'HH:mm');
+        }
+      } catch (_) {
+        dateLabel = String(startRaw);
+      }
+    }
+    const baseLabel = conflict.type === 'blocked'
+        ? `חסימה${conflict.reason ? `: ${conflict.reason}` : ''}`
+        : conflict.client_name || 'תור תפוס';
+    const serviceLabel = conflict.service_name ? ` · ${conflict.service_name}` : '';
+    const prefix = [dateLabel, timeLabel].filter(Boolean).join(' ');
+    return `${prefix ? `${prefix} · ` : ''}${baseLabel}${serviceLabel}`;
+  };
+
   const closeRecurringSuccessModal = () => {
     setRecurringSuccessModal({ isOpen: false, message: '', skippedDates: [] });
+  };
+
+  const closeRecurringConflictModal = () => {
+    setRecurringConflictModal({ isOpen: false, message: '', conflicts: [], hasMore: false });
   };
 
   const closeRecurringCancelModal = () => {
@@ -1127,36 +1166,30 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
-  const handleCreateRecurringAppointment = React.useCallback(async (appointment, intervalWeeks) => {
+  const handleCreateRecurringAppointment = React.useCallback(async (appointment, intervalConfig) => {
     if (!appointment?.id) return;
     try {
-      const response = await AdminApi.appointments.createRecurring(appointment.id, intervalWeeks);
+      const response = await AdminApi.appointments.createRecurring(appointment.id, intervalConfig);
       await loadData();
-      const skipped = Array.isArray(response?.skippedDates) ? response.skippedDates : [];
-      if (skipped.length > 0) {
-        const formatted = skipped.map((iso) => {
-          try {
-            return format(new Date(iso), 'dd/MM/yyyy', { locale: he });
-          } catch {
-            return iso;
-          }
-        });
-        setRecurringSuccessModal({
-          isOpen: true,
-          message: 'התור הקבוע נשמר, אך חלק מהתאריכים כבר תפוסים:',
-          skippedDates: formatted,
-        });
-      } else {
-        setRecurringSuccessModal({
-          isOpen: true,
-          message: 'תורים קבועים נקבעו בהצלחה!',
-          skippedDates: [],
-        });
-      }
+      setRecurringSuccessModal({
+        isOpen: true,
+        message: 'תורים קבועים נקבעו בהצלחה לחצי השנה הקרובה!',
+        skippedDates: [],
+      });
     } catch (error) {
       console.error('Failed to create recurring appointment', error);
-      const message = error?.payload?.message || error?.payload?.error || error?.message || 'יצירת התור הקבוע נכשלה. נסה שוב.';
-      alert(message);
+      const payload = error?.payload;
+      if (payload?.error === 'RECURRING_CONFLICT') {
+        setRecurringConflictModal({
+          isOpen: true,
+          message: payload?.message || 'לא ניתן לקבוע תור קבוע כי קיימים תורים מתנגשים.',
+          conflicts: Array.isArray(payload?.conflicts) ? payload.conflicts : [],
+          hasMore: Boolean(payload?.hasMore),
+        });
+      } else {
+        const message = payload?.message || payload?.error || error?.message || 'יצירת התור הקבוע נכשלה. נסה שוב.';
+        alert(message);
+      }
       throw error;
     }
   }, [loadData]);
@@ -3294,6 +3327,47 @@ const extractRecurringSchedules = (client) => {
                     </div>
                 )}
                 <Button className="w-full mt-6 rounded-full" onClick={closeRecurringSuccessModal}>
+                  סגור
+                </Button>
+              </motion.div>
+            </div>
+        )}
+
+        {recurringConflictModal.isOpen && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[110] p-4" onClick={closeRecurringConflictModal}>
+              <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                      <X className="w-6 h-6 text-red-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">לא ניתן לקבוע תור קבוע</h3>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={closeRecurringConflictModal} className="rounded-full">
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+                <p className="text-gray-700 text-sm leading-relaxed">{recurringConflictModal.message}</p>
+                {Array.isArray(recurringConflictModal.conflicts) && recurringConflictModal.conflicts.length > 0 && (
+                    <div className="mt-4 bg-red-50 rounded-2xl p-4">
+                      <p className="text-sm font-semibold text-red-700 mb-2">תורים מתנגשים:</p>
+                      <ul className="text-sm text-red-700 list-disc pr-5 space-y-1">
+                        {recurringConflictModal.conflicts.map((conflict, index) => (
+                            <li key={`${conflict.id ?? 'conflict'}-${index}`}>{formatRecurringConflict(conflict)}</li>
+                        ))}
+                      </ul>
+                      {recurringConflictModal.hasMore && (
+                          <p className="text-xs text-red-600 mt-2">יש עוד תורים מתנגשים מעבר לרשימה.</p>
+                      )}
+                    </div>
+                )}
+                <Button className="w-full mt-6 rounded-full" onClick={closeRecurringConflictModal}>
                   סגור
                 </Button>
               </motion.div>

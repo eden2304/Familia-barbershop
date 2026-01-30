@@ -209,9 +209,14 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
       </DialogHeader>
 
       <div className="space-y-4">
-        {[{ label: 'כל שבוע', value: 1 }, { label: 'כל שבועיים', value: 2 }, { label: 'כל שלושה שבועות', value: 3 }].map(({ label, value }) => (
+        {[
+          { label: 'כל שבוע', value: { unit: 'week', interval: 1 } },
+          { label: 'כל שבועיים', value: { unit: 'week', interval: 2 } },
+          { label: 'כל שלושה שבועות', value: { unit: 'week', interval: 3 } },
+          { label: 'כל חודש', value: { unit: 'month', interval: 1 } },
+        ].map(({ label, value }) => (
           <Button
-            key={value}
+            key={label}
             onClick={() => handleCreateRecurring(value)}
             className="w-full rounded-full py-3"
             disabled={creatingRecurring}

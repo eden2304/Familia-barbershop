@@ -787,10 +787,21 @@ const api = {
       async delete(id) {
         return httpDelete(`/admin/appointments/${id}`);
       },
-      async createRecurring(id, intervalWeeks) {
-        return httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, {
-          intervalWeeks,
-        });
+      async createRecurring(id, intervalConfig) {
+        const payload = {};
+        if (intervalConfig && typeof intervalConfig === 'object') {
+          const unit = String(intervalConfig.unit ?? intervalConfig.intervalUnit ?? '').toLowerCase();
+          const interval = Number(intervalConfig.interval ?? intervalConfig.value ?? intervalConfig.every);
+          if (unit === 'month' || unit === 'months' || unit === 'monthly') {
+            payload.intervalUnit = 'month';
+            payload.intervalMonths = Number.isFinite(interval) ? interval : 1;
+          } else {
+            payload.intervalWeeks = Number.isFinite(interval) ? interval : intervalConfig.intervalWeeks;
+          }
+        } else {
+          payload.intervalWeeks = intervalConfig;
+        }
+        return httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, payload);
       },
       async cancelRecurring(id) {
         return httpDelete(`/admin/recurring-appointments/${encodeURIComponent(id)}`);

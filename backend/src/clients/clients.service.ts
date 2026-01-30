@@ -1,10 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository, Not } from 'typeorm';
 import { Client } from './client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
-import { Appointment } from '../entities/appointment.entity';
+import { ensureRecurringSchema } from '../modules/appointments/recurring.helpers';
 
 function normalizePhone(p?: string) {
     if (!p) return '';
@@ -50,7 +50,10 @@ function toNumericId(raw: any): number | null {
 
 @Injectable()
 export class ClientsService {
-    constructor(@InjectRepository(Client) private repo: Repository<Client>) {}
+    constructor(
+        @InjectRepository(Client) private repo: Repository<Client>,
+        @InjectDataSource() private readonly ds: DataSource,
+    ) {}
 
     private async findByAnyId(candidate: any): Promise<Client | null> {
         if (candidate === undefined || candidate === null) return null;
@@ -197,35 +200,45 @@ export class ClientsService {
     }
 
     async findAllWithLastAppointment() {
-        // פתרון יציב: סאבאקוויריי שמחשב MAX(starts_at) לכל לקוח
-        const qb = this.repo.createQueryBuilder('c')
-            .leftJoin(
-                sub => sub
-                    // אם יש לך Appointment Entity אפשר להשתמש בו:
-                    // .from(Appointment, 'a')
-                    .from('appointments', 'a')
-                    .select('a.client_id', 'client_id')
-                    .addSelect('MAX(a.starts_at)', 'last_at')
-                    .groupBy('a.client_id'),
-                'la',
-                'la.client_id = c.id'
-            )
-            .addSelect('la.last_at', 'lastAppointmentAt')
-            .orderBy('c.id', 'DESC');
+        await ensureRecurringSchema(this.ds);
+        const rows = await this.ds.query(`
+            select c.id,
+                   c.first_name,
+                   c.last_name,
+                   c.phone,
+                   coalesce(c.is_member,false) as is_member,
+                   (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
+                   coalesce(json_agg(
+                       json_build_object(
+                         'id', r.id,
+                         'weekday', r.weekday,
+                         'start_time', r.start_time,
+                         'interval_weeks', r.interval_weeks,
+                         'interval_months', r.interval_months,
+                         'day_of_month', r.day_of_month,
+                         'service_id', r.service_id,
+                         'service_name', s.name
+                       )
+                   ) filter (where r.id is not null), '[]') as recurring
+            from clients c
+            left join recurring_appointments r on r.client_id = c.id
+            left join services s on s.id = r.service_id
+            group by c.id
+            order by c.id desc
+        `);
 
-        const { entities, raw } = await qb.getRawAndEntities();
-
-        return entities.map((c, i) => ({
-            id: c.id,
-            // נחזיר גם camel וגם snake כדי להתאים לכל הקומפוננטים
-            firstName:  (c as any).firstName ?? (c as any).first_name ?? '',
-            lastName:   (c as any).lastName  ?? (c as any).last_name  ?? '',
-            phone:      (c as any).phone     ?? '',
-            first_name: (c as any).first_name ?? (c as any).firstName ?? '',
-            last_name:  (c as any).last_name  ?? (c as any).lastName  ?? '',
-            isMember:   Boolean((c as any).isMember ?? (c as any).is_member ?? false),
-            is_member:  Boolean((c as any).is_member ?? (c as any).isMember ?? false),
-            lastAppointmentAt: raw[i]?.lastAppointmentAt ?? raw[i]?.la_last_at ?? null,
+        return (rows || []).map((r: any) => ({
+            id: r.id,
+            firstName: r.first_name || '',
+            lastName: r.last_name || '',
+            phone: r.phone || '',
+            first_name: r.first_name || '',
+            last_name: r.last_name || '',
+            isMember: Boolean(r.is_member),
+            is_member: Boolean(r.is_member),
+            lastAppointmentAt: r.last_appointment_at || null,
+            recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
+            recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
         }));
     }
 }

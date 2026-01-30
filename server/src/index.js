@@ -467,6 +467,17 @@ function formatHHmm(date) {
     const m = String(date.getMinutes()).padStart(2, '0');
     return `${h}:${m}`;
 }
+
+function addMonthsSafe(date, months) {
+    const base = new Date(date.getTime());
+    const targetMonth = base.getMonth() + months;
+    const targetDay = base.getDate();
+    base.setDate(1);
+    base.setMonth(targetMonth);
+    const daysInMonth = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    base.setDate(Math.min(targetDay, daysInMonth));
+    return base;
+}
 const DEFAULT_HOURS = [
     { weekday: 0, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
     { weekday: 1, open: '10:00', close: '19:00', slot: 30, slotIntervalMinutes: 30, isOpen: true },
@@ -669,12 +680,20 @@ async function ensureRecurringTable() {
                 weekday int not null,
                 start_time varchar(8) not null,
                 interval_weeks int not null default 1,
+                interval_months int,
+                day_of_month int,
                 created_at timestamptz not null default now()
             )
         `);
     }
 
-    await pool.query(`create unique index if not exists ux_recurring_unique on recurring_appointments (client_id, service_id, weekday, start_time)`);
+    await ensureColumn('recurring_appointments', 'interval_months', 'int');
+    await ensureColumn('recurring_appointments', 'day_of_month', 'int');
+    await pool.query(`drop index if exists ux_recurring_unique`);
+    await pool.query(`
+        create unique index if not exists ux_recurring_unique
+            on recurring_appointments (client_id, service_id, coalesce(interval_months, 0), coalesce(day_of_month, weekday), start_time)
+    `);
     recurringTableEnsured = true;
 }
 
@@ -1219,6 +1238,8 @@ async function router(req, res) {
                        'weekday', r.weekday,
                        'start_time', r.start_time,
                        'interval_weeks', r.interval_weeks,
+                       'interval_months', r.interval_months,
+                       'day_of_month', r.day_of_month,
                        'service_id', r.service_id,
                        'service_name', s.name
                      )
@@ -1627,10 +1648,24 @@ async function router(req, res) {
         }
 
         const body = await readBody(req).catch(() => ({}));
+        const intervalUnitRaw = body?.intervalUnit ?? body?.interval_unit ?? body?.unit;
         const intervalCandidate = body?.intervalWeeks ?? body?.interval ?? body?.every ?? body?.frequency;
-        const interval = Number(intervalCandidate);
-        if (!Number.isFinite(interval) || ![1, 2, 3].includes(Number(interval))) {
-            return json(res, 400, { error: 'INVALID_INTERVAL', message: 'ניתן לבחור כל שבוע, כל שבועיים או כל שלושה שבועות.' });
+        const intervalMonthsCandidate = body?.intervalMonths ?? body?.interval_months ?? body?.months;
+        const intervalUnit = typeof intervalUnitRaw === 'string' ? intervalUnitRaw.toLowerCase() : null;
+        const hasMonthlyUnit = intervalUnit && ['month', 'months', 'monthly'].includes(intervalUnit);
+        let intervalWeeks = Number(intervalCandidate);
+        let intervalMonths = Number(intervalMonthsCandidate);
+        const useMonths = hasMonthlyUnit || Number.isFinite(intervalMonths);
+
+        if (useMonths) {
+            intervalMonths = Number.isFinite(intervalMonths) ? intervalMonths : 1;
+            if (!Number.isFinite(intervalMonths) || intervalMonths !== 1) {
+                return json(res, 400, { error: 'INVALID_INTERVAL', message: 'ניתן לבחור חזרה חודשית בלבד.' });
+            }
+        } else {
+            if (!Number.isFinite(intervalWeeks) || ![1, 2, 3].includes(Number(intervalWeeks))) {
+                return json(res, 400, { error: 'INVALID_INTERVAL', message: 'ניתן לבחור כל שבוע, כל שבועיים או כל שלושה שבועות.' });
+            }
         }
 
         await ensureRecurringTable();
@@ -1651,26 +1686,146 @@ async function router(req, res) {
         }
 
         const durationMs = Math.max(end.getTime() - start.getTime(), 15 * 60 * 1000);
-        const intervalWeeks = Number(interval);
         const clientId = base.client_id;
         if (clientId == null) {
             return json(res, 400, { error: 'APPOINTMENT_HAS_NO_CLIENT', message: 'לא ניתן ליצור תור קבוע ללא לקוח משויך.' });
         }
         const scheduleWeekday = start.getDay();
+        const scheduleDayOfMonth = start.getDate();
         const scheduleTime = formatHHmm(start);
         let clientIsMember = false;
         const clientRes = await pool.query('select coalesce(is_member, false) as is_member from clients where id=$1 limit 1', [clientId]);
         clientIsMember = Boolean(clientRes.rows[0]?.is_member);
 
-        const scheduleRes = await pool.query(
-            `insert into recurring_appointments (client_id, service_id, weekday, start_time, interval_weeks)
-             values ($1,$2,$3,$4,$5)
-             on conflict (client_id, service_id, weekday, start_time)
-             do update set interval_weeks = excluded.interval_weeks
-             returning id`,
-            [clientId, base.service_id, scheduleWeekday, scheduleTime, intervalWeeks]
-        );
-        const recurringScheduleId = scheduleRes.rows[0]?.id ?? null;
+        const recurrenceEndDate = addMonthsSafe(start, 6);
+        const occurrences = [];
+        for (let occurrence = 1; occurrence <= MAX_RECURRING_OCCURRENCES; occurrence += 1) {
+            const candidateStart = useMonths
+                ? addMonthsSafe(start, occurrence * intervalMonths)
+                : new Date(start.getTime() + occurrence * intervalWeeks * 7 * 24 * 60 * 60 * 1000);
+            if (candidateStart >= recurrenceEndDate) {
+                break;
+            }
+            const candidateEnd = new Date(candidateStart.getTime() + durationMs);
+            occurrences.push({ start: candidateStart, end: candidateEnd });
+        }
+
+        const conflicts = [];
+        const conflictKeys = new Set();
+        let hasMoreConflicts = false;
+        const pushConflict = (key, payload) => {
+            if (conflictKeys.has(key)) return;
+            conflictKeys.add(key);
+            if (conflicts.length < 3) {
+                conflicts.push(payload);
+            } else {
+                hasMoreConflicts = true;
+            }
+        };
+
+        for (const occurrence of occurrences) {
+            const conflictRes = await pool.query(
+                `select a.id,
+                        a.starts_at,
+                        a.ends_at,
+                        c.first_name,
+                        c.last_name,
+                        s.name as service_name
+                 from appointments a
+                 left join clients c on c.id = a.client_id
+                 left join services s on s.id = a.service_id
+                 where a.starts_at < $2
+                   and a.ends_at > $1
+                   and coalesce(a.status, 'booked') <> 'canceled'`,
+                [occurrence.start, occurrence.end]
+            );
+
+            for (const row of conflictRes.rows) {
+                const name = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+                pushConflict(`appointment-${row.id}`, {
+                    type: 'appointment',
+                    id: row.id,
+                    starts_at: row.starts_at,
+                    ends_at: row.ends_at,
+                    client_name: name || null,
+                    service_name: row.service_name || null,
+                });
+            }
+
+            const blockRows = await pool.query(
+                `select id, start_at, end_at, reason, coalesce(members_only,false) as members_only
+                 from blocked_times
+                 where start_at < $2
+                   and end_at > $1`,
+                [occurrence.start, occurrence.end]
+            );
+            const blocking = blockRows.rows.filter((row) => !(row.members_only && clientIsMember));
+            for (const row of blocking) {
+                pushConflict(`blocked-${row.id}`, {
+                    type: 'blocked',
+                    id: row.id,
+                    starts_at: row.start_at,
+                    ends_at: row.end_at,
+                    reason: row.reason || null,
+                });
+            }
+
+            if (hasMoreConflicts && conflicts.length >= 3) {
+                break;
+            }
+        }
+
+        if (conflicts.length > 0) {
+            return json(res, 409, {
+                error: 'RECURRING_CONFLICT',
+                message: 'לא ניתן לקבוע תור קבוע כי קיימים תורים מתנגשים.',
+                conflicts,
+                hasMore: hasMoreConflicts,
+            });
+        }
+
+        const scheduleLookup = useMonths
+            ? await pool.query(
+                `select id from recurring_appointments
+                 where client_id = $1
+                   and service_id = $2
+                   and start_time = $3
+                   and interval_months = $4
+                   and day_of_month = $5
+                 limit 1`,
+                [clientId, base.service_id, scheduleTime, intervalMonths, scheduleDayOfMonth]
+            )
+            : await pool.query(
+                `select id from recurring_appointments
+                 where client_id = $1
+                   and service_id = $2
+                   and start_time = $3
+                   and interval_months is null
+                   and weekday = $4
+                 limit 1`,
+                [clientId, base.service_id, scheduleTime, scheduleWeekday]
+            );
+        let recurringScheduleId = scheduleLookup.rows[0]?.id ?? null;
+
+        if (recurringScheduleId) {
+            await pool.query(
+                `update recurring_appointments
+                 set interval_weeks = $1,
+                     interval_months = $2,
+                     day_of_month = $3,
+                     weekday = $4
+                 where id = $5`,
+                [useMonths ? 1 : intervalWeeks, useMonths ? intervalMonths : null, useMonths ? scheduleDayOfMonth : null, scheduleWeekday, recurringScheduleId]
+            );
+        } else {
+            const scheduleRes = await pool.query(
+                `insert into recurring_appointments (client_id, service_id, weekday, start_time, interval_weeks, interval_months, day_of_month)
+                 values ($1,$2,$3,$4,$5,$6,$7)
+                 returning id`,
+                [clientId, base.service_id, scheduleWeekday, scheduleTime, useMonths ? 1 : intervalWeeks, useMonths ? intervalMonths : null, useMonths ? scheduleDayOfMonth : null]
+            );
+            recurringScheduleId = scheduleRes.rows[0]?.id ?? null;
+        }
 
         if (recurringScheduleId && base.id != null) {
             await pool.query(`update appointments set recurring_id = $1 where id = $2`, [recurringScheduleId, base.id]);
@@ -1681,41 +1836,11 @@ async function router(req, res) {
         const baseStatus = base.status || 'booked';
         const baseNote = base.note ?? null;
 
-        const recurrenceEndDate = new Date(start.getTime());
-        recurrenceEndDate.setFullYear(recurrenceEndDate.getFullYear() + 1);
-
-        for (let occurrence = 1; occurrence <= MAX_RECURRING_OCCURRENCES; occurrence += 1) {
-            const offsetWeeks = occurrence * intervalWeeks;
-            const candidateStart = new Date(start.getTime() + offsetWeeks * 7 * 24 * 60 * 60 * 1000);
-            const candidateEnd = new Date(candidateStart.getTime() + durationMs);
-
-            if (candidateStart >= recurrenceEndDate) {
-                break;
-            }
-
-            const conflict = await pool.query(
-                `select 1 from appointments where starts_at < $2 and ends_at > $1 and coalesce(status, 'booked') <> 'canceled' limit 1`,
-                [candidateStart, candidateEnd]
-            );
-            if (conflict.rows.length > 0) {
-                skippedDates.push(candidateStart.toISOString());
-                continue;
-            }
-
-            const blockRows = await pool.query(
-                `select coalesce(members_only,false) as members_only from blocked_times where start_at < $2 and end_at > $1`,
-                [candidateStart, candidateEnd]
-            );
-            const hasBlocking = blockRows.rows.some((row) => !(row.members_only && clientIsMember));
-            if (hasBlocking) {
-                skippedDates.push(candidateStart.toISOString());
-                continue;
-            }
-
+        for (const occurrence of occurrences) {
             const ins = await pool.query(
                 `insert into appointments (service_id, client_id, starts_at, ends_at, status, note, recurring_id)
                  values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-                [base.service_id, clientId, candidateStart, candidateEnd, baseStatus, baseNote, recurringScheduleId]
+                [base.service_id, clientId, occurrence.start, occurrence.end, baseStatus, baseNote, recurringScheduleId]
             );
             if (ins.rows[0]?.id != null) {
                 createdIds.push(ins.rows[0].id);
@@ -1733,7 +1858,9 @@ async function router(req, res) {
                 service_id: base.service_id,
                 weekday: scheduleWeekday,
                 start_time: scheduleTime,
-                interval_weeks: intervalWeeks,
+                interval_weeks: useMonths ? null : intervalWeeks,
+                interval_months: useMonths ? intervalMonths : null,
+                day_of_month: useMonths ? scheduleDayOfMonth : null,
             },
         });
     }
@@ -1748,7 +1875,8 @@ async function router(req, res) {
         await ensureRecurringTable();
         const { sql, param } = idWhere('recurring_appointments', parsed);
         const scheduleRes = await pool.query(
-            `select id, client_id, service_id, weekday, start_time, interval_weeks from recurring_appointments where ${sql} limit 1`,
+            `select id, client_id, service_id, weekday, start_time, interval_weeks, interval_months, day_of_month
+             from recurring_appointments where ${sql} limit 1`,
             [param]
         );
         const schedule = scheduleRes.rows[0];
@@ -1759,6 +1887,7 @@ async function router(req, res) {
         await pool.query(`delete from recurring_appointments where ${sql}`, [param]);
 
         const scheduleTime = sanitizeBusinessTime(schedule.start_time ?? schedule.startTime ?? schedule.start ?? '');
+        const usesMonthly = Number(schedule.interval_months) > 0;
         let idsToCancel = [];
 
         if (schedule.id != null) {
@@ -1772,16 +1901,27 @@ async function router(req, res) {
         }
 
         if (idsToCancel.length === 0) {
-            const fallback = await pool.query(
-                `select id from appointments
-                 where client_id=$1
-                   and service_id=$2
-                   and starts_at >= now()
-                   and extract(dow from starts_at at time zone 'Asia/Jerusalem') = $3
-                   and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4
-                   and coalesce(status,'booked') <> 'canceled'`,
-                [schedule.client_id, schedule.service_id, schedule.weekday, scheduleTime]
-            );
+            const fallback = usesMonthly
+                ? await pool.query(
+                    `select id from appointments
+                     where client_id=$1
+                       and service_id=$2
+                       and starts_at >= now()
+                       and extract(day from starts_at at time zone 'Asia/Jerusalem') = $3
+                       and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4
+                       and coalesce(status,'booked') <> 'canceled'`,
+                    [schedule.client_id, schedule.service_id, schedule.day_of_month, scheduleTime]
+                )
+                : await pool.query(
+                    `select id from appointments
+                     where client_id=$1
+                       and service_id=$2
+                       and starts_at >= now()
+                       and extract(dow from starts_at at time zone 'Asia/Jerusalem') = $3
+                       and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4
+                       and coalesce(status,'booked') <> 'canceled'`,
+                    [schedule.client_id, schedule.service_id, schedule.weekday, scheduleTime]
+                );
             idsToCancel = fallback.rows
                 .map((row) => (row.id == null ? null : String(row.id)))
                 .filter(Boolean);

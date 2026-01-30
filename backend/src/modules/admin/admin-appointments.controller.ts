@@ -19,7 +19,7 @@ import { Roles } from '../auth/roles.decorator';
 import { DateTime } from 'luxon';
 
 import { Appointment } from '../../entities/appointment.entity';
-import { addMonthsSafe, ensureRecurringSchema, formatHHmm, MAX_RECURRING_OCCURRENCES } from '../appointments/recurring.helpers';
+import { ensureRecurringSchema, MAX_RECURRING_OCCURRENCES } from '../appointments/recurring.helpers';
 
 function normDate(date: string): string {
     if (!date) throw new BadRequestException('date is required');
@@ -170,9 +170,10 @@ export class AdminAppointmentsController {
             throw new BadRequestException('לא ניתן ליצור תור קבוע ללא לקוח משויך.');
         }
 
-        const scheduleWeekday = start.getDay();
-        const scheduleDayOfMonth = start.getDate();
-        const scheduleTime = formatHHmm(start);
+        const localStart = DateTime.fromJSDate(start, { zone: 'utc' }).setZone('Asia/Jerusalem');
+        const scheduleWeekday = localStart.weekday % 7;
+        const scheduleDayOfMonth = localStart.day;
+        const scheduleTime = localStart.toFormat('HH:mm');
 
         const clientRows = await this.ds.query(
             'select coalesce(is_member,false) as is_member from clients where id = $1 limit 1',
@@ -180,13 +181,14 @@ export class AdminAppointmentsController {
         );
         const clientIsMember = Boolean(clientRows?.[0]?.is_member);
 
-        const recurrenceEndDate = addMonthsSafe(start, 6);
+        const recurrenceEndDate = localStart.plus({ months: 6 });
         const occurrences: Array<{ start: Date; end: Date }> = [];
         for (let occurrence = 1; occurrence <= MAX_RECURRING_OCCURRENCES; occurrence += 1) {
-            const candidateStart = useMonths
-                ? addMonthsSafe(start, occurrence * intervalMonths)
-                : new Date(start.getTime() + occurrence * intervalWeeks * 7 * 24 * 60 * 60 * 1000);
-            if (candidateStart >= recurrenceEndDate) break;
+            const candidateLocal = useMonths
+                ? localStart.plus({ months: occurrence * intervalMonths })
+                : localStart.plus({ weeks: occurrence * intervalWeeks });
+            if (candidateLocal >= recurrenceEndDate) break;
+            const candidateStart = candidateLocal.toUTC().toJSDate();
             occurrences.push({ start: candidateStart, end: new Date(candidateStart.getTime() + durationMs) });
         }
 
@@ -358,42 +360,23 @@ export class AdminAppointmentsController {
 
         const scheduleTime = schedule.start_time;
         const usesMonthly = Number(schedule.interval_months) > 0;
-        let idsToCancel: string[] = [];
-
-        const linkedRows = await this.ds.query(
-            `select id from appointments where recurring_id = $1`,
-            [schedule.id],
+        const matchClause = usesMonthly
+            ? `extract(day from starts_at at time zone 'Asia/Jerusalem') = $3`
+            : `extract(dow from starts_at at time zone 'Asia/Jerusalem') = $3`;
+        const matchValue = usesMonthly ? schedule.day_of_month : schedule.weekday;
+        const rowsToCancel = await this.ds.query(
+            `select id from appointments
+             where (recurring_id = $1)
+                or (
+                    client_id = $2
+                    and service_id = $4
+                    and starts_at >= now()
+                    and ${matchClause}
+                    and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $5
+                )`,
+            [schedule.id, schedule.client_id, matchValue, schedule.service_id, scheduleTime],
         );
-        idsToCancel = (linkedRows || []).map((row: any) => row.id).filter(Boolean);
-
-        if (idsToCancel.length === 0) {
-            const fallbackRows = usesMonthly
-                ? await this.ds.query(
-                    `select id from appointments
-                     where client_id = $1
-                       and service_id = $2
-                       and starts_at >= now()
-                       and extract(day from starts_at at time zone 'Asia/Jerusalem') = $3
-                       and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4`,
-                    [schedule.client_id, schedule.service_id, schedule.day_of_month, scheduleTime],
-                )
-                : await this.ds.query(
-                    `select id from appointments
-                     where client_id = $1
-                       and service_id = $2
-                       and starts_at >= now()
-                       and extract(dow from starts_at at time zone 'Asia/Jerusalem') = $3
-                       and to_char(starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') = $4`,
-                    [schedule.client_id, schedule.service_id, schedule.weekday, scheduleTime],
-                );
-            idsToCancel = (fallbackRows || []).map((row: any) => row.id).filter(Boolean);
-            if (idsToCancel.length > 0) {
-                await this.ds.query(
-                    `update appointments set recurring_id = $1 where id = any($2::uuid[])`,
-                    [schedule.id, idsToCancel],
-                );
-            }
-        }
+        const idsToCancel = (rowsToCancel || []).map((row: any) => row.id).filter(Boolean);
 
         if (idsToCancel.length > 0) {
             await this.ds.query(`delete from appointments where id = any($1::uuid[])`, [idsToCancel]);

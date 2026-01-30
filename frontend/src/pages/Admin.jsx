@@ -269,6 +269,8 @@ export default function Admin() { // Removed props
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
   const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
   const [cancelingAppointmentId, setCancelingAppointmentId] = useState(null);
+  const [clientDetailsAppointmentsData, setClientDetailsAppointmentsData] = useState([]);
+  const [clientDetailsLoading, setClientDetailsLoading] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -277,6 +279,7 @@ export default function Admin() { // Removed props
   const [activeTab, setActiveTab] = useState("appointments");
 
   const [showQuickActionsModal, setShowQuickActionsModal] = useState(false);
+  const [showClientQuickActionsModal, setShowClientQuickActionsModal] = useState(false);
   const [showClientImportModal, setShowClientImportModal] = useState(false);
   const [clientImportFile, setClientImportFile] = useState(null);
   const [clientImportRows, setClientImportRows] = useState([]);
@@ -1384,9 +1387,21 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const loadClientDetailsAppointments = async (client) => {
+    if (!client) return;
+    setClientDetailsLoading(true);
+    try {
+      const list = await Appointment.list().catch(() => []);
+      setClientDetailsAppointmentsData(Array.isArray(list) ? list : []);
+    } finally {
+      setClientDetailsLoading(false);
+    }
+  };
+
   const openClientDetails = (client) => {
     if (!client) return;
     setClientDetailsModal({ isOpen: true, client });
+    loadClientDetailsAppointments(client);
   };
 
   const closeClientDetailsModal = () => {
@@ -1422,6 +1437,9 @@ const extractRecurringSchedules = (client) => {
         description: startsLabel ? `התור ל-${startsLabel} בוטל בהצלחה.` : 'התור בוטל בהצלחה.',
       });
       await loadData();
+      if (clientDetailsModal.client) {
+        await loadClientDetailsAppointments(clientDetailsModal.client);
+      }
     } catch (error) {
       console.error('Failed to cancel appointment', error);
       const description = error?.payload?.message || error?.payload?.error || error?.message || 'ביטול התור נכשל. נסה שוב.';
@@ -1686,12 +1704,12 @@ const extractRecurringSchedules = (client) => {
     });
   }, [allClients, appointments]);
 
-  const getClientAppointments = React.useCallback((client) => {
+  const getClientAppointments = React.useCallback((client, sourceAppointments = appointments) => {
     if (!client) return [];
     const clientId = client.id ?? client.client_id ?? null;
     const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
     const now = new Date();
-    return (appointments || [])
+    return (sourceAppointments || [])
         .filter((apt) => {
           if (!apt) return false;
           const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
@@ -1719,8 +1737,8 @@ const extractRecurringSchedules = (client) => {
 
   const clientDetailsAppointments = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
-    return getClientAppointments(clientDetailsModal.client);
-  }, [clientDetailsModal.client, getClientAppointments]);
+    return getClientAppointments(clientDetailsModal.client, clientDetailsAppointmentsData);
+  }, [clientDetailsModal.client, clientDetailsAppointmentsData, getClientAppointments]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -2316,17 +2334,8 @@ const extractRecurringSchedules = (client) => {
                 {activeTab === 'clients' && (
                     <div className="relative">
                       <Card className="bg-white rounded-2xl shadow-sm">
-                        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <CardHeader>
                           <CardTitle>רשימת לקוחות</CardTitle>
-                          <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setShowClientImportModal(true)}
-                              className="rounded-full"
-                          >
-                            <Plus className="w-4 h-4 ml-2" />
-                            ייבוא אקסל
-                          </Button>
                         </CardHeader>
                         <CardContent>
                           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
@@ -2480,12 +2489,49 @@ const extractRecurringSchedules = (client) => {
                       </Card>
                       <div className="fixed bottom-24 right-6 z-30">
                         <Button
-                            onClick={() => setShowClientForm(true)}
+                            onClick={() => setShowClientQuickActionsModal(true)}
                             className="w-12 h-12 rounded-full bg-black hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
                         >
                           <Plus className="w-6 h-6" />
                         </Button>
                       </div>
+                    </div>
+                )}
+
+                {showClientQuickActionsModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowClientQuickActionsModal(false)}>
+                      <motion.div
+                          initial={{ scale: 0.9, opacity: 0, y: 30 }}
+                          animate={{ scale: 1, opacity: 1, y: 0 }}
+                          exit={{ scale: 0.9, opacity: 0, y: 30 }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl mx-auto"
+                      >
+                        <div className="text-center mb-6">
+                          <h3 className="text-xl font-bold text-gray-900">פעולות לקוחות</h3>
+                          <p className="text-gray-600 text-sm mt-1">מה תרצה לעשות?</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-center">
+                          {[
+                            { label: "הוסף לקוח", icon: Plus, action: () => { setShowClientQuickActionsModal(false); setShowClientForm(true); } },
+                            { label: "ייבוא מאקסל", icon: Upload, action: () => { setShowClientQuickActionsModal(false); setShowClientImportModal(true); } },
+                          ].map(item => (
+                              <div key={item.label} onClick={item.action} className="p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 cursor-pointer transition-colors flex flex-col items-center justify-center space-y-2">
+                                <item.icon className="w-8 h-8 text-gray-700" />
+                                <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                              </div>
+                          ))}
+                        </div>
+
+                        <Button
+                            onClick={() => setShowClientQuickActionsModal(false)}
+                            variant="outline"
+                            className="w-full mt-6 rounded-full py-3"
+                        >
+                          סגור
+                        </Button>
+                      </motion.div>
                     </div>
                 )}
 
@@ -3204,14 +3250,6 @@ const extractRecurringSchedules = (client) => {
                     { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                     { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
                     { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
-                    ...(activeTab === 'clients' ? [{
-                      label: "ייבוא אקסל",
-                      icon: Upload,
-                      action: () => {
-                        setShowQuickActionsModal(false);
-                        setShowClientImportModal(true);
-                      },
-                    }] : []),
                     { label: "בקשות לביטול", icon: XCircle, action: () => {
                         setShowQuickActionsModal(false);
                         alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
@@ -3462,7 +3500,9 @@ const extractRecurringSchedules = (client) => {
                         <h4 className="text-sm font-semibold text-gray-800">התורים הקרובים</h4>
                         <span className="text-xs text-gray-500">{upcomingCount === 0 ? 'אין תורים עתידיים' : `${upcomingCount} תורים`}</span>
                       </div>
-                      {clientDetailsAppointments.length === 0 ? (
+                      {clientDetailsLoading ? (
+                          <p className="text-sm text-gray-500">טוען תורים עתידיים…</p>
+                      ) : clientDetailsAppointments.length === 0 ? (
                           <p className="text-sm text-gray-500">אין תורים להצגה.</p>
                       ) : (
                           <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">

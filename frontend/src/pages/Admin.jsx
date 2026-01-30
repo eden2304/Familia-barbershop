@@ -277,6 +277,11 @@ export default function Admin() { // Removed props
   const [activeTab, setActiveTab] = useState("appointments");
 
   const [showQuickActionsModal, setShowQuickActionsModal] = useState(false);
+  const [showClientImportModal, setShowClientImportModal] = useState(false);
+  const [clientImportFile, setClientImportFile] = useState(null);
+  const [clientImportRows, setClientImportRows] = useState([]);
+  const [clientImportSummary, setClientImportSummary] = useState({ total: 0, valid: 0, skipped: 0 });
+  const [clientImportLoading, setClientImportLoading] = useState(false);
   const isPhoneLike = (value) => {
     const digits = String(value ?? '').replace(/\D/g, '');
     return digits.length >= 7;
@@ -1426,6 +1431,147 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const resetClientImportState = () => {
+    setClientImportFile(null);
+    setClientImportRows([]);
+    setClientImportSummary({ total: 0, valid: 0, skipped: 0 });
+  };
+
+  const isLikelyHeaderRow = (row = []) => {
+    const values = row.map((cell) => String(cell ?? '').trim().toLowerCase());
+    if (values.length === 0) return false;
+    const headerHints = ['שם', 'משפחה', 'טלפון', 'phone', 'first', 'last', 'surname'];
+    const hitCount = values.filter((value) => headerHints.some((hint) => value.includes(hint))).length;
+    return hitCount >= 2;
+  };
+
+  const loadXlsxModule = async () => {
+    try {
+      const module = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      return module;
+    } catch (error) {
+      console.warn('XLSX module failed to load', error);
+      return null;
+    }
+  };
+
+  const parseClientImportFile = async (file) => {
+    if (!file) return;
+    try {
+      let rows = [];
+      const name = file.name.toLowerCase();
+      const isCsv = name.endsWith('.csv');
+      if (isCsv) {
+        const text = await file.text();
+        rows = text
+            .split(/\r?\n/)
+            .map((line) => line.split(',').map((cell) => String(cell ?? '').trim()))
+            .filter((row) => row.some((cell) => cell !== ''));
+      } else {
+        const xlsxModule = await loadXlsxModule();
+        if (!xlsxModule?.read) {
+          toast({
+            title: 'לא ניתן לקרוא את הקובץ',
+            description: 'אם זה קובץ אקסל, נסה לשמור אותו כ-CSV ולייבא שוב.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        const buffer = await file.arrayBuffer();
+        const workbook = xlsxModule.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames?.[0];
+        if (!sheetName) {
+          toast({ title: 'לא נמצא גיליון בקובץ', variant: 'destructive' });
+          return;
+        }
+        const sheet = workbook.Sheets[sheetName];
+        rows = xlsxModule.utils.sheet_to_json(sheet, { header: 1, blankrows: false, raw: false });
+      }
+      let startIndex = 0;
+      if (rows.length > 0 && isLikelyHeaderRow(rows[0])) {
+        startIndex = 1;
+      }
+
+      const existingPhones = new Set(
+          (allClients || [])
+              .map((client) => normalizePhone(client.phone ?? client.client_phone ?? ""))
+              .filter(Boolean)
+      );
+
+      const mapped = [];
+      let skipped = 0;
+      for (let i = startIndex; i < rows.length; i += 1) {
+        const row = rows[i] || [];
+        const first = String(row[0] ?? '').trim();
+        const last = String(row[1] ?? '').trim();
+        const phoneValue = String(row[2] ?? '').trim();
+        if (!first && !last && !phoneValue) continue;
+        const normalizedPhone = normalizePhone(phoneValue);
+        if (!normalizedPhone || normalizedPhone.length < 7 || existingPhones.has(normalizedPhone)) {
+          skipped += 1;
+          continue;
+        }
+        mapped.push({
+          first_name: first,
+          last_name: last,
+          phone: normalizedPhone,
+          rowIndex: i + 1,
+        });
+        existingPhones.add(normalizedPhone);
+      }
+
+      setClientImportRows(mapped);
+      setClientImportSummary({ total: rows.length - startIndex, valid: mapped.length, skipped });
+      if (mapped.length === 0) {
+        toast({ title: 'לא נמצאו לקוחות תקינים לייבוא', description: 'בדוק שהעמודות מסודרות (שם פרטי, שם משפחה, טלפון).' });
+      }
+    } catch (error) {
+      console.error('Failed to parse client import file', error);
+      toast({ title: 'שגיאה בקריאת הקובץ', description: 'בדוק שהקובץ הוא אקסל תקין.', variant: 'destructive' });
+    }
+  };
+
+  const handleClientImportFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setClientImportFile(file);
+    await parseClientImportFile(file);
+  };
+
+  const handleImportClients = async () => {
+    if (clientImportRows.length === 0) {
+      toast({ title: 'אין לקוחות לייבוא', description: 'בחר קובץ אקסל תקין עם עמודות שם פרטי, שם משפחה, טלפון.' });
+      return;
+    }
+    setClientImportLoading(true);
+    let success = 0;
+    let failed = 0;
+
+    for (const row of clientImportRows) {
+      try {
+        await Client.create({
+          first_name: row.first_name,
+          last_name: row.last_name,
+          phone: row.phone,
+          is_member: false,
+        });
+        success += 1;
+      } catch (error) {
+        failed += 1;
+        console.error('Failed to import client', row, error);
+      }
+    }
+
+    await loadData();
+    setClientImportLoading(false);
+    toast({
+      title: 'ייבוא הושלם',
+      description: `נוספו ${success} לקוחות.${failed ? ` נכשלו ${failed}.` : ''}`,
+    });
+    setShowClientImportModal(false);
+    resetClientImportState();
+  };
+
   // Admin.jsx – ליד שאר העזרים, מעל handleAddAppointment
   const safeCreateClient = async ({ first_name = "", last_name = "", phone = "" }) => {
     const payload = { first_name, last_name, phone: normalizePhone(phone) };
@@ -2170,8 +2316,17 @@ const extractRecurringSchedules = (client) => {
                 {activeTab === 'clients' && (
                     <div className="relative">
                       <Card className="bg-white rounded-2xl shadow-sm">
-                        <CardHeader>
+                        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <CardTitle>רשימת לקוחות</CardTitle>
+                          <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowClientImportModal(true)}
+                              className="rounded-full"
+                          >
+                            <Plus className="w-4 h-4 ml-2" />
+                            ייבוא אקסל
+                          </Button>
                         </CardHeader>
                         <CardContent>
                           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
@@ -3049,6 +3204,14 @@ const extractRecurringSchedules = (client) => {
                     { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                     { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
                     { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
+                    ...(activeTab === 'clients' ? [{
+                      label: "ייבוא אקסל",
+                      icon: Upload,
+                      action: () => {
+                        setShowQuickActionsModal(false);
+                        setShowClientImportModal(true);
+                      },
+                    }] : []),
                     { label: "בקשות לביטול", icon: XCircle, action: () => {
                         setShowQuickActionsModal(false);
                         alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
@@ -3068,6 +3231,98 @@ const extractRecurringSchedules = (client) => {
                 >
                   סגור
                 </Button>
+              </motion.div>
+            </div>
+        )}
+
+        {showClientImportModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => { setShowClientImportModal(false); resetClientImportState(); }}>
+              <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl mx-auto"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-gray-900">ייבוא לקוחות מאקסל</h3>
+                  <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => { setShowClientImportModal(false); resetClientImportState(); }}
+                      className="rounded-full"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                    <p className="font-semibold text-gray-800 mb-2">פורמט קובץ:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>עמודה 1: שם פרטי</li>
+                      <li>עמודה 2: שם משפחה</li>
+                      <li>עמודה 3: מספר טלפון</li>
+                    </ul>
+                    <p className="mt-2 text-xs text-gray-500">אפשר גם לייצא מאקסל כ-CSV ולייבא כאן.</p>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-semibold text-gray-800">בחר קובץ אקסל</Label>
+                    <Input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="mt-2"
+                        onChange={handleClientImportFileChange}
+                    />
+                    {clientImportFile && (
+                        <p className="mt-2 text-xs text-gray-500">קובץ נבחר: {clientImportFile.name}</p>
+                    )}
+                  </div>
+
+                  {clientImportSummary.total > 0 && (
+                      <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
+                        <p>סה״כ שורות: {clientImportSummary.total}</p>
+                        <p>לקוחות מוכנים לייבוא: {clientImportSummary.valid}</p>
+                        <p>דולגו (מספר חסר/כפול): {clientImportSummary.skipped}</p>
+                      </div>
+                  )}
+
+                  {clientImportRows.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-gray-800">תצוגה מקדימה:</p>
+                        <div className="max-h-40 overflow-y-auto space-y-2">
+                          {clientImportRows.slice(0, 5).map((row) => (
+                              <div key={`${row.phone}-${row.rowIndex}`} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                                <p className="font-semibold text-gray-900">{`${row.first_name} ${row.last_name}`.trim() || 'ללא שם'}</p>
+                                <p>{row.phone}</p>
+                              </div>
+                          ))}
+                          {clientImportRows.length > 5 && (
+                              <p className="text-xs text-gray-500">ועוד {clientImportRows.length - 5} לקוחות...</p>
+                          )}
+                        </div>
+                      </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <Button
+                      variant="outline"
+                      className="flex-1 rounded-full"
+                      onClick={() => { setShowClientImportModal(false); resetClientImportState(); }}
+                      disabled={clientImportLoading}
+                  >
+                    ביטול
+                  </Button>
+                  <Button
+                      className="flex-1 bg-black text-white rounded-full"
+                      onClick={handleImportClients}
+                      disabled={clientImportLoading || clientImportRows.length === 0}
+                  >
+                    {clientImportLoading ? 'מייבא...' : 'הוסף לקוחות'}
+                  </Button>
+                </div>
               </motion.div>
             </div>
         )}

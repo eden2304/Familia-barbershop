@@ -1606,8 +1606,9 @@ const extractRecurringSchedules = (client) => {
       setClientDetailsAppointmentsAll([]);
       return;
     }
+    const clientId = client.id ?? client.client_id ?? null;
     const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
-    if (!normalizedPhone) {
+    if (!clientId && !normalizedPhone) {
       setClientDetailsAppointmentsAll(getClientAppointments(client));
       return;
     }
@@ -1615,7 +1616,9 @@ const extractRecurringSchedules = (client) => {
       setClientDetailsAppointmentsLoading(true);
       setClientDetailsAppointmentsError(null);
       const phoneParam = encodeURIComponent(normalizedPhone);
-      const res = await api.get(`/clients/me/appointments?phone=${phoneParam}`);
+      const res = clientId
+          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=true`)
+          : await api.get(`/clients/me/appointments?phone=${phoneParam}`);
       const rows = Array.isArray(res) ? res : (res?.data ?? []);
       const normalizedRows = normalizeAppointmentRows(rows || []);
       setClientDetailsAppointmentsAll(filterAppointmentsForClient(normalizedRows, client));

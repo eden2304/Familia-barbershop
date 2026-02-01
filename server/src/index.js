@@ -1509,6 +1509,31 @@ async function router(req, res) {
         return json(res, 200, rows.map(compatAppointmentRow));
     }
 
+    if (req.method === 'GET' && pathname.startsWith('/admin/clients/') && pathname.endsWith('/appointments')) {
+        const parts = pathname.split('/').filter(Boolean);
+        const clientId = parts[2];
+        if (!clientId) return json(res, 400, { error: 'MISSING_CLIENT_ID' });
+
+        const parsed = parseId(clientId);
+        const { sql, param } = idWhere('c', parsed);
+        const futureOnly = parseBoolean(url.searchParams.get('future'), true);
+        const now = new Date();
+
+        const q = await pool.query(`
+            select a.id, a.starts_at, a.ends_at, a.status, a.note,
+                   s.id as service_id, s.name as service_name, s.duration_minutes,
+                   c.id as client_id, c.first_name, c.last_name, c.phone
+            from appointments a
+                     left join services s on s.id=a.service_id
+                     left join clients c  on c.id=a.client_id
+            where ${sql}
+              ${futureOnly ? "and a.starts_at > $2 and coalesce(a.status,'') <> 'canceled'" : ""}
+            order by a.starts_at asc
+        `, futureOnly ? [param, now] : [param]);
+
+        return json(res, 200, q.rows.map(compatAppointmentRow));
+    }
+
     if (req.method === 'POST' && pathname === '/appointments') {
         const body = await readBody(req);
 

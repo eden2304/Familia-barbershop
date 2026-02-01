@@ -1610,20 +1610,8 @@ const extractRecurringSchedules = (client) => {
       setClientDetailsAppointmentsLoading(true);
       setClientDetailsAppointmentsError(null);
       const phoneParam = encodeURIComponent(normalizedPhone);
-      const tryFetch = async (path) => {
-        const res = await api.get(path);
-        return Array.isArray(res) ? res : (res?.data ?? []);
-      };
-      let rows = [];
-      try {
-        rows = await tryFetch(`/admin/appointments?phone=${phoneParam}`);
-      } catch (_) {
-        try {
-          rows = await tryFetch(`/appointments?phone=${phoneParam}`);
-        } catch (error) {
-          rows = await tryFetch(`/clients/me/appointments?phone=${phoneParam}`);
-        }
-      }
+      const res = await api.get(`/clients/me/appointments?phone=${phoneParam}`);
+      const rows = Array.isArray(res) ? res : (res?.data ?? []);
       setClientDetailsAppointmentsAll(normalizeAppointmentRows(rows || []));
     } catch (error) {
       console.error('Failed to load client appointments', error);

@@ -21,6 +21,16 @@ import { DateTime } from 'luxon';
 import { Appointment } from '../../entities/appointment.entity';
 import { ensureRecurringSchema, MAX_RECURRING_OCCURRENCES } from '../appointments/recurring.helpers';
 
+function parseBoolean(value: any, fallback = false): boolean {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const norm = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(norm)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(norm)) return false;
+    return fallback;
+}
+
 function normDate(date: string): string {
     if (!date) throw new BadRequestException('date is required');
     if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -125,6 +135,48 @@ export class AdminAppointmentsController {
             throw new NotFoundException('Appointment not found');
         }
         return { ok: true, id };
+    }
+
+    @Get('clients/:id/appointments')
+    async listClientAppointments(@Param('id') id: string, @Query('future') future: string) {
+        if (!id) throw new BadRequestException('Missing client id');
+        const futureOnly = parseBoolean(future, true);
+        const now = new Date();
+
+        const rows = await this.ds.query(
+            `
+            select a.id, a.starts_at, a.ends_at, a.status, a.note,
+                   s.id as service_id, s.name as service_name, s.duration_minutes,
+                   c.id as client_id, c.first_name, c.last_name, c.phone
+            from appointments a
+                     left join services s on s.id=a.service_id
+                     left join clients c  on c.id=a.client_id
+            where a.client_id = $1
+              ${futureOnly ? "and a.starts_at > $2 and coalesce(a.status,'') <> 'canceled'" : ""}
+            order by a.starts_at asc
+            `,
+            futureOnly ? [id, now] : [id],
+        );
+
+        return rows.map((a: any) => {
+            const clientName = [a?.first_name, a?.last_name].filter(Boolean).join(' ').trim();
+            return {
+                id: a.id,
+                status: a.status ?? 'booked',
+
+                startsAt: a.starts_at,
+                endsAt: a.ends_at,
+                serviceId: a.service_id,
+                clientName,
+                phone: a.phone ?? '',
+
+                starts_at: a.starts_at,
+                ends_at: a.ends_at,
+                service_id: a.service_id,
+                client_name: clientName,
+                client_phone: a.phone ?? '',
+            };
+        });
     }
 
     @Post('appointments/:id/recurring')

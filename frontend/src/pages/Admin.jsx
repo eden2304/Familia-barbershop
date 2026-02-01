@@ -268,6 +268,9 @@ export default function Admin() { // Removed props
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
   const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
+  const [clientDetailsAppointmentsAll, setClientDetailsAppointmentsAll] = useState([]);
+  const [clientDetailsAppointmentsLoading, setClientDetailsAppointmentsLoading] = useState(false);
+  const [clientDetailsAppointmentsError, setClientDetailsAppointmentsError] = useState(null);
   const [cancelingAppointmentId, setCancelingAppointmentId] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -1417,6 +1420,9 @@ const extractRecurringSchedules = (client) => {
         description: startsLabel ? `התור ל-${startsLabel} בוטל בהצלחה.` : 'התור בוטל בהצלחה.',
       });
       await loadData();
+      if (clientDetailsModal?.isOpen && clientDetailsModal?.client) {
+        await fetchClientAppointments(clientDetailsModal.client);
+      }
     } catch (error) {
       console.error('Failed to cancel appointment', error);
       const description = error?.payload?.message || error?.payload?.error || error?.message || 'ביטול התור נכשל. נסה שוב.';
@@ -1540,22 +1546,24 @@ const extractRecurringSchedules = (client) => {
     });
   }, [allClients, appointments]);
 
-  const getClientAppointments = React.useCallback((client) => {
-    if (!client) return [];
-    const clientId = client.id ?? client.client_id ?? null;
-    const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
+  const normalizeAppointmentRows = React.useCallback((items = []) => {
+    return (items || []).map((apt) => {
+      if (!apt || typeof apt !== 'object') return apt;
+      return {
+        ...apt,
+        starts_at: apt.starts_at ?? apt.startsAt ?? null,
+        ends_at: apt.ends_at ?? apt.endsAt ?? null,
+        service_id: apt.service_id ?? apt.serviceId ?? null,
+        client_phone: apt.client_phone ?? apt.phone ?? apt.client?.phone ?? null,
+      };
+    });
+  }, []);
+
+  const filterUpcomingAppointments = React.useCallback((items = []) => {
     const now = new Date();
-    return (appointments || [])
+    return (items || [])
         .filter((apt) => {
           if (!apt) return false;
-          const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
-          if (clientId && aptClientId && String(aptClientId) === String(clientId)) {
-            return true;
-          }
-          const aptPhone = normalizePhone(apt.client_phone ?? apt.phone ?? apt.client?.phone ?? "");
-          return Boolean(normalizedPhone && aptPhone && aptPhone === normalizedPhone);
-        })
-        .filter((apt) => {
           if (apt?.status === 'canceled') return false;
           if (!apt?.starts_at) return false;
           try {
@@ -1569,12 +1577,78 @@ const extractRecurringSchedules = (client) => {
           const timeB = b?.starts_at ? new Date(b.starts_at).getTime() : 0;
           return timeA - timeB;
         });
-  }, [appointments]);
+  }, []);
+
+  const filterAppointmentsForClient = React.useCallback((items = [], client) => {
+    if (!client) return [];
+    const clientId = client.id ?? client.client_id ?? null;
+    const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
+    return (items || [])
+        .filter((apt) => {
+          if (!apt) return false;
+          const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
+          if (clientId && aptClientId && String(aptClientId) === String(clientId)) {
+            return true;
+          }
+          const aptPhone = normalizePhone(apt.client_phone ?? apt.phone ?? apt.client?.phone ?? "");
+          return Boolean(normalizedPhone && aptPhone && aptPhone === normalizedPhone);
+        });
+  }, []);
+
+  const getClientAppointments = React.useCallback((client) => {
+    if (!client) return [];
+    const forClient = filterAppointmentsForClient(appointments || [], client);
+    return normalizeAppointmentRows(forClient);
+  }, [appointments, filterAppointmentsForClient, normalizeAppointmentRows]);
+
+  const fetchClientAppointments = React.useCallback(async (client) => {
+    if (!client) {
+      setClientDetailsAppointmentsAll([]);
+      return;
+    }
+    const clientId = client.id ?? client.client_id ?? null;
+    const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
+    if (!clientId && !normalizedPhone) {
+      setClientDetailsAppointmentsAll(getClientAppointments(client));
+      return;
+    }
+    try {
+      setClientDetailsAppointmentsLoading(true);
+      setClientDetailsAppointmentsError(null);
+      const phoneParam = encodeURIComponent(normalizedPhone);
+      const res = clientId
+          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=true`)
+          : await api.get(`/clients/me/appointments?phone=${phoneParam}`);
+      const rows = Array.isArray(res) ? res : (res?.data ?? []);
+      const normalizedRows = normalizeAppointmentRows(rows || []);
+      setClientDetailsAppointmentsAll(filterAppointmentsForClient(normalizedRows, client));
+    } catch (error) {
+      console.error('Failed to load client appointments', error);
+      setClientDetailsAppointmentsAll(normalizeAppointmentRows(getClientAppointments(client)));
+      setClientDetailsAppointmentsError('לא ניתן לטעון תורים. נסה שוב.');
+    } finally {
+      setClientDetailsAppointmentsLoading(false);
+    }
+  }, [filterAppointmentsForClient, getClientAppointments, normalizeAppointmentRows]);
+
+  useEffect(() => {
+    if (clientDetailsModal?.isOpen && clientDetailsModal?.client) {
+      fetchClientAppointments(clientDetailsModal.client);
+      return;
+    }
+    setClientDetailsAppointmentsAll([]);
+    setClientDetailsAppointmentsError(null);
+    setClientDetailsAppointmentsLoading(false);
+  }, [clientDetailsModal?.client, clientDetailsModal?.isOpen, fetchClientAppointments]);
 
   const clientDetailsAppointments = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
-    return getClientAppointments(clientDetailsModal.client);
-  }, [clientDetailsModal.client, getClientAppointments]);
+    return filterUpcomingAppointments(clientDetailsAppointmentsAll);
+  }, [clientDetailsModal.client, clientDetailsAppointmentsAll, filterUpcomingAppointments]);
+
+  const clientDetailsUpcomingCount = React.useMemo(() => {
+    return filterUpcomingAppointments(clientDetailsAppointmentsAll).length;
+  }, [clientDetailsAppointmentsAll, filterUpcomingAppointments]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -3146,7 +3220,7 @@ const extractRecurringSchedules = (client) => {
               const last = client.last_name ?? client.lastName ?? '';
               const clientDisplayName = [first, last].filter(Boolean).join(' ').trim() || 'לקוח';
               const phoneDisplay = client.phone ?? client.client_phone ?? '';
-              const upcomingCount = clientDetailsAppointments.length;
+              const upcomingCount = clientDetailsUpcomingCount;
               return (
                   <div className="space-y-5 rounded-[32px] bg-white/95 p-5 sm:p-8">
                     <DialogHeader>
@@ -3170,8 +3244,7 @@ const extractRecurringSchedules = (client) => {
                         <span>{phoneDisplay || 'ללא מספר טלפון'}</span>
                       </p>
                       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                        <span>סה"כ תורים: {clientDetailsAppointments.length}</span>
-                        <span>תורים עתידיים: {upcomingCount}</span>
+                        <span>סה"כ תורים עתידיים: {upcomingCount}</span>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -3207,7 +3280,13 @@ const extractRecurringSchedules = (client) => {
                         <h4 className="text-sm font-semibold text-gray-800">התורים הקרובים</h4>
                         <span className="text-xs text-gray-500">{upcomingCount === 0 ? 'אין תורים עתידיים' : `${upcomingCount} תורים`}</span>
                       </div>
-                      {clientDetailsAppointments.length === 0 ? (
+                      {clientDetailsAppointmentsLoading ? (
+                          <p className="text-sm text-gray-500">טוען תורים…</p>
+                      ) : clientDetailsAppointmentsError ? (
+                          <div className="rounded-xl border border-dashed border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                            {clientDetailsAppointmentsError}
+                          </div>
+                      ) : clientDetailsAppointments.length === 0 ? (
                           <p className="text-sm text-gray-500">אין תורים להצגה.</p>
                       ) : (
                           <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">

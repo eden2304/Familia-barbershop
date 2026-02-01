@@ -6,8 +6,10 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as jwt from 'jsonwebtoken';
+import { DataSource } from 'typeorm';
 
 const logger = new Logger('Bootstrap');
+const RETENTION_DAYS = 7;
 
 interface Bucket { count: number; reset: number; }
 type RateLimitKey = { key: string; type: 'ip' | 'user' | 'unknown'; masked: string };
@@ -107,6 +109,18 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
     }
     res.removeHeader('X-Powered-By');
     next();
+}
+
+async function pruneOldRecords(ds: DataSource) {
+    try {
+        await ds.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
+        await ds.query(`delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`);
+        await ds.query(
+            `delete from blocked_times where coalesce(end_at, start_at) < now() - interval '${RETENTION_DAYS} days'`,
+        );
+    } catch (error) {
+        logger.error('[pruneOldRecords] Failed to prune old data', error);
+    }
 }
 
 async function bootstrap() {
@@ -267,5 +281,11 @@ async function bootstrap() {
     const port = process.env.PORT || 3001;
     await app.listen(port);
     logger.log(`API listening on http://localhost:${port}`);
+
+    const dataSource = app.get(DataSource);
+    await pruneOldRecords(dataSource);
+    setInterval(() => {
+        void pruneOldRecords(dataSource);
+    }, 6 * 60 * 60 * 1000);
 }
 bootstrap();

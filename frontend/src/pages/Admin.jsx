@@ -2556,7 +2556,7 @@ const extractRecurringSchedules = (client) => {
                       </Card>
                       <div className="fixed bottom-24 right-6 z-30">
                         <Button
-                            onClick={() => setShowClientForm(true)}
+                            onClick={() => setShowQuickActionsModal(true)}
                             className="w-12 h-12 rounded-full bg-black hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
                         >
                           <Plus className="w-6 h-6" />
@@ -3280,7 +3280,10 @@ const extractRecurringSchedules = (client) => {
                     { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                     { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
                     ...(activeTab === 'clients'
-                      ? [{ label: "ייבוא לקוחות מאקסל", icon: FileSpreadsheet, action: () => { setShowQuickActionsModal(false); setShowImportClientsModal(true); } }]
+                      ? [
+                        { label: "הוספת לקוח", icon: User, action: () => { setShowQuickActionsModal(false); setShowClientForm(true); } },
+                        { label: "ייבוא לקוחות מאקסל", icon: FileSpreadsheet, action: () => { setShowQuickActionsModal(false); setShowImportClientsModal(true); } },
+                      ]
                       : []),
                     { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
                     { label: "בקשות לביטול", icon: XCircle, action: () => {

@@ -1387,11 +1387,42 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const fetchClientAppointments = async (client) => {
+    const normalizedPhone = normalizePhone(client?.phone ?? client?.client_phone ?? "");
+    const clientId = client?.id ?? client?.client_id ?? null;
+
+    if (normalizedPhone) {
+      try {
+        const list = await api.get(`/clients/me/appointments?phone=${encodeURIComponent(normalizedPhone)}`);
+        if (Array.isArray(list)) return list;
+      } catch (error) {
+        console.warn('client appointments by phone failed', error);
+      }
+    }
+
+    if (clientId) {
+      try {
+        const list = await api.get(`/admin/appointments?clientId=${encodeURIComponent(clientId)}`);
+        if (Array.isArray(list)) return list;
+      } catch (error) {
+        console.warn('client appointments by id failed', error);
+      }
+    }
+
+    try {
+      const list = await Appointment.list();
+      return Array.isArray(list) ? list : [];
+    } catch (error) {
+      console.warn('client appointments list fallback failed', error);
+      return [];
+    }
+  };
+
   const loadClientDetailsAppointments = async (client) => {
     if (!client) return;
     setClientDetailsLoading(true);
     try {
-      const list = await Appointment.list().catch(() => []);
+      const list = await fetchClientAppointments(client);
       setClientDetailsAppointmentsData(Array.isArray(list) ? list : []);
     } finally {
       setClientDetailsLoading(false);

@@ -271,6 +271,7 @@ export default function Admin() { // Removed props
   const [cancelingAppointmentId, setCancelingAppointmentId] = useState(null);
   const [clientDetailsAppointmentsData, setClientDetailsAppointmentsData] = useState([]);
   const [clientDetailsLoading, setClientDetailsLoading] = useState(false);
+  const [clientDetailsSkipClientMatch, setClientDetailsSkipClientMatch] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -1394,7 +1395,7 @@ const extractRecurringSchedules = (client) => {
     if (normalizedPhone) {
       try {
         const list = await api.get(`/clients/me/appointments?phone=${encodeURIComponent(normalizedPhone)}`);
-        if (Array.isArray(list)) return list;
+        if (Array.isArray(list)) return { list, skipClientMatch: true };
       } catch (error) {
         console.warn('client appointments by phone failed', error);
       }
@@ -1403,7 +1404,7 @@ const extractRecurringSchedules = (client) => {
     if (clientId) {
       try {
         const list = await api.get(`/admin/appointments?clientId=${encodeURIComponent(clientId)}`);
-        if (Array.isArray(list)) return list;
+        if (Array.isArray(list)) return { list, skipClientMatch: true };
       } catch (error) {
         console.warn('client appointments by id failed', error);
       }
@@ -1411,10 +1412,10 @@ const extractRecurringSchedules = (client) => {
 
     try {
       const list = await Appointment.list();
-      return Array.isArray(list) ? list : [];
+      return { list: Array.isArray(list) ? list : [], skipClientMatch: false };
     } catch (error) {
       console.warn('client appointments list fallback failed', error);
-      return [];
+      return { list: [], skipClientMatch: false };
     }
   };
 
@@ -1422,8 +1423,9 @@ const extractRecurringSchedules = (client) => {
     if (!client) return;
     setClientDetailsLoading(true);
     try {
-      const list = await fetchClientAppointments(client);
-      setClientDetailsAppointmentsData(Array.isArray(list) ? list : []);
+      const result = await fetchClientAppointments(client);
+      setClientDetailsAppointmentsData(Array.isArray(result?.list) ? result.list : []);
+      setClientDetailsSkipClientMatch(Boolean(result?.skipClientMatch));
     } finally {
       setClientDetailsLoading(false);
     }
@@ -1735,14 +1737,38 @@ const extractRecurringSchedules = (client) => {
     });
   }, [allClients, appointments]);
 
-  const getClientAppointments = React.useCallback((client, sourceAppointments = appointments) => {
+  const getAppointmentStart = (apt) => {
+    const raw =
+        apt?.starts_at ??
+        apt?.start_at ??
+        apt?.startAt ??
+        apt?.startsAt ??
+        apt?.startAtISO ??
+        apt?.start_at_iso ??
+        null;
+    if (raw) {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    const date = apt?.date ?? apt?.appointment_date ?? apt?.day ?? null;
+    const time = apt?.time ?? apt?.appointment_time ?? null;
+    if (date && time) {
+      const parsed = new Date(`${date}T${String(time).slice(0, 5)}:00`);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return null;
+  };
+
+  const getClientAppointments = React.useCallback((client, sourceAppointments = appointments, options = {}) => {
     if (!client) return [];
     const clientId = client.id ?? client.client_id ?? null;
     const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
     const now = new Date();
+    const skipClientMatch = Boolean(options?.skipClientMatch);
     return (sourceAppointments || [])
         .filter((apt) => {
           if (!apt) return false;
+          if (skipClientMatch) return true;
           const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
           if (clientId && aptClientId && String(aptClientId) === String(clientId)) {
             return true;
@@ -1752,24 +1778,22 @@ const extractRecurringSchedules = (client) => {
         })
         .filter((apt) => {
           if (apt?.status === 'canceled') return false;
-          if (!apt?.starts_at) return false;
-          try {
-            return new Date(apt.starts_at) > now;
-          } catch (_) {
-            return false;
-          }
+          const start = getAppointmentStart(apt);
+          return Boolean(start && start.getTime() > now.getTime());
         })
         .sort((a, b) => {
-          const timeA = a?.starts_at ? new Date(a.starts_at).getTime() : 0;
-          const timeB = b?.starts_at ? new Date(b.starts_at).getTime() : 0;
+          const timeA = getAppointmentStart(a)?.getTime() ?? 0;
+          const timeB = getAppointmentStart(b)?.getTime() ?? 0;
           return timeA - timeB;
         });
   }, [appointments]);
 
   const clientDetailsAppointments = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
-    return getClientAppointments(clientDetailsModal.client, clientDetailsAppointmentsData);
-  }, [clientDetailsModal.client, clientDetailsAppointmentsData, getClientAppointments]);
+    return getClientAppointments(clientDetailsModal.client, clientDetailsAppointmentsData, {
+      skipClientMatch: clientDetailsSkipClientMatch,
+    });
+  }, [clientDetailsModal.client, clientDetailsAppointmentsData, clientDetailsSkipClientMatch, getClientAppointments]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -3540,9 +3564,12 @@ const extractRecurringSchedules = (client) => {
                             {clientDetailsAppointments.map((apt) => {
                               const service = serviceById(apt.service_id);
                               const serviceLabel = service?.name ?? service?.title ?? 'ללא שירות';
-                              let dateLabel = apt.starts_at || '';
+                              const startDate = getAppointmentStart(apt);
+                              let dateLabel = startDate ? startDate.toISOString() : apt.starts_at || '';
                               try {
-                                dateLabel = format(new Date(apt.starts_at), 'dd/MM/yyyy · HH:mm', { locale: he });
+                                if (startDate) {
+                                  dateLabel = format(startDate, 'dd/MM/yyyy · HH:mm', { locale: he });
+                                }
                               } catch (_) {}
                               const isProcessing = cancelingAppointmentId === apt.id;
                               return (

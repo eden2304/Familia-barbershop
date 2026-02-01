@@ -1579,11 +1579,11 @@ const extractRecurringSchedules = (client) => {
         });
   }, []);
 
-  const getClientAppointments = React.useCallback((client) => {
+  const filterAppointmentsForClient = React.useCallback((items = [], client) => {
     if (!client) return [];
     const clientId = client.id ?? client.client_id ?? null;
     const normalizedPhone = normalizePhone(client.phone ?? client.client_phone ?? "");
-    const forClient = (appointments || [])
+    return (items || [])
         .filter((apt) => {
           if (!apt) return false;
           const aptClientId = apt.client_id ?? apt.clientId ?? apt.client?.id;
@@ -1593,8 +1593,13 @@ const extractRecurringSchedules = (client) => {
           const aptPhone = normalizePhone(apt.client_phone ?? apt.phone ?? apt.client?.phone ?? "");
           return Boolean(normalizedPhone && aptPhone && aptPhone === normalizedPhone);
         });
+  }, []);
+
+  const getClientAppointments = React.useCallback((client) => {
+    if (!client) return [];
+    const forClient = filterAppointmentsForClient(appointments || [], client);
     return normalizeAppointmentRows(forClient);
-  }, [appointments, normalizeAppointmentRows]);
+  }, [appointments, filterAppointmentsForClient, normalizeAppointmentRows]);
 
   const fetchClientAppointments = React.useCallback(async (client) => {
     if (!client) {
@@ -1612,7 +1617,8 @@ const extractRecurringSchedules = (client) => {
       const phoneParam = encodeURIComponent(normalizedPhone);
       const res = await api.get(`/clients/me/appointments?phone=${phoneParam}`);
       const rows = Array.isArray(res) ? res : (res?.data ?? []);
-      setClientDetailsAppointmentsAll(normalizeAppointmentRows(rows || []));
+      const normalizedRows = normalizeAppointmentRows(rows || []);
+      setClientDetailsAppointmentsAll(filterAppointmentsForClient(normalizedRows, client));
     } catch (error) {
       console.error('Failed to load client appointments', error);
       setClientDetailsAppointmentsAll(normalizeAppointmentRows(getClientAppointments(client)));
@@ -1620,7 +1626,7 @@ const extractRecurringSchedules = (client) => {
     } finally {
       setClientDetailsAppointmentsLoading(false);
     }
-  }, [getClientAppointments, normalizeAppointmentRows]);
+  }, [filterAppointmentsForClient, getClientAppointments, normalizeAppointmentRows]);
 
   useEffect(() => {
     if (clientDetailsModal?.isOpen && clientDetailsModal?.client) {
@@ -1634,18 +1640,8 @@ const extractRecurringSchedules = (client) => {
 
   const clientDetailsAppointments = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
-    return (clientDetailsAppointmentsAll || [])
-        .filter((apt) => apt && apt.status !== 'canceled')
-        .sort((a, b) => {
-          const timeA = a?.starts_at ? new Date(a.starts_at).getTime() : 0;
-          const timeB = b?.starts_at ? new Date(b.starts_at).getTime() : 0;
-          return timeB - timeA;
-        });
-  }, [clientDetailsModal.client, clientDetailsAppointmentsAll]);
-
-  const clientDetailsAppointmentsTotal = React.useMemo(() => {
-    return (clientDetailsAppointmentsAll || []).filter((apt) => apt && apt.status !== 'canceled').length;
-  }, [clientDetailsAppointmentsAll]);
+    return filterUpcomingAppointments(clientDetailsAppointmentsAll);
+  }, [clientDetailsModal.client, clientDetailsAppointmentsAll, filterUpcomingAppointments]);
 
   const clientDetailsUpcomingCount = React.useMemo(() => {
     return filterUpcomingAppointments(clientDetailsAppointmentsAll).length;
@@ -3245,8 +3241,7 @@ const extractRecurringSchedules = (client) => {
                         <span>{phoneDisplay || 'ללא מספר טלפון'}</span>
                       </p>
                       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                        <span>סה"כ תורים: {clientDetailsAppointmentsTotal}</span>
-                        <span>תורים עתידיים: {upcomingCount}</span>
+                        <span>סה"כ תורים עתידיים: {upcomingCount}</span>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -3279,8 +3274,8 @@ const extractRecurringSchedules = (client) => {
                     </div>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-gray-800">כל התורים</h4>
-                        <span className="text-xs text-gray-500">{clientDetailsAppointmentsTotal === 0 ? 'אין תורים להצגה' : `${clientDetailsAppointmentsTotal} תורים`}</span>
+                        <h4 className="text-sm font-semibold text-gray-800">התורים הקרובים</h4>
+                        <span className="text-xs text-gray-500">{upcomingCount === 0 ? 'אין תורים עתידיים' : `${upcomingCount} תורים`}</span>
                       </div>
                       {clientDetailsAppointmentsLoading ? (
                           <p className="text-sm text-gray-500">טוען תורים…</p>

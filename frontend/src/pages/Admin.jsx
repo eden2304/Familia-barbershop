@@ -1395,7 +1395,7 @@ const extractRecurringSchedules = (client) => {
     if (normalizedPhone) {
       try {
         const list = await api.get(`/clients/me/appointments?phone=${encodeURIComponent(normalizedPhone)}`);
-        if (Array.isArray(list)) return { list, skipClientMatch: true };
+        if (Array.isArray(list)) return { list, skipClientMatch: false };
       } catch (error) {
         console.warn('client appointments by phone failed', error);
       }
@@ -1404,7 +1404,7 @@ const extractRecurringSchedules = (client) => {
     if (clientId) {
       try {
         const list = await api.get(`/admin/appointments?clientId=${encodeURIComponent(clientId)}`);
-        if (Array.isArray(list)) return { list, skipClientMatch: true };
+        if (Array.isArray(list)) return { list, skipClientMatch: false };
       } catch (error) {
         console.warn('client appointments by id failed', error);
       }

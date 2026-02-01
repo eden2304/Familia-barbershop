@@ -2885,11 +2885,19 @@ async function upsertClient(firstName, lastName, phone, options = {}) {
     return { id: ins.rows[0].id, is_member: !!ins.rows[0].is_member };
 }
 
-async function pruneOldAppointments() {
+const RETENTION_DAYS = 7;
+
+async function pruneOldRecords() {
     try {
-        await pool.query(`delete from appointments where ends_at < now() - interval '7 days'`);
+        await pool.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
+        await pool.query(
+            `delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`
+        );
+        await pool.query(
+            `delete from blocked_times where coalesce(end_at, start_at) < now() - interval '${RETENTION_DAYS} days'`
+        );
     } catch (e) {
-        console.error('[pruneOldAppointments]', e);
+        console.error('[pruneOldRecords]', e);
     }
 }
 
@@ -2899,7 +2907,7 @@ async function start() {
     try {
         await migrate();
         await ensureUploadsDir();
-        await pruneOldAppointments();
+        await pruneOldRecords();
         const server = http.createServer((req, res) =>
             router(req, res).catch((err) => {
                 console.error('[router error]', err);
@@ -2907,7 +2915,7 @@ async function start() {
             })
         );
         server.listen(PORT, () => {
-            setInterval(pruneOldAppointments, 6 * 60 * 60 * 1000); // כל 6 שעות
+            setInterval(pruneOldRecords, 6 * 60 * 60 * 1000); // כל 6 שעות
             console.log(`API running on http://localhost:${PORT}`);
         });
     } catch (e) {

@@ -439,7 +439,7 @@ export default function Home() {
 
               {/* קרדיט */}
               <div className="text-center py-8 px-4">
-                <p className="text-sm text-gray-600">
+                <p className="text-sm bg-black">
                   מעוניין במערכת כזו לעסק שלך?
                   <a
                       href="https://wa.me/972537002171?text=היי,%20השתמשתי%20במערכת%20שעשית%20Familia%20barber%20ומאוד%20אהבתי,%20אשמח%20לקבל%20פרטים%20נוספים%20על%20המערכת"

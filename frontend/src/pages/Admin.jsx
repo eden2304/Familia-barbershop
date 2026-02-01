@@ -3275,22 +3275,24 @@ const extractRecurringSchedules = (client) => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-center">
-                  {[
-                    { label: "הוספת תור", icon: Plus, action: () => { setShowQuickActionsModal(false); setShowAddAppointmentForm(true); } },
-                    { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
-                    { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
-                    ...(activeTab === 'clients'
+                  {(activeTab === 'clients'
+                    ? [
+                      { label: "הוספת לקוח", icon: User, action: () => { setShowQuickActionsModal(false); setShowClientForm(true); } },
+                      { label: "ייבוא לקוחות מאקסל", icon: FileSpreadsheet, action: () => { setShowQuickActionsModal(false); setShowImportClientsModal(true); } },
+                    ]
+                    : activeTab === 'appointments'
                       ? [
-                        { label: "הוספת לקוח", icon: User, action: () => { setShowQuickActionsModal(false); setShowClientForm(true); } },
-                        { label: "ייבוא לקוחות מאקסל", icon: FileSpreadsheet, action: () => { setShowQuickActionsModal(false); setShowImportClientsModal(true); } },
+                        { label: "הוספת תור", icon: Plus, action: () => { setShowQuickActionsModal(false); setShowAddAppointmentForm(true); } },
+                        { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
+                        { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
+                        { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
+                        { label: "בקשות לביטול", icon: XCircle, action: () => {
+                            setShowQuickActionsModal(false);
+                            alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
+                          } },
                       ]
-                      : []),
-                    { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
-                    { label: "בקשות לביטול", icon: XCircle, action: () => {
-                        setShowQuickActionsModal(false);
-                        alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
-                      } }
-                  ].map(item => (
+                      : []
+                  ).map(item => (
                       <div key={item.label} onClick={item.action} className="p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 cursor-pointer transition-colors flex flex-col items-center justify-center space-y-2">
                         <item.icon className="w-8 h-8 text-gray-700" />
                         <span className="text-sm font-medium text-gray-800">{item.label}</span>

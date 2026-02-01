@@ -1546,6 +1546,19 @@ const extractRecurringSchedules = (client) => {
     });
   }, [allClients, appointments]);
 
+  const normalizeAppointmentRows = React.useCallback((items = []) => {
+    return (items || []).map((apt) => {
+      if (!apt || typeof apt !== 'object') return apt;
+      return {
+        ...apt,
+        starts_at: apt.starts_at ?? apt.startsAt ?? null,
+        ends_at: apt.ends_at ?? apt.endsAt ?? null,
+        service_id: apt.service_id ?? apt.serviceId ?? null,
+        client_phone: apt.client_phone ?? apt.phone ?? apt.client?.phone ?? null,
+      };
+    });
+  }, []);
+
   const filterUpcomingAppointments = React.useCallback((items = []) => {
     const now = new Date();
     return (items || [])
@@ -1580,8 +1593,8 @@ const extractRecurringSchedules = (client) => {
           const aptPhone = normalizePhone(apt.client_phone ?? apt.phone ?? apt.client?.phone ?? "");
           return Boolean(normalizedPhone && aptPhone && aptPhone === normalizedPhone);
         });
-    return filterUpcomingAppointments(forClient);
-  }, [appointments, filterUpcomingAppointments]);
+    return normalizeAppointmentRows(forClient);
+  }, [appointments, normalizeAppointmentRows]);
 
   const fetchClientAppointments = React.useCallback(async (client) => {
     if (!client) {
@@ -1596,17 +1609,30 @@ const extractRecurringSchedules = (client) => {
     try {
       setClientDetailsAppointmentsLoading(true);
       setClientDetailsAppointmentsError(null);
-      const res = await api.get(`/clients/me/appointments?phone=${encodeURIComponent(normalizedPhone)}`);
-      const rows = Array.isArray(res) ? res : (res?.data ?? []);
-      setClientDetailsAppointmentsAll(rows || []);
+      const phoneParam = encodeURIComponent(normalizedPhone);
+      const tryFetch = async (path) => {
+        const res = await api.get(path);
+        return Array.isArray(res) ? res : (res?.data ?? []);
+      };
+      let rows = [];
+      try {
+        rows = await tryFetch(`/admin/appointments?phone=${phoneParam}`);
+      } catch (_) {
+        try {
+          rows = await tryFetch(`/appointments?phone=${phoneParam}`);
+        } catch (error) {
+          rows = await tryFetch(`/clients/me/appointments?phone=${phoneParam}`);
+        }
+      }
+      setClientDetailsAppointmentsAll(normalizeAppointmentRows(rows || []));
     } catch (error) {
       console.error('Failed to load client appointments', error);
-      setClientDetailsAppointmentsAll(getClientAppointments(client));
+      setClientDetailsAppointmentsAll(normalizeAppointmentRows(getClientAppointments(client)));
       setClientDetailsAppointmentsError('לא ניתן לטעון תורים. נסה שוב.');
     } finally {
       setClientDetailsAppointmentsLoading(false);
     }
-  }, [getClientAppointments]);
+  }, [getClientAppointments, normalizeAppointmentRows]);
 
   useEffect(() => {
     if (clientDetailsModal?.isOpen && clientDetailsModal?.client) {
@@ -1620,12 +1646,22 @@ const extractRecurringSchedules = (client) => {
 
   const clientDetailsAppointments = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
-    return filterUpcomingAppointments(clientDetailsAppointmentsAll);
-  }, [clientDetailsModal.client, clientDetailsAppointmentsAll, filterUpcomingAppointments]);
+    return (clientDetailsAppointmentsAll || [])
+        .filter((apt) => apt && apt.status !== 'canceled')
+        .sort((a, b) => {
+          const timeA = a?.starts_at ? new Date(a.starts_at).getTime() : 0;
+          const timeB = b?.starts_at ? new Date(b.starts_at).getTime() : 0;
+          return timeB - timeA;
+        });
+  }, [clientDetailsModal.client, clientDetailsAppointmentsAll]);
 
   const clientDetailsAppointmentsTotal = React.useMemo(() => {
     return (clientDetailsAppointmentsAll || []).filter((apt) => apt && apt.status !== 'canceled').length;
   }, [clientDetailsAppointmentsAll]);
+
+  const clientDetailsUpcomingCount = React.useMemo(() => {
+    return filterUpcomingAppointments(clientDetailsAppointmentsAll).length;
+  }, [clientDetailsAppointmentsAll, filterUpcomingAppointments]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -3197,7 +3233,7 @@ const extractRecurringSchedules = (client) => {
               const last = client.last_name ?? client.lastName ?? '';
               const clientDisplayName = [first, last].filter(Boolean).join(' ').trim() || 'לקוח';
               const phoneDisplay = client.phone ?? client.client_phone ?? '';
-              const upcomingCount = clientDetailsAppointments.length;
+              const upcomingCount = clientDetailsUpcomingCount;
               return (
                   <div className="space-y-5 rounded-[32px] bg-white/95 p-5 sm:p-8">
                     <DialogHeader>
@@ -3255,11 +3291,11 @@ const extractRecurringSchedules = (client) => {
                     </div>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-gray-800">התורים הקרובים</h4>
-                        <span className="text-xs text-gray-500">{upcomingCount === 0 ? 'אין תורים עתידיים' : `${upcomingCount} תורים`}</span>
+                        <h4 className="text-sm font-semibold text-gray-800">כל התורים</h4>
+                        <span className="text-xs text-gray-500">{clientDetailsAppointmentsTotal === 0 ? 'אין תורים להצגה' : `${clientDetailsAppointmentsTotal} תורים`}</span>
                       </div>
                       {clientDetailsAppointmentsLoading ? (
-                          <p className="text-sm text-gray-500">טוען תורים עתידיים…</p>
+                          <p className="text-sm text-gray-500">טוען תורים…</p>
                       ) : clientDetailsAppointmentsError ? (
                           <div className="rounded-xl border border-dashed border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                             {clientDetailsAppointmentsError}

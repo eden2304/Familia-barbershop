@@ -65,6 +65,7 @@ import {
   Repeat,
   GripVertical,
   Crown,
+  FileSpreadsheet,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -89,6 +90,24 @@ const resolveMediaUrl = (value) => {
   if (value.startsWith("/")) return `${base}${value}`;
   return `${base}/${value}`;
 };
+
+const loadXlsxLibrary = (() => {
+  let loaderPromise;
+  return async () => {
+    if (globalThis?.XLSX) return globalThis.XLSX;
+    if (!loaderPromise) {
+      loaderPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        script.async = true;
+        script.onload = () => resolve(globalThis.XLSX);
+        script.onerror = () => reject(new Error("Failed to load XLSX library"));
+        document.body.appendChild(script);
+      });
+    }
+    return loaderPromise;
+  };
+})();
 
 
 const navItems = [
@@ -280,6 +299,11 @@ export default function Admin() { // Removed props
   const [activeTab, setActiveTab] = useState("appointments");
 
   const [showQuickActionsModal, setShowQuickActionsModal] = useState(false);
+  const [showImportClientsModal, setShowImportClientsModal] = useState(false);
+  const [importClientsFile, setImportClientsFile] = useState(null);
+  const [importClientsPreview, setImportClientsPreview] = useState([]);
+  const [importClientsFeedback, setImportClientsFeedback] = useState(null);
+  const [importClientsLoading, setImportClientsLoading] = useState(false);
   const isPhoneLike = (value) => {
     const digits = String(value ?? '').replace(/\D/g, '');
     return digits.length >= 7;
@@ -1360,6 +1384,139 @@ const extractRecurringSchedules = (client) => {
     }
   };
 
+  const parseClientImportFile = async (file) => {
+    const XLSX = await loadXlsxLibrary();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheetName = workbook.SheetNames?.[0];
+    if (!sheetName) {
+      return { entries: [], invalidRows: [{ row: 0, reason: "לא נמצא גיליון בקובץ." }] };
+    }
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    if (!rows.length) {
+      return { entries: [], invalidRows: [{ row: 0, reason: "אין שורות נתונים בקובץ." }] };
+    }
+
+    const headerValues = rows[0].map((value) => String(value ?? "").trim().toLowerCase());
+    const looksLikeHeader = headerValues.some((value) =>
+      value.includes("שם") || value.includes("טלפון") || value.includes("phone")
+    );
+    const dataRows = rows.slice(looksLikeHeader ? 1 : 0);
+
+    const invalidRows = [];
+    const entries = [];
+    const seenPhones = new Set();
+
+    dataRows.forEach((row, index) => {
+      const [firstName, lastName, phoneValue] = row ?? [];
+      const first = String(firstName ?? "").trim();
+      const last = String(lastName ?? "").trim();
+      const normalized = normalizePhone(phoneValue);
+      const hasAny = first || last || normalized;
+      const rowIndex = index + 1 + (looksLikeHeader ? 1 : 0);
+
+      if (!hasAny) return;
+
+      if (!normalized) {
+        invalidRows.push({ row: rowIndex, reason: "חסר מספר טלפון." });
+        return;
+      }
+
+      if (seenPhones.has(normalized)) {
+        invalidRows.push({ row: rowIndex, reason: "מספר טלפון כפול בקובץ." });
+        return;
+      }
+
+      seenPhones.add(normalized);
+      entries.push({ first_name: first, last_name: last, phone: normalized, rowIndex });
+    });
+
+    return { entries, invalidRows };
+  };
+
+  const handleImportClientsFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setImportClientsFile(null);
+      setImportClientsPreview([]);
+      setImportClientsFeedback(null);
+      return;
+    }
+    setImportClientsFile(file);
+    setImportClientsLoading(true);
+    try {
+      const { entries, invalidRows } = await parseClientImportFile(file);
+      setImportClientsPreview(entries.slice(0, 5));
+      setImportClientsFeedback({
+        entriesCount: entries.length,
+        invalidRows,
+      });
+    } catch (error) {
+      console.error("Failed parsing client import file", error);
+      setImportClientsPreview([]);
+      setImportClientsFeedback({
+        entriesCount: 0,
+        invalidRows: [{ row: 0, reason: "לא ניתן לקרוא את הקובץ." }],
+      });
+    } finally {
+      setImportClientsLoading(false);
+    }
+  };
+
+  const handleImportClients = async () => {
+    if (!importClientsFile) {
+      setImportClientsFeedback({
+        entriesCount: 0,
+        invalidRows: [{ row: 0, reason: "בחר קובץ כדי להתחיל." }],
+      });
+      return;
+    }
+    setImportClientsLoading(true);
+    try {
+      const { entries, invalidRows } = await parseClientImportFile(importClientsFile);
+      const existingPhones = new Set(
+        (allClients || [])
+          .map((client) => normalizePhone(client.phone ?? client.client_phone ?? ""))
+          .filter(Boolean)
+      );
+      let createdCount = 0;
+      let skippedExisting = 0;
+      let failedCount = 0;
+
+      for (const entry of entries) {
+        if (existingPhones.has(entry.phone)) {
+          skippedExisting += 1;
+          continue;
+        }
+        const created = await safeCreateClient(entry);
+        if (created) {
+          createdCount += 1;
+          existingPhones.add(entry.phone);
+        } else {
+          failedCount += 1;
+        }
+      }
+
+      await loadData();
+      setImportClientsFeedback({
+        entriesCount: entries.length,
+        invalidRows,
+        createdCount,
+        skippedExisting,
+        failedCount,
+      });
+    } catch (error) {
+      console.error("Client import failed", error);
+      setImportClientsFeedback({
+        entriesCount: 0,
+        invalidRows: [{ row: 0, reason: "הייבוא נכשל. נסה שוב." }],
+      });
+    } finally {
+      setImportClientsLoading(false);
+    }
+  };
+
   const toggleClientMembership = async (client) => {
     if (!client?.id) return;
     const current = Boolean(client.isMember ?? client.is_member);
@@ -2399,7 +2556,7 @@ const extractRecurringSchedules = (client) => {
                       </Card>
                       <div className="fixed bottom-24 right-6 z-30">
                         <Button
-                            onClick={() => setShowClientForm(true)}
+                            onClick={() => setShowQuickActionsModal(true)}
                             className="w-12 h-12 rounded-full bg-black hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
                         >
                           <Plus className="w-6 h-6" />
@@ -3122,6 +3279,12 @@ const extractRecurringSchedules = (client) => {
                     { label: "הוספת תור", icon: Plus, action: () => { setShowQuickActionsModal(false); setShowAddAppointmentForm(true); } },
                     { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                     { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
+                    ...(activeTab === 'clients'
+                      ? [
+                        { label: "הוספת לקוח", icon: User, action: () => { setShowQuickActionsModal(false); setShowClientForm(true); } },
+                        { label: "ייבוא לקוחות מאקסל", icon: FileSpreadsheet, action: () => { setShowQuickActionsModal(false); setShowImportClientsModal(true); } },
+                      ]
+                      : []),
                     { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
                     { label: "בקשות לביטול", icon: XCircle, action: () => {
                         setShowQuickActionsModal(false);
@@ -3551,6 +3714,97 @@ const extractRecurringSchedules = (client) => {
                     onSubmit={handleClientSubmit}
                     onCancel={() => setShowClientForm(false)}
                 />
+              </DialogContent>
+            </Dialog>
+        )}
+
+        {showImportClientsModal && (
+            <Dialog
+                open={showImportClientsModal}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setShowImportClientsModal(false);
+                    setImportClientsFile(null);
+                    setImportClientsPreview([]);
+                    setImportClientsFeedback(null);
+                  }
+                }}
+            >
+              <DialogContent className="max-w-lg" aria-describedby={undefined}>
+                <DialogHeader>
+                  <DialogTitle>ייבוא לקוחות מאקסל</DialogTitle>
+                  <DialogDescription>
+                    קובץ אקסל צריך לכלול שלושה עמודות: שם פרטי, שם משפחה, מספר טלפון.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="clients-import-file">קובץ אקסל</Label>
+                    <Input
+                        id="clients-import-file"
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleImportClientsFileChange}
+                    />
+                    <p className="text-xs text-gray-500">ניתן לעלות גם CSV. השורה הראשונה יכולה להיות כותרת.</p>
+                  </div>
+
+                  {importClientsLoading && (
+                      <div className="text-sm text-gray-600">טוען נתונים מהקובץ...</div>
+                  )}
+
+                  {importClientsPreview.length > 0 && (
+                      <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
+                        <p className="text-sm font-semibold text-gray-700 mb-2">תצוגה מקדימה</p>
+                        <div className="space-y-1 text-sm text-gray-600">
+                          {importClientsPreview.map((entry, index) => (
+                              <div key={`${entry.phone}-${index}`} className="flex justify-between gap-2">
+                                <span className="truncate">{entry.first_name} {entry.last_name}</span>
+                                <span className="text-gray-500">{entry.phone}</span>
+                              </div>
+                          ))}
+                        </div>
+                      </div>
+                  )}
+
+                  {importClientsFeedback && (
+                      <Alert>
+                        <AlertDescription className="text-sm text-gray-700 space-y-1">
+                          {"entriesCount" in importClientsFeedback && (
+                              <p>נמצאו {importClientsFeedback.entriesCount} לקוחות בקובץ.</p>
+                          )}
+                          {"createdCount" in importClientsFeedback && (
+                              <p>נוספו {importClientsFeedback.createdCount} לקוחות חדשים.</p>
+                          )}
+                          {"skippedExisting" in importClientsFeedback && (
+                              <p>דולגו {importClientsFeedback.skippedExisting} לקוחות קיימים.</p>
+                          )}
+                          {"failedCount" in importClientsFeedback && (
+                              <p>נכשלו {importClientsFeedback.failedCount} לקוחות.</p>
+                          )}
+                          {Array.isArray(importClientsFeedback.invalidRows) && importClientsFeedback.invalidRows.length > 0 && (
+                              <p>שורות בעייתיות: {importClientsFeedback.invalidRows.length}.</p>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                  )}
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowImportClientsModal(false);
+                        setImportClientsFile(null);
+                        setImportClientsPreview([]);
+                        setImportClientsFeedback(null);
+                      }}
+                  >
+                    סגור
+                  </Button>
+                  <Button onClick={handleImportClients} disabled={importClientsLoading}>
+                    {importClientsLoading ? "מייבא..." : "הוסף"}
+                  </Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
         )}

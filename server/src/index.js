@@ -841,7 +841,12 @@ async function router(req, res) {
     if (req.method === 'OPTIONS') return text(res, 204, '');
 
     const url = new URL(req.url, 'http://localhost');
-    const pathname = url.pathname;
+    let pathname = url.pathname;
+    if (pathname === '/api') {
+        pathname = '/';
+    } else if (pathname.startsWith('/api/')) {
+        pathname = pathname.slice(4);
+    }
 
 // --- Admin Guard: מחייב accessToken לכל /admin/* (חוץ מ-verify-code) ---
     if (pathname.startsWith('/admin/') && pathname !== '/admin/verify-code') {
@@ -1478,7 +1483,70 @@ async function router(req, res) {
         return json(res, 200, rows.map(compatAppointmentRow));
     }
 
-    if (req.method === 'GET' && pathname === '/admin/appointments') {
+    if (req.method === 'GET' && (pathname === '/admin/appointments/avg' || pathname === '/admin/appointments/stats')) {
+        const startParam = url.searchParams.get('start');
+        const endParam = url.searchParams.get('end');
+        const endBase = endParam ? new Date(endParam + 'T00:00:00') : new Date();
+        const end = Number.isNaN(endBase.getTime()) ? new Date() : endBase;
+        const endExclusive = new Date(end);
+        if (endParam) {
+            endExclusive.setDate(endExclusive.getDate() + 1);
+        }
+
+        const startBase = startParam ? new Date(startParam + 'T00:00:00') : null;
+        let start = startBase && !Number.isNaN(startBase.getTime())
+            ? startBase
+            : new Date(endExclusive.getTime() - 30 * 86400000);
+        start.setHours(0, 0, 0, 0);
+
+        const diffDays = Math.max(1, Math.ceil((endExclusive.getTime() - start.getTime()) / 86400000));
+
+        const totalRes = await pool.query(`
+            select count(*)::int as total,
+                   avg(extract(epoch from (ends_at - starts_at)) / 60)::numeric(10,2) as avg_duration
+            from appointments
+            where starts_at >= $1 and starts_at < $2
+              and coalesce(status, 'booked') <> 'canceled'
+        `, [start, endExclusive]);
+
+        const total = totalRes.rows[0]?.total ?? 0;
+        const avgDuration = totalRes.rows[0]?.avg_duration ?? null;
+
+        if (pathname === '/admin/appointments/avg') {
+            return json(res, 200, {
+                totalCount: total,
+                avgPerDay: total / diffDays,
+                avgDurationMinutes: avgDuration,
+                startDate: start.toISOString(),
+                endDate: endExclusive.toISOString(),
+                days: diffDays,
+            });
+        }
+
+        const statusRes = await pool.query(`
+            select coalesce(status, 'booked') as status, count(*)::int as count
+            from appointments
+            where starts_at >= $1 and starts_at < $2
+            group by coalesce(status, 'booked')
+        `, [start, endExclusive]);
+
+        const byStatus = {};
+        statusRes.rows.forEach((row) => {
+            byStatus[row.status] = row.count;
+        });
+
+        return json(res, 200, {
+            totalCount: total,
+            avgPerDay: total / diffDays,
+            avgDurationMinutes: avgDuration,
+            byStatus,
+            startDate: start.toISOString(),
+            endDate: endExclusive.toISOString(),
+            days: diffDays,
+        });
+    }
+
+    if (req.method === 'GET' && (pathname === '/admin/appointments' || pathname === '/admin/appointments/list')) {
         const date = url.searchParams.get('date');
         let rows;
         if (date) {

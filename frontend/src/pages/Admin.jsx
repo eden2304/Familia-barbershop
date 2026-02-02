@@ -1231,6 +1231,15 @@ const extractRecurringSchedules = (client) => {
       const service = rescheduleData.service;
       const appointment = rescheduleData.appointment;
 
+      if (!newStartTime || Number.isNaN(newStartTime.getTime?.())) {
+        toast({
+          title: 'שגיאה בהחלפת התור',
+          description: 'שעת היעד אינה תקינה. נסה לבחור שעה אחרת.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const newEndTime = addMinutes(newStartTime, service.duration_minutes);
 
       await AdminApi.reschedule(

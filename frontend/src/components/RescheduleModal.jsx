@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
-import { format, addDays, startOfWeek, parse, isSameDay, isAfter, isBefore, startOfDay } from "date-fns";
+import { format, addDays, startOfWeek, parse, isSameDay, isAfter, isBefore, startOfDay, isValid } from "date-fns";
 import { he } from "date-fns/locale";
 import { Appointment } from "@/api/entities";
 
@@ -57,6 +57,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
         time: parse(hhmm, "HH:mm", date),
         formatted: hhmm,
       }))
+      .filter((slot) => isValid(slot.time))
       .filter((slot) => {
         if (!isSameDay(date, now)) return true;
         return isAfter(slot.time, now);
@@ -105,8 +106,10 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   }, [isOpen, service?.id, weekDays]);
 
   const handleConfirm = () => {
-    if (selectedSlot) {
+    if (selectedSlot && isValid(selectedSlot.time)) {
       onSubmit(selectedSlot.time);
+    } else {
+      console.error("Invalid selected slot time", selectedSlot);
     }
   };
 

@@ -1233,17 +1233,23 @@ const extractRecurringSchedules = (client) => {
 
       const newEndTime = addMinutes(newStartTime, service.duration_minutes);
 
-      await Appointment.update(appointment.id, {
-        starts_at: newStartTime.toISOString(),
-        ends_at: newEndTime.toISOString(),
-      });
+      await AdminApi.reschedule(
+        appointment.id,
+        newStartTime.toISOString(),
+        newEndTime.toISOString()
+      );
 
       setRescheduleData({ isOpen: false, appointment: null, service: null });
+      toast({
+        title: 'התור עודכן',
+        description: 'התור הועבר למועד החדש שנבחר.',
+      });
       loadData();
 
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
-      alert("שגיאה בהחלפת התור.");
+      const message = error?.payload?.message || error?.payload?.error || 'שגיאה בהחלפת התור.';
+      toast({ title: 'שגיאה בהחלפת התור', description: message, variant: 'destructive' });
     }
   };
 
@@ -3701,8 +3707,6 @@ const extractRecurringSchedules = (client) => {
                 onSubmit={handleRescheduleSubmit}
                 appointment={rescheduleData.appointment}
                 service={rescheduleData.service}
-                allAppointments={appointments}
-                businessHours={businessHours}
             />
         )}
 

@@ -3718,8 +3718,6 @@ const extractRecurringSchedules = (client) => {
                 onSubmit={handleRescheduleSubmit}
                 appointment={rescheduleData.appointment}
                 service={rescheduleData.service}
-                allAppointments={appointments}
-                businessHours={businessHours}
             />
         )}
 

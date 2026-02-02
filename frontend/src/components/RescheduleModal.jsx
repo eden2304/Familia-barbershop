@@ -1,25 +1,28 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
-import { format, addDays, startOfWeek, parse, addMinutes, isAfter, isBefore, startOfDay, isEqual } from "date-fns";
+import { format, addDays, startOfWeek, parse, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
 import { he } from "date-fns/locale";
+import { Appointment } from "@/api/entities";
 
 const DAYS_IN_WEEK = [
   { key: 0, name: "ראשון" }, { key: 1, name: "שני" }, { key: 2, name: "שלישי" }, 
   { key: 3, name: "רביעי" }, { key: 4, name: "חמישי" }, { key: 5, name: "שישי" }, { key: 6, name: "שבת" }
 ];
 
-export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointment, service, allAppointments, businessHours }) {
+export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointment, service }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState(0);
+  const [availableByDate, setAvailableByDate] = useState({});
 
   useEffect(() => {
     if (isOpen) {
       setSelectedDay(null);
       setSelectedSlot(null);
       setSelectedWeek(0);
+      setAvailableByDate({});
     }
   }, [isOpen]);
 
@@ -36,57 +39,61 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
     return `${first} ${last}`.trim();
   };
 
-  const getBusinessHoursForDate = (date) => {
-    if (!date || !Array.isArray(businessHours)) return null;
-    const dayOfWeek = date.getDay();
-    return businessHours.find((row) => Number(row?.weekday) === Number(dayOfWeek)) || null;
-  };
+  const dateKey = (date) => format(date, "yyyy-MM-dd");
 
-  const getSlotIntervalMinutes = (hours) => {
-    const raw = hours?.slotIntervalMinutes ?? hours?.slot_minutes ?? hours?.slot ?? 30;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
-  };
-
-  const generateTimeSlotsForDay = (date) => {
-    if (!service || !date) return [];
-
-    const slots = [];
-    const hours = getBusinessHoursForDate(date);
-    if (!hours) return [];
-
-    const openValue = hours.open ?? hours.open_time;
-    const closeValue = hours.close ?? hours.close_time;
-    const isOpen = hours.isOpen ?? (hours.is_closed === undefined ? Boolean(openValue && closeValue) : !hours.is_closed);
-    if (!isOpen || !openValue || !closeValue) return [];
-
-    const openTime = parse(openValue, 'HH:mm', date);
-    const closeTime = parse(closeValue, 'HH:mm', date);
-    const slotInterval = getSlotIntervalMinutes(hours);
-    const serviceDuration = service?.duration_minutes ?? appointment?.duration_minutes ?? 30;
-    let currentTime = openTime;
-
-    while (isBefore(currentTime, closeTime) || isEqual(currentTime, closeTime)) {
-      const slotEnd = addMinutes(currentTime, serviceDuration);
-      if (isAfter(slotEnd, closeTime)) break;
-
-      if (isAfter(currentTime, new Date())) {
-        const hasConflict = allAppointments.some(apt => {
-          if (apt.id === appointment.id) return false;
-          if (apt.status && apt.status !== 'booked') return false;
-          const aptStart = new Date(apt.starts_at);
-          const aptEnd = new Date(apt.ends_at);
-          return (isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart));
-        });
-
-        if (!hasConflict) {
-          slots.push({ time: currentTime, formatted: format(currentTime, 'HH:mm') });
-        }
-      }
-      currentTime = addMinutes(currentTime, slotInterval);
+  const fetchAvailableForDate = async (date) => {
+    if (!service?.id || !date) return;
+    const key = dateKey(date);
+    setAvailableByDate((prev) => ({
+      ...prev,
+      [key]: { slots: prev[key]?.slots ?? [], loading: true, error: null },
+    }));
+    try {
+      const slots = await Appointment.getAvailable(service.id, date, { isMember: true });
+      setAvailableByDate((prev) => ({
+        ...prev,
+        [key]: { slots: Array.isArray(slots) ? slots : [], loading: false, error: null },
+      }));
+    } catch (error) {
+      setAvailableByDate((prev) => ({
+        ...prev,
+        [key]: { slots: [], loading: false, error: error || new Error("Failed to load") },
+      }));
     }
-    return slots;
   };
+
+  useEffect(() => {
+    if (!isOpen || !service?.id) return;
+    const days = getWeekDays(selectedWeek);
+    days.forEach((date) => {
+      const key = dateKey(date);
+      if (!availableByDate[key] || availableByDate[key]?.error) {
+        fetchAvailableForDate(date);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedWeek, service?.id]);
+
+  useEffect(() => {
+    if (selectedDay) {
+      const key = dateKey(selectedDay);
+      if (!availableByDate[key]) {
+        fetchAvailableForDate(selectedDay);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDay]);
+
+  const selectedDaySlots = useMemo(() => {
+    if (!selectedDay) return [];
+    const key = dateKey(selectedDay);
+    const raw = availableByDate[key]?.slots ?? [];
+    const now = new Date();
+    return raw
+      .map((slot) => ({ time: parse(slot, "HH:mm", selectedDay), formatted: slot }))
+      .filter((slot) => !Number.isNaN(slot.time.getTime()))
+      .filter((slot) => !isSameDay(selectedDay, now) || isAfter(slot.time, now));
+  }, [availableByDate, selectedDay]);
 
   const handleConfirm = () => {
     if (selectedSlot) {
@@ -113,18 +120,21 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
               {getWeekDays(selectedWeek).map(date => {
                 const dayIsPast = isBefore(date, startOfDay(new Date()));
                 const dayName = DAYS_IN_WEEK.find(d => d.key === date.getDay())?.name;
-                const hasSlots = generateTimeSlotsForDay(date).length > 0;
+                const key = dateKey(date);
+                const dayInfo = availableByDate[key];
+                const hasSlots = dayInfo ? (dayInfo.slots || []).length > 0 : true;
+                const isLoading = dayInfo?.loading;
 
                 return (
                   <Button
                     key={date.toString()}
                     onClick={() => {
-                      if (!dayIsPast && hasSlots) {
+                      if (!dayIsPast && !isLoading && hasSlots) {
                         setSelectedDay(date);
                         setSelectedSlot(null);
                       }
                     }}
-                    disabled={dayIsPast || !hasSlots}
+                    disabled={dayIsPast || isLoading || !hasSlots}
                     variant="outline"
                   >
                     {dayName}, {format(date, 'dd/MM')}
@@ -137,8 +147,11 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
           <div className="text-center">
             <Button variant="link" onClick={() => setSelectedDay(null)} className="mb-2">חזרה לבחירת תאריך</Button>
             <h3 className="text-gray-600 mb-4">בחר שעה חדשה עבור {format(selectedDay, 'EEEE, dd/MM', { locale: he })}</h3>
+            {availableByDate[dateKey(selectedDay)]?.loading && (
+              <p className="text-sm text-gray-500 mb-3">טוען שעות פנויות…</p>
+            )}
             <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
-              {generateTimeSlotsForDay(selectedDay).map(slot => (
+              {selectedDaySlots.map(slot => (
                 <Button 
                   key={slot.formatted} 
                   onClick={() => setSelectedSlot(slot)}

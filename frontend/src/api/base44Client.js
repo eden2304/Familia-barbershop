@@ -782,11 +782,24 @@ const api = {
         newEndAt:   String(newEndAtIso),
       };
 
-      return httpPost('/admin/appointments/reschedule', payload).catch((error) => {
-        if (error?.status !== 404) throw error;
-        return httpPut(`/admin/appointments/${encodeURIComponent(id)}`, {
+      const shouldTryApiPrefix = !String(BASE_URL).replace(/\/+$/, '').endsWith('/api');
+      const fallbackUpdate = () =>
+        httpPut(`/admin/appointments/${encodeURIComponent(id)}`, {
           starts_at: payload.newStartAt,
           ends_at: payload.newEndAt,
+        });
+
+      return httpPost('/admin/appointments/reschedule', payload).catch((error) => {
+        if (error?.status !== 404) throw error;
+        return fallbackUpdate().catch((fallbackError) => {
+          if (!shouldTryApiPrefix || fallbackError?.status !== 404) throw fallbackError;
+          return httpPost('/api/admin/appointments/reschedule', payload).catch((apiError) => {
+            if (apiError?.status !== 404) throw apiError;
+            return httpPut(`/api/admin/appointments/${encodeURIComponent(id)}`, {
+              starts_at: payload.newStartAt,
+              ends_at: payload.newEndAt,
+            });
+          });
         });
       });
     },

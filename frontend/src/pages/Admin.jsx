@@ -67,7 +67,7 @@ import {
   Crown,
   FileSpreadsheet,
 } from "lucide-react";
-import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
+import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, differenceInMinutes } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import ProductForm from "../components/ProductForm.jsx";
@@ -1231,10 +1231,27 @@ const extractRecurringSchedules = (client) => {
       const service = rescheduleData.service;
       const appointment = rescheduleData.appointment;
 
-      const newEndTime = addMinutes(newStartTime, service.duration_minutes);
+      const startAt = newStartTime instanceof Date ? newStartTime : new Date(newStartTime);
+      if (Number.isNaN(startAt.getTime())) {
+        alert("שעה לא תקינה להחלפת התור.");
+        return;
+      }
+
+      const rawDuration = service?.duration_minutes ?? appointment?.duration_minutes;
+      const derivedDuration = differenceInMinutes(
+          new Date(appointment?.ends_at),
+          new Date(appointment?.starts_at)
+      );
+      const durationMinutes = Number.isFinite(Number(rawDuration))
+          ? Number(rawDuration)
+          : Number.isFinite(derivedDuration) && derivedDuration > 0
+              ? derivedDuration
+              : 30;
+
+      const newEndTime = addMinutes(startAt, durationMinutes);
 
       await Appointment.update(appointment.id, {
-        starts_at: newStartTime.toISOString(),
+        starts_at: startAt.toISOString(),
         ends_at: newEndTime.toISOString(),
       });
 

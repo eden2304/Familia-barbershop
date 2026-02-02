@@ -445,7 +445,7 @@ export default function Home() {
                       href="https://wa.me/972537002171?text=היי,%20השתמשתי%20במערכת%20שעשית%20Familia%20barber%20ומאוד%20אהבתי,%20אשמח%20לקבל%20פרטים%20נוספים%20על%20המערכת"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-bold text-black hover:underline mr-1"
+                      className="font-bold text-black hעןאover:underline mr-1"
                   >
                     לחץ כאן
                   </a>
@@ -458,3 +458,4 @@ export default function Home() {
       </>
   );
 }
+

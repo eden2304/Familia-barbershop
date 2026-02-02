@@ -67,7 +67,7 @@ import {
   Crown,
   FileSpreadsheet,
 } from "lucide-react";
-import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
+import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, isValid } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import ProductForm from "../components/ProductForm.jsx";
@@ -1231,19 +1231,36 @@ const extractRecurringSchedules = (client) => {
       const service = rescheduleData.service;
       const appointment = rescheduleData.appointment;
 
-      const newEndTime = addMinutes(newStartTime, service.duration_minutes);
+      const startTime = newStartTime instanceof Date ? newStartTime : new Date(newStartTime);
 
-      await Appointment.update(appointment.id, {
-        starts_at: newStartTime.toISOString(),
-        ends_at: newEndTime.toISOString(),
-      });
+      if (!isValid(startTime)) {
+        toast({
+          title: 'שגיאה בהחלפת התור',
+          description: 'שעת היעד אינה תקינה. נסה לבחור שעה אחרת.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const newEndTime = addMinutes(startTime, service.duration_minutes);
+
+      await AdminApi.reschedule(
+        appointment.id,
+        startTime.toISOString(),
+        newEndTime.toISOString()
+      );
 
       setRescheduleData({ isOpen: false, appointment: null, service: null });
+      toast({
+        title: 'התור עודכן',
+        description: 'התור הועבר למועד החדש שנבחר.',
+      });
       loadData();
 
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
-      alert("שגיאה בהחלפת התור.");
+      const message = error?.payload?.message || error?.payload?.error || 'שגיאה בהחלפת התור.';
+      toast({ title: 'שגיאה בהחלפת התור', description: message, variant: 'destructive' });
     }
   };
 
@@ -3701,8 +3718,6 @@ const extractRecurringSchedules = (client) => {
                 onSubmit={handleRescheduleSubmit}
                 appointment={rescheduleData.appointment}
                 service={rescheduleData.service}
-                allAppointments={appointments}
-                businessHours={businessHours}
             />
         )}
 

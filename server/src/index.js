@@ -1977,7 +1977,67 @@ async function router(req, res) {
         const body = await readBody(req);
         const { id, newStartAt, newEndAt } = body || {};
         if (!id || !newStartAt || !newEndAt) return json(res, 400, { error: 'Missing id/newStartAt/newEndAt' });
-        await pool.query(`update appointments set starts_at=$2, ends_at=$3 where id=$1`, [id, new Date(newStartAt), new Date(newEndAt)]);
+        const parsed = parseId(id);
+        if (!parsed.raw) return json(res, 400, { error: 'Missing id' });
+        const startAt = parseAnyDate(newStartAt);
+        const endAt = parseAnyDate(newEndAt);
+        if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())) {
+            return json(res, 400, { error: 'INVALID_DATETIME' });
+        }
+        if (endAt <= startAt) {
+            return json(res, 400, { error: 'INVALID_RANGE' });
+        }
+
+        const idParam = parsed.isNum ? parsed.num : parsed.raw;
+        const idClause = parsed.isNum ? 'a.id <> $3' : 'CAST(a.id AS text) <> $3';
+
+        const conflicts = await pool.query(`
+            select a.id, a.starts_at, a.ends_at,
+                   coalesce(nullif(trim(c.first_name || ' ' || c.last_name), ''), 'לקוח') as client_name
+            from appointments a
+            left join clients c on c.id = a.client_id
+            where coalesce(a.status,'booked') <> 'canceled'
+              and a.starts_at < $2
+              and a.ends_at > $1
+              and ${idClause}
+            order by a.starts_at
+            limit 20
+        `, [startAt, endAt, idParam]);
+
+        const blocks = await pool.query(`
+            select id, start_at, end_at, reason
+            from blocked_times
+            where start_at < $2 and end_at > $1
+            order by start_at
+            limit 20
+        `, [startAt, endAt]);
+
+        if (conflicts.rows.length > 0 || blocks.rows.length > 0) {
+            return json(res, 409, {
+                error: 'APPOINTMENT_CONFLICT',
+                message: 'לא ניתן להעביר לתור חופף או חסום.',
+                conflicts: conflicts.rows.map((row) => ({
+                    id: row.id,
+                    starts_at: row.starts_at,
+                    ends_at: row.ends_at,
+                    client_name: row.client_name || ''
+                })),
+                blocked: blocks.rows.map((row) => ({
+                    id: row.id,
+                    starts_at: row.start_at,
+                    ends_at: row.end_at,
+                    reason: row.reason || ''
+                })),
+            });
+        }
+
+        const update = await pool.query(
+            `update appointments set starts_at=$2, ends_at=$3 where ${parsed.isNum ? 'id' : 'CAST(id AS text)'}=$1`,
+            [idParam, startAt, endAt]
+        );
+        if (update.rowCount === 0) {
+            return json(res, 404, { error: 'NOT_FOUND' });
+        }
         return json(res, 200, { ok: true });
     }
 

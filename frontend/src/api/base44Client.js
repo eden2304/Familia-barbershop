@@ -780,13 +780,12 @@ const api = {
       if (!sid || !d) return [];
       const params = new URLSearchParams({ serviceId: sid, date: d });
       const basePath = '/admin/appointments/available?' + params.toString();
-      try {
-        return (await httpGet(basePath)) || [];
-      } catch (error) {
-        const shouldTryApiPrefix = !String(BASE_URL).replace(/\/+$/, '').endsWith('/api');
-        if (!shouldTryApiPrefix || error?.status !== 404) throw error;
-        return (await httpGet('/api' + basePath)) || [];
-      }
+      const initial = await httpGet(basePath);
+      if (Array.isArray(initial)) return initial;
+      const shouldTryApiPrefix = !String(BASE_URL).replace(/\/+$/, '').endsWith('/api');
+      if (!shouldTryApiPrefix) return [];
+      const fallback = await httpGet('/api' + basePath);
+      return Array.isArray(fallback) ? fallback : [];
     },
 
     // שינוי מועד תור קיים (מקבל ISO מלאים)

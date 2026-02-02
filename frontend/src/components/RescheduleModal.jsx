@@ -54,13 +54,13 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
     const now = new Date();
     return rawSlots
       .map((hhmm) => ({
-        time: parse(hhmm, "HH:mm", date),
+        hhmm,
         formatted: hhmm,
       }))
-      .filter((slot) => isValid(slot.time))
       .filter((slot) => {
         if (!isSameDay(date, now)) return true;
-        return isAfter(slot.time, now);
+        const parsed = parse(slot.hhmm, "HH:mm", date);
+        return isValid(parsed) && isAfter(parsed, now);
       });
   };
 
@@ -106,10 +106,15 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   }, [isOpen, service?.id, weekDays]);
 
   const handleConfirm = () => {
-    if (selectedSlot && isValid(selectedSlot.time)) {
-      onSubmit(selectedSlot.time);
+    if (!selectedDay || !selectedSlot?.hhmm) {
+      console.error("Missing selected day/slot", { selectedDay, selectedSlot });
+      return;
+    }
+    const parsed = parse(selectedSlot.hhmm, "HH:mm", selectedDay);
+    if (isValid(parsed)) {
+      onSubmit(parsed);
     } else {
-      console.error("Invalid selected slot time", selectedSlot);
+      console.error("Invalid selected slot time", { selectedDay, selectedSlot });
     }
   };
 
@@ -137,7 +142,11 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
                 return (
                   <Button
                     key={date.toString()}
-                    onClick={() => !dayIsPast && hasSlots && setSelectedDay(date)}
+                  onClick={() => {
+                    if (dayIsPast || !hasSlots) return;
+                    setSelectedDay(date);
+                    setSelectedSlot(null);
+                  }}
                     disabled={dayIsPast || !hasSlots || loadingWeek}
                     variant="outline"
                   >

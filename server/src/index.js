@@ -2122,6 +2122,80 @@ async function router(req, res) {
         return json(res, 200, slots);
     }
 
+    if (req.method === 'GET' && pathname === '/admin/appointments/available') {
+        const serviceId = url.searchParams.get('serviceId');
+        const date = url.searchParams.get('date'); // yyyy-MM-dd
+        if (!serviceId || !date) return json(res, 200, []);
+
+        const rules = await loadBookingRules();
+        const d = new Date(date + 'T00:00:00');
+        if (Number.isNaN(d.getTime())) return json(res, 200, []);
+
+        let duration = 30;
+        const s = await pool.query(`select duration_minutes from services where id=$1`, [serviceId]);
+        if (s.rows[0]?.duration_minutes) duration = Number(s.rows[0].duration_minutes) || 30;
+
+        const hoursList = await getBusinessHours();
+        const weekday = d.getDay();
+        const dayConfig = hoursList.find((row) => Number(row.weekday) === weekday) || null;
+        const fallbackConfig = DEFAULT_HOURS.find((row) => row.weekday === weekday) || { open: null, close: null, isOpen: false, slotIntervalMinutes: 30 };
+        const isOpenForAdmin = dayConfig ? Boolean(dayConfig.isOpen) : Boolean(fallbackConfig.isOpen);
+        const openStr = isOpenForAdmin ? (dayConfig?.open ?? fallbackConfig.open) : null;
+        const closeStr = isOpenForAdmin ? (dayConfig?.close ?? fallbackConfig.close) : null;
+        const hasBaseWindow = Boolean(isOpenForAdmin && openStr && closeStr && openStr !== closeStr);
+        const open = hasBaseWindow && openStr ? toLocalDateTime(date, openStr) : null;
+        const close = hasBaseWindow && closeStr ? toLocalDateTime(date, closeStr) : null;
+        const memberWindowsForDay = (rules.memberOnlyWindows || [])
+            .filter((win) => Number(win.weekday) === weekday)
+            .map((win) => ({ start: toLocalDateTime(date, win.start), end: toLocalDateTime(date, win.end) }))
+            .filter((win) => win.start instanceof Date && win.end instanceof Date && !Number.isNaN(win.start.getTime()) && !Number.isNaN(win.end.getTime()) && win.end > win.start);
+
+        if (!hasBaseWindow && memberWindowsForDay.length === 0) {
+            return json(res, 200, []);
+        }
+
+        const { start, end } = dayBounds(date);
+        const ap = await pool.query(`
+            select starts_at, ends_at
+            from appointments
+            where starts_at >= $1 and starts_at < $2
+              and coalesce(status, 'booked') <> 'canceled'
+        `, [start, end]);
+        const bl = await pool.query(`
+            select start_at as starts_at, end_at as ends_at
+            from blocked_times
+            where start_at < $2 and end_at > $1
+        `, [start, end]);
+
+        const blockBusy = bl.rows.map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+        const apBusy = ap.rows.map(r => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+        const busy = [...apBusy, ...blockBusy];
+
+        const stepMinutes = Number(dayConfig?.slotIntervalMinutes ?? dayConfig?.slot ?? fallbackConfig.slotIntervalMinutes ?? fallbackConfig.slot ?? 30) || 30;
+        const durationMs = duration * 60000;
+        const baseWindows = hasBaseWindow && open && close ? [{ start: open, end: close }] : [];
+        const candidateWindows = [...baseWindows, ...memberWindowsForDay];
+
+        if (candidateWindows.length === 0) {
+            return json(res, 200, []);
+        }
+
+        const slotsSet = new Set();
+        for (const window of candidateWindows) {
+            for (let t = new Date(window.start); t.getTime() + durationMs <= window.end.getTime(); t = new Date(t.getTime() + stepMinutes * 60000)) {
+                const slotStart = new Date(t);
+                if (Number.isNaN(slotStart.getTime())) continue;
+                const slotEnd = new Date(slotStart.getTime() + durationMs);
+                const overlaps = busy.some(b => b.start < slotEnd && b.end > slotStart);
+                if (overlaps) continue;
+                slotsSet.add(formatHHmm(slotStart));
+            }
+        }
+
+        const slots = Array.from(slotsSet).sort();
+        return json(res, 200, slots);
+    }
+
 
     /* ---- BLOCKS ---- */
     if (req.method === 'GET' && pathname === '/admin/blocked-times') {

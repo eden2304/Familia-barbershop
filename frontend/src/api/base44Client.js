@@ -774,6 +774,21 @@ const api = {
       return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
     },
 
+    appointmentsAvailable: async (serviceId, date) => {
+      const d = normalizeDateForApi(date);
+      const sid = serviceId ? String(serviceId) : '';
+      if (!sid || !d) return [];
+      const params = new URLSearchParams({ serviceId: sid, date: d });
+      const basePath = '/admin/appointments/available?' + params.toString();
+      try {
+        return (await httpGet(basePath)) || [];
+      } catch (error) {
+        const shouldTryApiPrefix = !String(BASE_URL).replace(/\/+$/, '').endsWith('/api');
+        if (!shouldTryApiPrefix || error?.status !== 404) throw error;
+        return (await httpGet('/api' + basePath)) || [];
+      }
+    },
+
     // שינוי מועד תור קיים (מקבל ISO מלאים)
     reschedule: (id, newStartAtIso, newEndAtIso) => {
       const payload = {

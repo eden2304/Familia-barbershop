@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { format, addDays, startOfWeek, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
 import { he } from "date-fns/locale";
-import { Appointment } from "@/api/entities";
+import { Appointment, Admin as AdminApi } from "@/api/entities";
 
 const DAYS_IN_WEEK = [
   { key: 0, name: "ראשון" }, { key: 1, name: "שני" }, { key: 2, name: "שלישי" }, 
@@ -60,7 +60,9 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
       [key]: { slots: prev[key]?.slots ?? [], loading: true, error: null },
     }));
     try {
-      const slots = await Appointment.getAvailable(serviceId, date, { isMember: true });
+      const slots = AdminApi?.appointmentsAvailable
+        ? await AdminApi.appointmentsAvailable(serviceId, date)
+        : await Appointment.getAvailable(serviceId, date, { isMember: true });
       setAvailableByDate((prev) => ({
         ...prev,
         [key]: { slots: Array.isArray(slots) ? slots : [], loading: false, error: null },

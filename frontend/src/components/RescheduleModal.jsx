@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Calendar as CalendarIcon, Check } from "lucide-react";
-import { format, addDays, startOfWeek, parse, isSameDay, addMinutes, isAfter, isBefore, startOfDay } from "date-fns";
+import { ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { format, addDays, startOfWeek, parse, addMinutes, isAfter, isBefore, startOfDay, isEqual } from "date-fns";
 import { he } from "date-fns/locale";
 
 const DAYS_IN_WEEK = [
@@ -15,28 +15,65 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState(0);
 
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedDay(null);
+      setSelectedSlot(null);
+      setSelectedWeek(0);
+    }
+  }, [isOpen]);
+
   const getWeekDays = (weekOffset = 0) => {
     const start = startOfWeek(addDays(new Date(), weekOffset * 7), { weekStartsOn: 0 });
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  };
+
+  const getAppointmentName = (apt) => {
+    if (!apt) return "";
+    if (apt.client_name) return apt.client_name;
+    const first = apt.client?.firstName ?? apt.client_first_name ?? apt.first_name ?? "";
+    const last = apt.client?.lastName ?? apt.client_last_name ?? apt.last_name ?? "";
+    return `${first} ${last}`.trim();
+  };
+
+  const getBusinessHoursForDate = (date) => {
+    if (!date || !Array.isArray(businessHours)) return null;
+    const dayOfWeek = date.getDay();
+    return businessHours.find((row) => Number(row?.weekday) === Number(dayOfWeek)) || null;
+  };
+
+  const getSlotIntervalMinutes = (hours) => {
+    const raw = hours?.slotIntervalMinutes ?? hours?.slot_minutes ?? hours?.slot ?? 30;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
   };
 
   const generateTimeSlotsForDay = (date) => {
     if (!service || !date) return [];
 
     const slots = [];
-    const dayOfWeek = date.getDay();
-    const hours = businessHours.find(h => h.weekday === dayOfWeek);
-    if (!hours || hours.is_closed) return [];
+    const hours = getBusinessHoursForDate(date);
+    if (!hours) return [];
 
-    const openTime = parse(hours.open_time, 'HH:mm', date);
-    const closeTime = parse(hours.close_time, 'HH:mm', date);
+    const openValue = hours.open ?? hours.open_time;
+    const closeValue = hours.close ?? hours.close_time;
+    const isOpen = hours.isOpen ?? (hours.is_closed === undefined ? Boolean(openValue && closeValue) : !hours.is_closed);
+    if (!isOpen || !openValue || !closeValue) return [];
+
+    const openTime = parse(openValue, 'HH:mm', date);
+    const closeTime = parse(closeValue, 'HH:mm', date);
+    const slotInterval = getSlotIntervalMinutes(hours);
+    const serviceDuration = service?.duration_minutes ?? appointment?.duration_minutes ?? 30;
     let currentTime = openTime;
 
-    while (isBefore(addMinutes(currentTime, service.duration_minutes), closeTime)) {
+    while (isBefore(currentTime, closeTime) || isEqual(currentTime, closeTime)) {
+      const slotEnd = addMinutes(currentTime, serviceDuration);
+      if (isAfter(slotEnd, closeTime)) break;
+
       if (isAfter(currentTime, new Date())) {
-        const slotEnd = addMinutes(currentTime, service.duration_minutes);
         const hasConflict = allAppointments.some(apt => {
-          if (apt.status !== 'booked' || apt.id === appointment.id) return false;
+          if (apt.id === appointment.id) return false;
+          if (apt.status && apt.status !== 'booked') return false;
           const aptStart = new Date(apt.starts_at);
           const aptEnd = new Date(apt.ends_at);
           return (isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart));
@@ -46,7 +83,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
           slots.push({ time: currentTime, formatted: format(currentTime, 'HH:mm') });
         }
       }
-      currentTime = addMinutes(currentTime, 30);
+      currentTime = addMinutes(currentTime, slotInterval);
     }
     return slots;
   };
@@ -61,7 +98,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
     <Dialog open={isOpen} onOpenChange={onCancel}>
       <DialogContent className="max-w-md w-full bg-white rounded-2xl p-6">
         <DialogHeader>
-          <DialogTitle className="text-center text-xl font-bold">החלפת תור עבור {appointment.client_name}</DialogTitle>
+          <DialogTitle className="text-center text-xl font-bold">החלפת תור עבור {getAppointmentName(appointment) || "לקוח"}</DialogTitle>
         </DialogHeader>
         
         {!selectedDay ? (
@@ -81,7 +118,12 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
                 return (
                   <Button
                     key={date.toString()}
-                    onClick={() => !dayIsPast && hasSlots && setSelectedDay(date)}
+                    onClick={() => {
+                      if (!dayIsPast && hasSlots) {
+                        setSelectedDay(date);
+                        setSelectedSlot(null);
+                      }
+                    }}
                     disabled={dayIsPast || !hasSlots}
                     variant="outline"
                   >

@@ -1986,11 +1986,11 @@ async function router(req, res) {
         const parsed = parseId(idRaw);
         if (!parsed.raw) return json(res, 400, { error: 'Missing id' });
         const body = await readBody(req);
-        const { status, note } = body || {};
+        const { status, note, starts_at, ends_at } = body || {};
         const where = idWhere('appointments', parsed);
         await pool.query(
-            `update appointments set status = coalesce($2, status), note = coalesce($3, note) where ${where.sql}`,
-            [where.param, status ?? null, note ?? null]
+            `update appointments set status = coalesce($2, status), note = coalesce($3, note), starts_at = coalesce($4, starts_at), ends_at = coalesce($5, ends_at) where ${where.sql}`,
+            [where.param, status ?? null, note ?? null, starts_at ? new Date(starts_at) : null, ends_at ? new Date(ends_at) : null]
         );
         return json(res, 200, { ok: true });
     }

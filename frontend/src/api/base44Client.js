@@ -776,10 +776,18 @@ const api = {
 
     // שינוי מועד תור קיים (מקבל ISO מלאים)
     reschedule: (id, newStartAtIso, newEndAtIso) => {
-      return httpPost('/admin/appointments/reschedule', {
+      const payload = {
         id,
         newStartAt: String(newStartAtIso),
         newEndAt:   String(newEndAtIso),
+      };
+
+      return httpPost('/admin/appointments/reschedule', payload).catch((error) => {
+        if (error?.status !== 404) throw error;
+        return httpPut(`/admin/appointments/${encodeURIComponent(id)}`, {
+          starts_at: payload.newStartAt,
+          ends_at: payload.newEndAt,
+        });
       });
     },
 

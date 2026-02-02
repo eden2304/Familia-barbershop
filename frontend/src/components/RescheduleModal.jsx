@@ -16,6 +16,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [availableByDate, setAvailableByDate] = useState({});
+  const serviceId = service?.id ?? appointment?.service_id ?? appointment?.serviceId ?? null;
 
   useEffect(() => {
     if (isOpen) {
@@ -52,14 +53,14 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   };
 
   const fetchAvailableForDate = async (date) => {
-    if (!service?.id || !date) return;
+    if (!serviceId || !date) return;
     const key = dateKey(date);
     setAvailableByDate((prev) => ({
       ...prev,
       [key]: { slots: prev[key]?.slots ?? [], loading: true, error: null },
     }));
     try {
-      const slots = await Appointment.getAvailable(service.id, date, { isMember: true });
+      const slots = await Appointment.getAvailable(serviceId, date, { isMember: true });
       setAvailableByDate((prev) => ({
         ...prev,
         [key]: { slots: Array.isArray(slots) ? slots : [], loading: false, error: null },
@@ -73,7 +74,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   };
 
   useEffect(() => {
-    if (!isOpen || !service?.id) return;
+    if (!isOpen || !serviceId) return;
     const days = getWeekDays(selectedWeek);
     days.forEach((date) => {
       const key = dateKey(date);
@@ -82,7 +83,7 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, selectedWeek, service?.id]);
+  }, [isOpen, selectedWeek, serviceId]);
 
   useEffect(() => {
     if (selectedDay) {
@@ -160,17 +161,21 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
             {availableByDate[dateKey(selectedDay)]?.loading && (
               <p className="text-sm text-gray-500 mb-3">טוען שעות פנויות…</p>
             )}
-            <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
-              {selectedDaySlots.map(slot => (
-                <Button 
-                  key={slot.formatted} 
-                  onClick={() => setSelectedSlot(slot)}
-                  variant={selectedSlot?.formatted === slot.formatted ? "default" : "outline"}
-                >
-                  {slot.formatted}
-                </Button>
-              ))}
-            </div>
+            {selectedDaySlots.length === 0 ? (
+              <p className="text-sm text-gray-500">אין שעות פנויות ביום הזה.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+                {selectedDaySlots.map(slot => (
+                  <Button 
+                    key={slot.formatted} 
+                    onClick={() => setSelectedSlot(slot)}
+                    variant={selectedSlot?.formatted === slot.formatted ? "default" : "outline"}
+                  >
+                    {slot.formatted}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
-import { format, addDays, startOfWeek, parse, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
+import { format, addDays, startOfWeek, isAfter, isBefore, startOfDay, isSameDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { Appointment } from "@/api/entities";
 
@@ -40,6 +40,16 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
   };
 
   const dateKey = (date) => format(date, "yyyy-MM-dd");
+  const toTimeOnDate = (date, slot) => {
+    if (!date || typeof slot !== "string") return null;
+    const [h, m] = slot.split(":");
+    const hour = Number(h);
+    const minute = Number(m);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+    const next = new Date(date);
+    next.setHours(hour, minute, 0, 0);
+    return Number.isNaN(next.getTime()) ? null : next;
+  };
 
   const fetchAvailableForDate = async (date) => {
     if (!service?.id || !date) return;
@@ -90,8 +100,8 @@ export default function RescheduleModal({ isOpen, onCancel, onSubmit, appointmen
     const raw = availableByDate[key]?.slots ?? [];
     const now = new Date();
     return raw
-      .map((slot) => ({ time: parse(slot, "HH:mm", selectedDay), formatted: slot }))
-      .filter((slot) => !Number.isNaN(slot.time.getTime()))
+      .map((slot) => ({ time: toTimeOnDate(selectedDay, slot), formatted: slot }))
+      .filter((slot) => slot.time && !Number.isNaN(slot.time.getTime()))
       .filter((slot) => !isSameDay(selectedDay, now) || isAfter(slot.time, now));
   }, [availableByDate, selectedDay]);
 

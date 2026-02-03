@@ -1242,7 +1242,25 @@ const extractRecurringSchedules = (client) => {
         return;
       }
 
-      const newEndTime = addMinutes(startTime, service.duration_minutes);
+      const duration = Number(service?.duration_minutes);
+      if (!Number.isFinite(duration)) {
+        toast({
+          title: 'שגיאה בהחלפת התור',
+          description: 'משך השירות אינו תקין. נסה לבחור שירות אחר או לרענן.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const newEndTime = addMinutes(startTime, duration);
+      if (!isValid(newEndTime)) {
+        toast({
+          title: 'שגיאה בהחלפת התור',
+          description: 'לא ניתן לחשב את שעת הסיום. נסה לבחור שעה אחרת.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
       await AdminApi.reschedule(
         appointment.id,

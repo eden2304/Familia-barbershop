@@ -443,7 +443,7 @@ export default function AppointmentActionsModal({
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent
-          className="bg-white rounded-3xl p-6 max-w-sm mx-auto"
+          className="bg-white rounded-3xl p-6 max-w-sm mx-auto max-h-[90vh] overflow-y-auto"
           aria-describedby={undefined}
       >
         {view === 'main' ? renderMainView() : view === 'delay' ? renderDelayView() : renderRecurringView()}

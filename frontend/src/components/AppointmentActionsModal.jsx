@@ -142,16 +142,21 @@ export default function AppointmentActionsModal({
 
   const getBusinessHoursForDay = (date) => {
     const dayOfWeek = date.getDay();
-    return businessHours.find(h => h.weekday === dayOfWeek);
+    return businessHours.find(h => Number(h.weekday) === dayOfWeek);
   };
 
   const buildSlotsForDate = (date) => {
     if (!service || !date) return [];
     const hours = getBusinessHoursForDay(date);
-    if (!hours || hours.is_closed) return [];
+    const isClosed = hours?.is_closed ?? (hours?.isOpen === false);
+    if (!hours || isClosed) return [];
 
-    const openTime = parse(hours.open_time, 'HH:mm', date);
-    const closeTime = parse(hours.close_time, 'HH:mm', date);
+    const openValue = hours.open_time ?? hours.open;
+    const closeValue = hours.close_time ?? hours.close;
+    if (!openValue || !closeValue) return [];
+
+    const openTime = parse(openValue, 'HH:mm', date);
+    const closeTime = parse(closeValue, 'HH:mm', date);
     const slots = [];
     let currentTime = openTime;
 
@@ -303,13 +308,15 @@ export default function AppointmentActionsModal({
         {!isEditable && (
           <p className="text-xs text-gray-500 text-center">לא ניתן לשנות מועד לתורים שכבר עברו.</p>
         )}
-        <Button
-          onClick={handleRescheduleSubmit}
-          disabled={!canSubmit || savingReschedule}
-          className="w-full mt-2 rounded-full"
-        >
-          אשר שינוי מועד
-        </Button>
+        {hasChanges && (
+          <Button
+            onClick={handleRescheduleSubmit}
+            disabled={!canSubmit || savingReschedule}
+            className="w-full mt-2 rounded-full"
+          >
+            אשר שינוי מועד
+          </Button>
+        )}
       </div>
       
       <div className="grid grid-cols-2 gap-3">

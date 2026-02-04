@@ -86,7 +86,7 @@ export default function VideoGallery() {
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.8, opacity: 0 }}
-                    className="relative w-full max-w-sm aspect-[9/16]"
+                    className="relative w-[70vw] max-w-xs max-h-[70vh] aspect-[9/16]"
                     onClick={(e) => e.stopPropagation()}
                 >
                   <video
@@ -106,7 +106,7 @@ export default function VideoGallery() {
                   />
                   <button
                       onClick={() => setSelectedVideo(null)}
-                      className="absolute -top-10 right-0 text-white bg-black/50 rounded-full p-2"
+                      className="absolute top-3 right-3 text-white bg-black/60 hover:bg-black/80 rounded-full p-2"
                   >
                     <X className="w-6 h-6" />
                   </button>

@@ -43,6 +43,12 @@ export default function AppointmentActionsModal({
   const appointmentStart = new Date(appointment.starts_at);
   const now = new Date();
   const isEditable = isAfter(appointmentStart, now);
+  const durationMinutes =
+    service?.duration_minutes ??
+    appointment?.duration_minutes ??
+    appointment?.service_duration_minutes ??
+    appointment?.duration ??
+    30;
 
   useEffect(() => {
     if (!appointment) return;
@@ -174,7 +180,7 @@ export default function AppointmentActionsModal({
   };
 
   const buildSlotsForDate = (date) => {
-    if (!service || !date) return [];
+    if (!date || !durationMinutes) return [];
     const hours = getBusinessHoursForDay(date);
     const isClosed = hours?.isClosed ?? (hours?.isOpen === false);
     if (!hours || isClosed) return [];
@@ -189,9 +195,9 @@ export default function AppointmentActionsModal({
     const slots = [];
     let currentTime = openTime;
 
-    while (isBefore(addMinutes(currentTime, service.duration_minutes), closeTime)) {
+    while (isBefore(addMinutes(currentTime, durationMinutes), closeTime)) {
       if (!isSameDay(date, now) || isAfter(currentTime, now)) {
-        const slotEnd = addMinutes(currentTime, service.duration_minutes);
+        const slotEnd = addMinutes(currentTime, durationMinutes);
         const hasConflict = allAppointments.some(apt => {
           if (apt.status !== 'booked' || apt.id === appointment.id) return false;
           const aptStart = new Date(apt.starts_at);
@@ -286,13 +292,11 @@ export default function AppointmentActionsModal({
             <div className="grid grid-cols-2 gap-2">
               {dateOptions.map(date => {
                 const dayIsPast = isBefore(date, startOfDay(new Date()));
-                const slots = buildSlotsForDate(date);
-                const hasSlots = slots.length > 0;
                 return (
                   <Button
                     key={date.toISOString()}
                     variant={isSameDay(date, selectedDate) ? "default" : "outline"}
-                    disabled={!isEditable || dayIsPast || !hasSlots}
+                    disabled={!isEditable || dayIsPast}
                     onClick={() => handleSelectDate(date)}
                     className="text-xs"
                   >

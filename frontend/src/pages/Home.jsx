@@ -35,7 +35,7 @@ export default function Home() {
   useEffect(() => {
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
-    const t = setTimeout(() => setShowLoadingScreen(false), 3500);
+    const t = setTimeout(() => setShowLoadingScreen(false), 2800);
     const controller = new AbortController();
 
     const storedClient = localStorage.getItem("familiaClient");

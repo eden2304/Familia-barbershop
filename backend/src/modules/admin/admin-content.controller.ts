@@ -13,10 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
 import { randomUUID } from 'crypto';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { execFile, execFileSync } from 'child_process';
 
-const execFileAsync = promisify(execFile);
+let ffmpegAvailable: boolean | null = null;
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -172,25 +171,40 @@ export class AdminContentController {
         const inputPath = file.path;
 
         let previewUrl = `/uploads/preview/${fullFilename}`;
-        try {
-            await execFileAsync('ffmpeg', [
-                '-y',
-                '-i', inputPath,
-                '-vf', 'scale=360:640,fps=15',
-                '-c:v', 'libx264',
-                '-profile:v', 'baseline',
-                '-preset', 'veryfast',
-                '-b:v', '300k',
-                '-maxrate', '350k',
-                '-bufsize', '600k',
-                '-movflags', '+faststart',
-                '-an',
-                previewPath,
-            ]);
-        } catch (error) {
-            if (fs.existsSync(previewPath)) {
-                fs.unlinkSync(previewPath);
+        if (ffmpegAvailable === null) {
+            try {
+                execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+                ffmpegAvailable = true;
+            } catch {
+                ffmpegAvailable = false;
             }
+        }
+        if (ffmpegAvailable) {
+            try {
+                execFile('ffmpeg', [
+                    '-y',
+                    '-i', inputPath,
+                    '-vf', 'scale=360:640,fps=15',
+                    '-c:v', 'libx264',
+                    '-profile:v', 'baseline',
+                    '-preset', 'veryfast',
+                    '-b:v', '300k',
+                    '-maxrate', '350k',
+                    '-bufsize', '600k',
+                    '-movflags', '+faststart',
+                    '-an',
+                    previewPath,
+                ], (error) => {
+                    if (error && fs.existsSync(previewPath)) {
+                        fs.unlinkSync(previewPath);
+                    }
+                });
+            } catch {
+                if (fs.existsSync(previewPath)) {
+                    fs.unlinkSync(previewPath);
+                }
+            }
+        } else {
             previewUrl = `/uploads/full/${fullFilename}`;
         }
 

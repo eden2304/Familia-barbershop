@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { GalleryImage } from "@/api/entities"; // ← זה ה-export אצלך
 import { X } from "lucide-react";
@@ -6,6 +6,52 @@ import { X } from "lucide-react";
 export default function VideoGallery() {
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
+    const touchStartYRef = useRef(null);
+
+    useEffect(() => {
+        if (!selectedVideo) {
+            touchStartYRef.current = null;
+            return undefined;
+        }
+
+        const handleWheel = (event) => {
+            if (Math.abs(event.deltaY) > 0) {
+                setSelectedVideo(null);
+            }
+        };
+
+        const handleTouchStart = (event) => {
+            const touch = event.touches[0];
+            touchStartYRef.current = touch?.clientY ?? null;
+        };
+
+        const handleTouchMove = (event) => {
+            if (touchStartYRef.current === null) return;
+            const touch = event.touches[0];
+            if (!touch) return;
+            const deltaY = touch.clientY - touchStartYRef.current;
+            if (Math.abs(deltaY) > 15) {
+                setSelectedVideo(null);
+                touchStartYRef.current = null;
+            }
+        };
+
+        const handleTouchEnd = () => {
+            touchStartYRef.current = null;
+        };
+
+        window.addEventListener("wheel", handleWheel, { passive: true });
+        window.addEventListener("touchstart", handleTouchStart, { passive: true });
+        window.addEventListener("touchmove", handleTouchMove, { passive: true });
+        window.addEventListener("touchend", handleTouchEnd);
+
+        return () => {
+            window.removeEventListener("wheel", handleWheel);
+            window.removeEventListener("touchstart", handleTouchStart);
+            window.removeEventListener("touchmove", handleTouchMove);
+            window.removeEventListener("touchend", handleTouchEnd);
+        };
+    }, [selectedVideo]);
 
   useEffect(() => {
     const controller = new AbortController();

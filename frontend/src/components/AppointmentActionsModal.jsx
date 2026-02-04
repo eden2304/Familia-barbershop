@@ -1,17 +1,31 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Replace, Repeat, Send, X, ChevronRight } from 'lucide-react';
-import { format, addMinutes } from 'date-fns';
+import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, X, ChevronRight } from 'lucide-react';
+import { format, addMinutes, addDays, isAfter, isBefore, parse, startOfDay, isSameDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
 
-export default function AppointmentActionsModal({ appointment, service, isOpen, onClose, onDelete, onRescheduleRequest, onCreateRecurring }) {
+export default function AppointmentActionsModal({
+  appointment,
+  service,
+  isOpen,
+  onClose,
+  onDelete,
+  onReschedule,
+  onCreateRecurring,
+  allAppointments = [],
+  businessHours = [],
+}) {
   const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring'
   const [deleting, setDeleting] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('10');
   const [creatingRecurring, setCreatingRecurring] = useState(false);
+  const [editingField, setEditingField] = useState(null); // 'date' | 'time' | null
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [savingReschedule, setSavingReschedule] = useState(false);
 
 // ממיר למספר בינ״ל ל-wa.me / api.whatsapp.com (ללא פלוס)
   const toWaMsisdn = (raw) => {
@@ -26,9 +40,25 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
 
   if (!appointment) return null;
 
+  const appointmentStart = new Date(appointment.starts_at);
+  const now = new Date();
+  const isEditable = isAfter(appointmentStart, now);
+
+  useEffect(() => {
+    if (!appointment) return;
+    setSelectedDate(startOfDay(appointmentStart));
+    setSelectedSlot({
+      time: appointmentStart,
+      formatted: format(appointmentStart, 'HH:mm'),
+    });
+    setEditingField(null);
+    setSavingReschedule(false);
+  }, [appointment]);
+
   const handleClose = () => {
     setView('main'); // Reset view on close
     setCreatingRecurring(false);
+    setEditingField(null);
     onClose();
   };
 
@@ -110,6 +140,75 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
     }
   };
 
+  const getBusinessHoursForDay = (date) => {
+    const dayOfWeek = date.getDay();
+    return businessHours.find(h => h.weekday === dayOfWeek);
+  };
+
+  const buildSlotsForDate = (date) => {
+    if (!service || !date) return [];
+    const hours = getBusinessHoursForDay(date);
+    if (!hours || hours.is_closed) return [];
+
+    const openTime = parse(hours.open_time, 'HH:mm', date);
+    const closeTime = parse(hours.close_time, 'HH:mm', date);
+    const slots = [];
+    let currentTime = openTime;
+
+    while (isBefore(addMinutes(currentTime, service.duration_minutes), closeTime)) {
+      if (!isSameDay(date, now) || isAfter(currentTime, now)) {
+        const slotEnd = addMinutes(currentTime, service.duration_minutes);
+        const hasConflict = allAppointments.some(apt => {
+          if (apt.status !== 'booked' || apt.id === appointment.id) return false;
+          const aptStart = new Date(apt.starts_at);
+          const aptEnd = new Date(apt.ends_at);
+          return isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart);
+        });
+
+        if (!hasConflict) {
+          slots.push({ time: currentTime, formatted: format(currentTime, 'HH:mm') });
+        }
+      }
+      currentTime = addMinutes(currentTime, 30);
+    }
+    return slots;
+  };
+
+  const dateOptions = useMemo(() => {
+    if (!appointment) return [];
+    return Array.from({ length: 30 }, (_, i) => addDays(startOfDay(new Date()), i));
+  }, [appointment]);
+
+  const availableSlots = useMemo(() => {
+    if (!selectedDate) return [];
+    return buildSlotsForDate(selectedDate);
+  }, [selectedDate, service, allAppointments, businessHours]);
+
+  const selectedStart = selectedSlot?.time;
+  const hasChanges = selectedStart && selectedStart.getTime() !== appointmentStart.getTime();
+  const canSubmit = Boolean(isEditable && hasChanges);
+
+  const handleSelectDate = (date) => {
+    setSelectedDate(date);
+    const timeCandidate = new Date(date);
+    timeCandidate.setHours(appointmentStart.getHours(), appointmentStart.getMinutes(), 0, 0);
+    const matchingSlot = buildSlotsForDate(date).find(slot => slot.time.getTime() === timeCandidate.getTime());
+    setSelectedSlot(matchingSlot || null);
+  };
+
+  const handleRescheduleSubmit = async () => {
+    if (!canSubmit || !selectedStart) return;
+    try {
+      setSavingReschedule(true);
+      await onReschedule?.(appointment, service, selectedStart);
+      handleClose();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSavingReschedule(false);
+    }
+  };
+
   const renderMainView = () => (
     <>
       <DialogHeader className="text-center mb-4">
@@ -139,18 +238,83 @@ export default function AppointmentActionsModal({ appointment, service, isOpen, 
         </div>
         <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl">
           <div className="flex items-center gap-3 text-gray-600"><Calendar className="w-4 h-4" /><span>תאריך</span></div>
-          <span className="font-bold text-gray-800">{format(new Date(appointment.starts_at), 'dd/MM/yyyy', { locale: he })}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            className={`font-bold text-gray-800 ${!isEditable ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={() => isEditable && setEditingField(editingField === 'date' ? null : 'date')}
+          >
+            {format(selectedDate || appointmentStart, 'dd/MM/yyyy', { locale: he })}
+          </Button>
         </div>
-        <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl">
+        {editingField === 'date' && (
+          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
+            <div className="grid grid-cols-2 gap-2">
+              {dateOptions.map(date => {
+                const dayIsPast = isBefore(date, startOfDay(new Date()));
+                const slots = buildSlotsForDate(date);
+                const hasSlots = slots.length > 0;
+                return (
+                  <Button
+                    key={date.toISOString()}
+                    variant={isSameDay(date, selectedDate) ? "default" : "outline"}
+                    disabled={!isEditable || dayIsPast || !hasSlots}
+                    onClick={() => handleSelectDate(date)}
+                    className="text-xs"
+                  >
+                    {format(date, 'EEE dd/MM', { locale: he })}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl mt-3">
           <div className="flex items-center gap-3 text-gray-600"><Clock className="w-4 h-4" /><span>שעה</span></div>
-          <span className="font-bold text-gray-800">{format(new Date(appointment.starts_at), 'HH:mm')}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            className={`font-bold text-gray-800 ${!isEditable ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={() => isEditable && setEditingField(editingField === 'time' ? null : 'time')}
+          >
+            {format(selectedStart || appointmentStart, 'HH:mm')}
+          </Button>
         </div>
+        {editingField === 'time' && (
+          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
+            {availableSlots.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center">אין שעות פנויות ביום שנבחר.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {availableSlots.map(slot => (
+                  <Button
+                    key={slot.formatted}
+                    variant={selectedSlot?.formatted === slot.formatted ? "default" : "outline"}
+                    onClick={() => setSelectedSlot(slot)}
+                    className="text-xs"
+                  >
+                    {slot.formatted}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {!isEditable && (
+          <p className="text-xs text-gray-500 text-center">לא ניתן לשנות מועד לתורים שכבר עברו.</p>
+        )}
+        <Button
+          onClick={handleRescheduleSubmit}
+          disabled={!canSubmit || savingReschedule}
+          className="w-full mt-2 rounded-full"
+        >
+          אשר שינוי מועד
+        </Button>
       </div>
       
       <div className="grid grid-cols-2 gap-3">
         <Button onClick={handleCall} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Phone className="w-5 h-5"/><span className="text-xs font-medium">התקשר</span></Button>
         <Button onClick={() => setView('delay')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><MessageCircle className="w-5 h-5"/><span className="text-xs font-medium">הודעת עיכוב</span></Button>
-        <Button onClick={onRescheduleRequest} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Replace className="w-5 h-5"/><span className="text-xs font-medium">החלף תור</span></Button>
         <Button onClick={() => setView('recurring')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Repeat className="w-5 h-5"/><span className="text-xs font-medium">תור קבוע</span></Button>
       </div>
 

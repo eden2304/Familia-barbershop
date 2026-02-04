@@ -59,7 +59,7 @@ export default function VideoGallery() {
                       loop
                       muted
                       playsInline
-                      preload="metadata"
+                      preload="auto"
                   />
                   <div className="absolute bottom-2 right-2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center border-2 border-white">
                     <img

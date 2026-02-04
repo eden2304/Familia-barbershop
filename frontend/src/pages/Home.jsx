@@ -35,7 +35,7 @@ export default function Home() {
   useEffect(() => {
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
-    const t = setTimeout(() => setShowLoadingScreen(false), 1500);
+    const t = setTimeout(() => setShowLoadingScreen(false), 3500);
     const controller = new AbortController();
 
     const storedClient = localStorage.getItem("familiaClient");
@@ -159,10 +159,9 @@ export default function Home() {
   const totalTestimonialPages = testimonials.length > 0 ? Math.ceil(testimonials.length / 3) : 1;
   const testimonialsToShow = testimonials.slice(testimonialPage * 3, testimonialPage * 3 + 3);
 
-  if (showLoadingScreen) return <LoadingScreen />;
-
   return (
       <>
+        {showLoadingScreen && <LoadingScreen />}
         {showVerification && (
             <VerificationModal
                 onVerify={handleLoginSuccess}
@@ -185,6 +184,7 @@ export default function Home() {
                 muted
                 loop
                 playsInline
+                preload="auto"
             />
             <div className="absolute inset-0 bg-black/40"></div>
           </section>

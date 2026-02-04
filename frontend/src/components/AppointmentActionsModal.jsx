@@ -140,23 +140,52 @@ export default function AppointmentActionsModal({
     }
   };
 
+  const normalizeBusinessHourRow = (row) => {
+    if (!row) return null;
+    const weekday = Number(row.weekday ?? row.day_of_week ?? row.day ?? row.dayOfWeek);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return null;
+    const open = row.open ?? row.opens_at ?? row.open_time ?? row.start ?? row.start_time;
+    const close = row.close ?? row.closes_at ?? row.close_time ?? row.end ?? row.end_time;
+    const slotMinutes = Number(
+      row.slot ??
+      row.slotMinutes ??
+      row.slot_minutes ??
+      row.slotIntervalMinutes ??
+      row.interval ??
+      row.interval_minutes ??
+      row.intervalMinutes ??
+      30
+    ) || 30;
+    const isOpen = row.isOpen ?? row.is_open ?? Boolean(open && close);
+    const isClosed = row.is_closed ?? row.isClosed;
+    return { weekday, open, close, slotMinutes, isOpen, isClosed };
+  };
+
+  const normalizeTimeValue = (value) => {
+    if (!value) return '';
+    const text = String(value);
+    return text.includes(':') ? text.slice(0, 5) : text;
+  };
+
   const getBusinessHoursForDay = (date) => {
     const dayOfWeek = date.getDay();
-    return businessHours.find(h => Number(h.weekday) === dayOfWeek);
+    const raw = businessHours.find(h => Number(h.weekday ?? h.day_of_week ?? h.day ?? h.dayOfWeek) === dayOfWeek);
+    return normalizeBusinessHourRow(raw);
   };
 
   const buildSlotsForDate = (date) => {
     if (!service || !date) return [];
     const hours = getBusinessHoursForDay(date);
-    const isClosed = hours?.is_closed ?? (hours?.isOpen === false);
+    const isClosed = hours?.isClosed ?? (hours?.isOpen === false);
     if (!hours || isClosed) return [];
 
-    const openValue = hours.open_time ?? hours.open;
-    const closeValue = hours.close_time ?? hours.close;
+    const openValue = normalizeTimeValue(hours.open);
+    const closeValue = normalizeTimeValue(hours.close);
     if (!openValue || !closeValue) return [];
 
     const openTime = parse(openValue, 'HH:mm', date);
     const closeTime = parse(closeValue, 'HH:mm', date);
+    const slotInterval = Number(hours.slotMinutes) || 30;
     const slots = [];
     let currentTime = openTime;
 
@@ -174,7 +203,7 @@ export default function AppointmentActionsModal({
           slots.push({ time: currentTime, formatted: format(currentTime, 'HH:mm') });
         }
       }
-      currentTime = addMinutes(currentTime, 30);
+      currentTime = addMinutes(currentTime, slotInterval);
     }
     return slots;
   };

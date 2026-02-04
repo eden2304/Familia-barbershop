@@ -7,6 +7,7 @@ export default function VideoGallery() {
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
     const touchStartYRef = useRef(null);
+    const selectedVideoRef = useRef(null);
 
     useEffect(() => {
         if (!selectedVideo) {
@@ -51,6 +52,19 @@ export default function VideoGallery() {
             window.removeEventListener("touchmove", handleTouchMove);
             window.removeEventListener("touchend", handleTouchEnd);
         };
+    }, [selectedVideo]);
+
+    useEffect(() => {
+        if (!selectedVideoRef.current) return;
+        const videoEl = selectedVideoRef.current;
+        const playOnOpen = async () => {
+            try {
+                await videoEl.play();
+            } catch (error) {
+                console.warn("Autoplay prevented:", error);
+            }
+        };
+        playOnOpen();
     }, [selectedVideo]);
 
   useEffect(() => {
@@ -136,6 +150,7 @@ export default function VideoGallery() {
                     onClick={(e) => e.stopPropagation()}
                 >
                   <video
+                      ref={selectedVideoRef}
                       className="w-full h-full object-contain rounded-2xl"
                       src={
                         selectedVideo.full_url
@@ -147,8 +162,10 @@ export default function VideoGallery() {
                         || selectedVideo.url
                       }
                       autoPlay
+                      muted
                       controls
                       loop
+                      playsInline
                   />
                   <button
                       onClick={() => setSelectedVideo(null)}

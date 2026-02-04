@@ -451,13 +451,15 @@ function normMedia(x) {
   x = x || {};
   var image = pick(x, 'image_url', 'imageUrl', undefined);
   var video = pick(x, 'video_url', 'videoUrl', undefined);
+  var full = pick(x, 'full_url', 'fullUrl', undefined);
   if (video === undefined) video = x.url;
 
   var base = normOrdAct(x);
   var withImg = both({ image_url: image, imageUrl: image }, 'image_url', 'imageUrl', undefined);
   var withVid = both({ video_url: video, videoUrl: video }, 'video_url', 'videoUrl', undefined);
+  var withFull = both({ full_url: full, fullUrl: full }, 'full_url', 'fullUrl', undefined);
 
-  var out = Object.assign({}, base, withImg, withVid);
+  var out = Object.assign({}, base, withImg, withVid, withFull);
   out.url = (video !== undefined && video !== null) ? video : x.url;
   return out;
 }
@@ -530,6 +532,8 @@ function toGalleryBody(b) {
   b = b || {};
   return {
     videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    imageUrl: (b.imageUrl !== undefined ? b.imageUrl : b.image_url),
+    fullUrl: (b.fullUrl !== undefined ? b.fullUrl : b.full_url),
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
   };
@@ -538,6 +542,8 @@ function toBackgroundBody(b) {
   b = b || {};
   return {
     videoUrl: (b.videoUrl !== undefined ? b.videoUrl : (b.video_url !== undefined ? b.video_url : b.url)),
+    imageUrl: (b.imageUrl !== undefined ? b.imageUrl : b.image_url),
+    fullUrl: (b.fullUrl !== undefined ? b.fullUrl : b.full_url),
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : false)),
   };

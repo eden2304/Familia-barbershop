@@ -4145,17 +4145,23 @@ function GalleryForm({ onSubmit, onCancel }) {
     try {
       // שרת מחזיר { ok:true, url: "/uploads/..." }
       console.log('selected file:', file?.name, file?.type, file); // צריך לראות שם/סוג
-      const { url } = await UploadFile.upload(file);
+      const { previewUrl, fullUrl, url } = await UploadFile.upload(file);
 
       // נבנה URL מוחלט לפי הבסיס של axios (api)
       const base = (api?.defaults?.baseURL || '').replace(/\/+$/,''); // בלי "/" בסוף
-      const abs = url.startsWith('http') ? url : `${base}${url}`;      // "/uploads/..." -> "http://localhost:3001/uploads/..."
+      const previewAbs = previewUrl
+        ? (previewUrl.startsWith('http') ? previewUrl : `${base}${previewUrl}`)
+        : (url.startsWith('http') ? url : `${base}${url}`);
+      const fullAbs = fullUrl
+        ? (fullUrl.startsWith('http') ? fullUrl : `${base}${fullUrl}`)
+        : previewAbs;
 
       await onSubmit({
         // נשמור את שלושתם כדי שכל מקום בקוד ימצא מה שהוא צריך:
-        image_url: abs,
-        video_url: abs,
-        url:       abs,
+        image_url: previewAbs,
+        video_url: fullAbs,
+        url:       fullAbs,
+        full_url:  fullAbs,
         alt_text:  formData.alt_text,
         order_index: formData.order_index
       });
@@ -4219,9 +4225,17 @@ function BackgroundVideoForm({ onSubmit, onCancel }) {
     if (!file) return alert("נא לבחור קובץ וידאו");
     setUploading(true);
     try {
-      const { url } = await UploadFile.upload(file);
-      const absoluteUrl = resolveMediaUrl(url);
-      await onSubmit({ video_url: absoluteUrl, image_url: absoluteUrl, url: absoluteUrl });
+      const { previewUrl, fullUrl, url } = await UploadFile.upload(file);
+      const previewSource = previewUrl || url;
+      const fullSource = fullUrl || url;
+      const previewAbsolute = resolveMediaUrl(previewSource);
+      const fullAbsolute = resolveMediaUrl(fullSource);
+      await onSubmit({
+        video_url: fullAbsolute,
+        image_url: previewAbsolute,
+        full_url: fullAbsolute,
+        url: fullAbsolute,
+      });
     } catch (err) {
       console.error("Error uploading file:", err);
       alert("שגיאה בהעלאת הקובץ");

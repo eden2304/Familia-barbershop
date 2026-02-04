@@ -128,8 +128,13 @@ async function bootstrap() {
     app.set('trust proxy', true);
 
     const uploadDir = path.resolve(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
+    const fullDir = path.resolve(uploadDir, 'full');
+    const previewDir = path.resolve(uploadDir, 'preview');
+    if (!fs.existsSync(fullDir)) {
+        fs.mkdirSync(fullDir, { recursive: true });
+    }
+    if (!fs.existsSync(previewDir)) {
+        fs.mkdirSync(previewDir, { recursive: true });
     }
 
     app.enableCors({
@@ -167,7 +172,16 @@ async function bootstrap() {
 
 
     app.use(securityHeaders);
-    app.useStaticAssets(uploadDir, { prefix: '/uploads' });
+    app.useStaticAssets(uploadDir, {
+        prefix: '/uploads',
+        setHeaders: (res, filePath) => {
+            res.setHeader('Accept-Ranges', 'bytes');
+            if (filePath.endsWith('.mp4')) {
+                res.setHeader('Content-Type', 'video/mp4');
+            }
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        },
+    });
 
     const secret = process.env.JWT_SECRET;
     if (!secret || secret.length < 64) {

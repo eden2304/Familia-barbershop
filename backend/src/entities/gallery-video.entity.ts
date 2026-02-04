@@ -7,8 +7,13 @@ export class GalleryVideo {
     // ↓↓↓ שדות מדיה שחזרנו ↓↓↓
     @Column({ type: 'text' }) videoUrl: string;
 
+    @Column({ name: 'image_url', type: 'text', nullable: true })
+    imageUrl?: string | null;
+
+    @Column({ name: 'full_url', type: 'text', nullable: true })
+    fullUrl?: string | null;
+
     @Column({ type: 'integer', default: 0 }) orderIndex: number;
 
     @Column({ type: 'boolean', default: true }) isActive: boolean;
 }
-

@@ -42,7 +42,7 @@ export default function VideoGallery() {
       <div className="w-full">
         <div className="flex overflow-x-auto gap-3 py-2 scrollbar-hide">
           {videos.map((video, index) => {
-            const src = video.video_url || video.url || video.image_url || "";
+            const src = video.image_url || video.imageUrl || video.video_url || video.videoUrl || video.url || "";
             return (
                 <motion.div
                     key={video.id || index}
@@ -91,7 +91,15 @@ export default function VideoGallery() {
                 >
                   <video
                       className="w-full h-full object-contain rounded-2xl"
-                      src={selectedVideo.video_url || selectedVideo.url || selectedVideo.image_url}
+                      src={
+                        selectedVideo.full_url
+                        || selectedVideo.fullUrl
+                        || selectedVideo.image_url
+                        || selectedVideo.imageUrl
+                        || selectedVideo.video_url
+                        || selectedVideo.videoUrl
+                        || selectedVideo.url
+                      }
                       autoPlay
                       controls
                       loop

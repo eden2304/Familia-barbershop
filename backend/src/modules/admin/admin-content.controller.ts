@@ -171,6 +171,7 @@ export class AdminContentController {
         const previewPath = path.join(previewDir, fullFilename);
         const inputPath = file.path;
 
+        let previewUrl = `/uploads/preview/${fullFilename}`;
         try {
             await execFileAsync('ffmpeg', [
                 '-y',
@@ -187,11 +188,13 @@ export class AdminContentController {
                 previewPath,
             ]);
         } catch (error) {
-            throw new BadRequestException('Failed to generate preview');
+            if (fs.existsSync(previewPath)) {
+                fs.unlinkSync(previewPath);
+            }
+            previewUrl = `/uploads/full/${fullFilename}`;
         }
 
         const fullUrl = `/uploads/full/${fullFilename}`;
-        const previewUrl = `/uploads/preview/${fullFilename}`;
         return {
             ok: true,
             fullUrl,

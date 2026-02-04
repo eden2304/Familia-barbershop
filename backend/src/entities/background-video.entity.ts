@@ -9,6 +9,12 @@ export class BackgroundVideo {
     @Column({ name: 'url', type: 'text' })
     videoUrl: string;
 
+    @Column({ name: 'image_url', type: 'text', nullable: true })
+    imageUrl?: string | null;
+
+    @Column({ name: 'full_url', type: 'text', nullable: true })
+    fullUrl?: string | null;
+
     @Column({ name: 'is_active', type: 'boolean', default: true })
     isActive: boolean;
 

@@ -32,6 +32,10 @@ export class ContentController {
             id: v.id,
             url: v.videoUrl,        // תאימות לפרונט ישן
             videoUrl: v.videoUrl,   // השם החדש והעדכני
+            imageUrl: v.imageUrl,
+            image_url: v.imageUrl,
+            fullUrl: v.fullUrl,
+            full_url: v.fullUrl,
             isActive: v.isActive,
             orderIndex: v.orderIndex,
         }));

@@ -84,7 +84,14 @@ export default function Home() {
       // Background videos
       const bg = await api.get('/background-videos', { signal }).catch(() => []);
       const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
-      const rawUrl = active?.videoUrl || active?.video_url || active?.url || "";
+      const rawUrl = active?.imageUrl
+        || active?.image_url
+        || active?.fullUrl
+        || active?.full_url
+        || active?.videoUrl
+        || active?.video_url
+        || active?.url
+        || "";
       if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
     } catch (err) {
       if (err?.name !== 'AbortError') {

@@ -12,6 +12,10 @@ import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
+import { randomUUID } from 'crypto';
+import { execFile, execFileSync } from 'child_process';
+
+let ffmpegAvailable: boolean | null = null;
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -140,31 +144,76 @@ export class AdminContentController {
     @UseInterceptors(FileInterceptor('file', {
         storage: diskStorage({
             destination: (_req, _file, cb) => {
-                const uploadDir = path.resolve(process.cwd(), 'uploads');
-                if (!fs.existsSync(uploadDir)) {
-                    fs.mkdirSync(uploadDir, { recursive: true });
+                const fullDir = path.resolve(process.cwd(), 'uploads', 'full');
+                const previewDir = path.resolve(process.cwd(), 'uploads', 'preview');
+                if (!fs.existsSync(fullDir)) {
+                    fs.mkdirSync(fullDir, { recursive: true });
                 }
-                cb(null, uploadDir);
+                if (!fs.existsSync(previewDir)) {
+                    fs.mkdirSync(previewDir, { recursive: true });
+                }
+                cb(null, fullDir);
             },
-            filename: (_req, file, cb) => {
-                const rawExt = path.extname(file.originalname || '');
-                const ext = rawExt || (file.mimetype === 'video/mp4' ? '.mp4'
-                    : file.mimetype === 'video/webm' ? '.webm'
-                        : file.mimetype === 'image/png' ? '.png'
-                            : file.mimetype === 'image/jpeg' ? '.jpg' : '');
-                const base = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-                cb(null, `${base}${ext}`);
+            filename: (_req, _file, cb) => {
+                const id = randomUUID();
+                cb(null, `${id}.mp4`);
             },
         }),
         limits: { fileSize: 1024 * 1024 * 1024 },
     }))
-    uploadFile(@UploadedFile() file?: Express.Multer.File) {
+    async uploadFile(@UploadedFile() file?: Express.Multer.File) {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }
+        const fullFilename = file.filename;
+        const previewDir = path.resolve(process.cwd(), 'uploads', 'preview');
+        const previewPath = path.join(previewDir, fullFilename);
+        const inputPath = file.path;
+
+        let previewUrl = `/uploads/preview/${fullFilename}`;
+        if (ffmpegAvailable === null) {
+            try {
+                execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+                ffmpegAvailable = true;
+            } catch {
+                ffmpegAvailable = false;
+            }
+        }
+        if (ffmpegAvailable) {
+            try {
+                execFile('ffmpeg', [
+                    '-y',
+                    '-i', inputPath,
+                    '-vf', 'scale=360:640,fps=15',
+                    '-c:v', 'libx264',
+                    '-profile:v', 'baseline',
+                    '-preset', 'veryfast',
+                    '-b:v', '300k',
+                    '-maxrate', '350k',
+                    '-bufsize', '600k',
+                    '-movflags', '+faststart',
+                    '-an',
+                    previewPath,
+                ], (error) => {
+                    if (error && fs.existsSync(previewPath)) {
+                        fs.unlinkSync(previewPath);
+                    }
+                });
+            } catch {
+                if (fs.existsSync(previewPath)) {
+                    fs.unlinkSync(previewPath);
+                }
+            }
+        } else {
+            previewUrl = `/uploads/full/${fullFilename}`;
+        }
+
+        const fullUrl = `/uploads/full/${fullFilename}`;
         return {
             ok: true,
-            url: `/uploads/${file.filename}`,
+            fullUrl,
+            previewUrl,
+            url: previewUrl,
             size: file.size,
             mime: file.mimetype,
         };

@@ -1235,10 +1235,16 @@ const extractRecurringSchedules = (client) => {
         30;
       const newEndTime = addMinutes(startAt, durationMinutes);
 
-      await Appointment.update(appointment.id, {
-        starts_at: startAt.toISOString(),
-        ends_at: newEndTime.toISOString(),
-      });
+      if (AdminApi?.reschedule) {
+        await AdminApi.reschedule(appointment.id, startAt.toISOString(), newEndTime.toISOString());
+      } else if (AdminApi?.appointments?.reschedule) {
+        await AdminApi.appointments.reschedule(appointment.id, startAt.toISOString(), newEndTime.toISOString());
+      } else {
+        await Appointment.update(appointment.id, {
+          starts_at: startAt.toISOString(),
+          ends_at: newEndTime.toISOString(),
+        });
+      }
 
       await loadData();
     } catch (error) {

@@ -786,22 +786,43 @@ const api = {
       const startsAt = String(newStartAtIso);
       const endsAt = String(newEndAtIso);
 
-      // נתיב ראשי בשרת הנוכחי
-      try {
-        return await httpPut(`/admin/appointments/${appointmentId}`, {
+      const fallbackCalls = [
+        () => httpPut(`/admin/appointments/${appointmentId}`, {
           starts_at: startsAt,
           ends_at: endsAt,
-        });
-      } catch (err) {
-        // פולבק לשרתים ותיקים שתומכים רק ב-/admin/appointments/reschedule
-        if (err?.status !== 404 && err?.status !== 405) throw err;
+        }),
+        () => httpPost('/admin/appointments/reschedule', {
+          id,
+          newStartAt: startsAt,
+          newEndAt: endsAt,
+        }),
+        () => httpPost('/admin/appointments/reschedule', {
+          id,
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }),
+        () => httpPut(`/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }),
+        () => httpPut(`/admin/appointments/${appointmentId}/reschedule`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }),
+      ];
+
+      let lastErr = null;
+      for (const call of fallbackCalls) {
+        try {
+          return await call();
+        } catch (err) {
+          lastErr = err;
+          const status = err?.status ?? err?.response?.status;
+          if (status !== 404 && status !== 405) throw err;
+        }
       }
 
-      return httpPost('/admin/appointments/reschedule', {
-        id,
-        newStartAt: startsAt,
-        newEndAt: endsAt,
-      });
+      throw lastErr || new Error('RESCHEDULE_ROUTE_NOT_FOUND');
     },
 
     appointments: {

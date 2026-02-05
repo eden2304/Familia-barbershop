@@ -781,11 +781,26 @@ const api = {
     },
 
     // שינוי מועד תור קיים (מקבל ISO מלאים)
-    reschedule: (id, newStartAtIso, newEndAtIso) => {
+    reschedule: async (id, newStartAtIso, newEndAtIso) => {
+      const appointmentId = encodeURIComponent(id);
+      const startsAt = String(newStartAtIso);
+      const endsAt = String(newEndAtIso);
+
+      // נתיב ראשי בשרת הנוכחי
+      try {
+        return await httpPut(`/admin/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        });
+      } catch (err) {
+        // פולבק לשרתים ותיקים שתומכים רק ב-/admin/appointments/reschedule
+        if (err?.status !== 404 && err?.status !== 405) throw err;
+      }
+
       return httpPost('/admin/appointments/reschedule', {
         id,
-        newStartAt: String(newStartAtIso),
-        newEndAt:   String(newEndAtIso),
+        newStartAt: startsAt,
+        newEndAt: endsAt,
       });
     },
 

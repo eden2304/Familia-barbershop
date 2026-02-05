@@ -786,33 +786,54 @@ const api = {
       const startsAt = String(newStartAtIso);
       const endsAt = String(newEndAtIso);
 
-      const fallbackCalls = [
-        () => httpPut(`/admin/appointments/${appointmentId}`, {
-          starts_at: startsAt,
-          ends_at: endsAt,
-        }),
-        () => httpPost('/admin/appointments/reschedule', {
+      const routePrefixes = ['', '/api'];
+      const attemptCalls = [];
+
+      for (const prefix of routePrefixes) {
+        // נתיב ייעודי לשינוי מועד (מועדף) – עם שמות שדות שונים כדי להתאים לשרתי פרודקשן שונים
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
           id,
           newStartAt: startsAt,
           newEndAt: endsAt,
-        }),
-        () => httpPost('/admin/appointments/reschedule', {
+        }));
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
           id,
           starts_at: startsAt,
           ends_at: endsAt,
-        }),
-        () => httpPut(`/appointments/${appointmentId}`, {
+        }));
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
+          appointmentId: id,
+          startsAt,
+          endsAt,
+        }));
+
+        // נתיבי fallback נפוצים
+        attemptCalls.push(() => httpPut(`${prefix}/admin/appointments/${appointmentId}/reschedule`, {
           starts_at: startsAt,
           ends_at: endsAt,
-        }),
-        () => httpPut(`/admin/appointments/${appointmentId}/reschedule`, {
+        }));
+        attemptCalls.push(() => httpPatch(`${prefix}/admin/appointments/${appointmentId}/reschedule`, {
           starts_at: startsAt,
           ends_at: endsAt,
-        }),
-      ];
+        }));
+        attemptCalls.push(() => httpPut(`${prefix}/appointments/${appointmentId}/reschedule`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+
+        // fallback אחרון: עדכון הרשומה עצמה
+        attemptCalls.push(() => httpPut(`${prefix}/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+        attemptCalls.push(() => httpPatch(`${prefix}/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+      }
 
       let lastErr = null;
-      for (const call of fallbackCalls) {
+      for (const call of attemptCalls) {
         try {
           return await call();
         } catch (err) {

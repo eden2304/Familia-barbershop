@@ -1221,11 +1221,22 @@ const extractRecurringSchedules = (client) => {
 
   const handleRescheduleSubmit = async (appointment, service, newStartTime) => {
     try {
-      if (!appointment?.id || !service || !newStartTime) return;
-      const newEndTime = addMinutes(newStartTime, service.duration_minutes);
+      if (!appointment?.id || !newStartTime) return;
+      const startAt = new Date(newStartTime);
+      if (Number.isNaN(startAt.getTime())) {
+        alert("שעה לא תקינה. נסה לבחור שעה מחדש.");
+        return;
+      }
+      const durationMinutes =
+        service?.duration_minutes ??
+        appointment?.duration_minutes ??
+        appointment?.service_duration_minutes ??
+        appointment?.duration ??
+        30;
+      const newEndTime = addMinutes(startAt, durationMinutes);
 
       await Appointment.update(appointment.id, {
-        starts_at: newStartTime.toISOString(),
+        starts_at: startAt.toISOString(),
         ends_at: newEndTime.toISOString(),
       });
 

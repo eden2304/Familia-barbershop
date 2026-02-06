@@ -6,6 +6,7 @@ import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, 
 import { format, addMinutes, addDays, isAfter, isBefore, parse, startOfDay, isSameDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
+import { Admin as AdminApi } from '@/api/base44Client';
 
 export default function AppointmentActionsModal({
   appointment,
@@ -26,6 +27,8 @@ export default function AppointmentActionsModal({
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [savingReschedule, setSavingReschedule] = useState(false);
+  const [appointmentsForDate, setAppointmentsForDate] = useState(allAppointments);
+  const [appointmentsDateKey, setAppointmentsDateKey] = useState(null);
 
 // ממיר למספר בינ״ל ל-wa.me / api.whatsapp.com (ללא פלוס)
   const toWaMsisdn = (raw) => {
@@ -60,6 +63,33 @@ export default function AppointmentActionsModal({
     setEditingField(null);
     setSavingReschedule(false);
   }, [appointment]);
+
+  useEffect(() => {
+    setAppointmentsForDate(allAppointments);
+  }, [allAppointments]);
+
+  useEffect(() => {
+    if (!selectedDate || !isOpen) return;
+    const dateKey = format(startOfDay(selectedDate), 'yyyy-MM-dd');
+    if (dateKey === appointmentsDateKey) return;
+    let isActive = true;
+    const loadAppointments = async () => {
+      try {
+        const data = await AdminApi.appointmentsByDate(dateKey).catch(() => []);
+        if (!isActive) return;
+        setAppointmentsForDate(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (!isActive) return;
+        setAppointmentsForDate(allAppointments);
+      } finally {
+        if (isActive) setAppointmentsDateKey(dateKey);
+      }
+    };
+    loadAppointments();
+    return () => {
+      isActive = false;
+    };
+  }, [selectedDate, isOpen, appointmentsDateKey, allAppointments]);
 
   const handleClose = () => {
     setView('main'); // Reset view on close
@@ -198,10 +228,15 @@ export default function AppointmentActionsModal({
     while (isBefore(addMinutes(currentTime, durationMinutes), closeTime)) {
       if (!isSameDay(date, now) || isAfter(currentTime, now)) {
         const slotEnd = addMinutes(currentTime, durationMinutes);
-        const hasConflict = allAppointments.some(apt => {
+        const hasConflict = appointmentsForDate.some(apt => {
           if (apt.status !== 'booked' || apt.id === appointment.id) return false;
-          const aptStart = new Date(apt.starts_at);
-          const aptEnd = new Date(apt.ends_at);
+          const aptStart = new Date(apt.starts_at ?? apt.startsAt);
+          const aptEnd =
+            new Date(
+              apt.ends_at ??
+              apt.endsAt ??
+              addMinutes(aptStart, Number(apt.duration_minutes ?? durationMinutes ?? 30)),
+            );
           return isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart);
         });
 
@@ -222,7 +257,7 @@ export default function AppointmentActionsModal({
   const availableSlots = useMemo(() => {
     if (!selectedDate) return [];
     return buildSlotsForDate(selectedDate);
-  }, [selectedDate, service, allAppointments, businessHours]);
+  }, [selectedDate, service, appointmentsForDate, businessHours]);
 
   const selectedStart = selectedSlot?.time;
   const hasChanges = selectedStart && selectedStart.getTime() !== appointmentStart.getTime();

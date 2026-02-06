@@ -781,12 +781,69 @@ const api = {
     },
 
     // שינוי מועד תור קיים (מקבל ISO מלאים)
-    reschedule: (id, newStartAtIso, newEndAtIso) => {
-      return httpPost('/admin/appointments/reschedule', {
-        id,
-        newStartAt: String(newStartAtIso),
-        newEndAt:   String(newEndAtIso),
-      });
+    reschedule: async (id, newStartAtIso, newEndAtIso) => {
+      const appointmentId = encodeURIComponent(id);
+      const startsAt = String(newStartAtIso);
+      const endsAt = String(newEndAtIso);
+
+      const routePrefixes = ['', '/api'];
+      const attemptCalls = [];
+
+      for (const prefix of routePrefixes) {
+        // נתיב ייעודי לשינוי מועד (מועדף) – עם שמות שדות שונים כדי להתאים לשרתי פרודקשן שונים
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
+          id,
+          newStartAt: startsAt,
+          newEndAt: endsAt,
+        }));
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
+          id,
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+        attemptCalls.push(() => httpPost(`${prefix}/admin/appointments/reschedule`, {
+          appointmentId: id,
+          startsAt,
+          endsAt,
+        }));
+
+        // נתיבי fallback נפוצים
+        attemptCalls.push(() => httpPut(`${prefix}/admin/appointments/${appointmentId}/reschedule`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+        attemptCalls.push(() => httpPatch(`${prefix}/admin/appointments/${appointmentId}/reschedule`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+        attemptCalls.push(() => httpPut(`${prefix}/appointments/${appointmentId}/reschedule`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+
+        // fallback אחרון: עדכון הרשומה עצמה
+        attemptCalls.push(() => httpPut(`${prefix}/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+        attemptCalls.push(() => httpPatch(`${prefix}/appointments/${appointmentId}`, {
+          starts_at: startsAt,
+          ends_at: endsAt,
+        }));
+      }
+
+      let lastErr = null;
+      for (const call of attemptCalls) {
+        try {
+          return await call();
+        } catch (err) {
+          lastErr = err;
+          const status = err?.status ?? err?.response?.status;
+          if (status !== 404 && status !== 405) throw err;
+        }
+      }
+
+      throw lastErr || new Error('RESCHEDULE_ROUTE_NOT_FOUND');
     },
 
     appointments: {

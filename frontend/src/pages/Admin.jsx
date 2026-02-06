@@ -73,7 +73,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import ProductForm from "../components/ProductForm.jsx";
 import AdminAppointmentForm from "../components/AdminAppointmentForm.jsx";
 import AppointmentActionsModal from "../components/AppointmentActionsModal.jsx";
-import RescheduleModal from "../components/RescheduleModal.jsx";
 import BlockAppointmentsModal from "../components/BlockAppointmentsModal.jsx";
 import WaitingListActionModal from "../components/WaitingListActionModal.jsx";
 import { useSidebar } from "../components/SidebarContext.jsx"; // Import the context hook
@@ -358,7 +357,6 @@ export default function Admin() { // Removed props
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
   const [recurringConflictModal, setRecurringConflictModal] = useState({ isOpen: false, message: '', conflicts: [], hasMore: false });
 
-  const [rescheduleData, setRescheduleData] = useState({ isOpen: false, appointment: null, service: null });
 
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showTestimonialForm, setShowTestimonialForm] = useState(false);
@@ -1221,26 +1219,34 @@ const extractRecurringSchedules = (client) => {
     }
   }, [loadData]);
 
-  const handleRescheduleRequest = (appointment, service) => {
-    setSelectedAppointment(null);
-    setRescheduleData({ isOpen: true, appointment, service });
-  };
-
-  const handleRescheduleSubmit = async (newStartTime) => {
+  const handleRescheduleSubmit = async (appointment, service, newStartTime) => {
     try {
-      const service = rescheduleData.service;
-      const appointment = rescheduleData.appointment;
+      if (!appointment?.id || !newStartTime) return;
+      const startAt = new Date(newStartTime);
+      if (Number.isNaN(startAt.getTime())) {
+        alert("שעה לא תקינה. נסה לבחור שעה מחדש.");
+        return;
+      }
+      const durationMinutes =
+        service?.duration_minutes ??
+        appointment?.duration_minutes ??
+        appointment?.service_duration_minutes ??
+        appointment?.duration ??
+        30;
+      const newEndTime = addMinutes(startAt, durationMinutes);
 
-      const newEndTime = addMinutes(newStartTime, service.duration_minutes);
+      if (AdminApi?.reschedule) {
+        await AdminApi.reschedule(appointment.id, startAt.toISOString(), newEndTime.toISOString());
+      } else if (AdminApi?.appointments?.reschedule) {
+        await AdminApi.appointments.reschedule(appointment.id, startAt.toISOString(), newEndTime.toISOString());
+      } else {
+        await Appointment.update(appointment.id, {
+          starts_at: startAt.toISOString(),
+          ends_at: newEndTime.toISOString(),
+        });
+      }
 
-      await Appointment.update(appointment.id, {
-        starts_at: newStartTime.toISOString(),
-        ends_at: newEndTime.toISOString(),
-      });
-
-      setRescheduleData({ isOpen: false, appointment: null, service: null });
-      loadData();
-
+      await loadData();
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
       alert("שגיאה בהחלפת התור.");
@@ -3659,17 +3665,14 @@ const extractRecurringSchedules = (client) => {
                 onClose={() => setSelectedAppointment(null)}
                 appointment={selectedAppointment}
                 service={serviceById(selectedAppointment?.service_id)}
+                businessHours={businessHours}
+                allAppointments={appointments}
                 onDelete={async () => {
                   await handleDelete(Appointment, selectedAppointment.id, "תור");
                   setSelectedAppointment(null);
                 }}
                 onStatusChange={handleStatusChange}
-                onRescheduleRequest={() =>
-                    handleRescheduleRequest(
-                        selectedAppointment,
-                        serviceById(selectedAppointment?.service_id)
-                    )
-                }
+                onReschedule={handleRescheduleSubmit}
                 onCreateRecurring={(interval) => handleCreateRecurringAppointment(selectedAppointment, interval)}
             />
         )}
@@ -3693,18 +3696,6 @@ const extractRecurringSchedules = (client) => {
             />
         )}
 
-
-        {rescheduleData.isOpen && (
-            <RescheduleModal
-                isOpen={rescheduleData.isOpen}
-                onCancel={() => setRescheduleData({ isOpen: false, appointment: null, service: null })}
-                onSubmit={handleRescheduleSubmit}
-                appointment={rescheduleData.appointment}
-                service={rescheduleData.service}
-                allAppointments={appointments}
-                businessHours={businessHours}
-            />
-        )}
 
         {showClientForm && (
             <Dialog open={showClientForm} onOpenChange={setShowClientForm}>

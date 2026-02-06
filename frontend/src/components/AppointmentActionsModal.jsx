@@ -323,23 +323,31 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'date' && (
-          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto">
+            <ul className="divide-y divide-gray-100">
               {dateOptions.map(date => {
                 const dayIsPast = isBefore(date, startOfDay(new Date()));
+                const isSelected = isSameDay(date, selectedDate);
                 return (
-                  <Button
-                    key={date.toISOString()}
-                    variant={isSameDay(date, selectedDate) ? "default" : "outline"}
-                    disabled={!isEditable || dayIsPast}
-                    onClick={() => handleSelectDate(date)}
-                    className="text-xs"
-                  >
-                    {format(date, 'EEE dd/MM', { locale: he })}
-                  </Button>
+                  <li key={date.toISOString()} className="px-3">
+                    <button
+                      type="button"
+                      disabled={!isEditable || dayIsPast}
+                      onClick={() => {
+                        handleSelectDate(date);
+                        setEditingField(null);
+                      }}
+                      className={`w-full py-3 flex items-center justify-between text-sm ${
+                        isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
+                      } ${!isEditable || dayIsPast ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <span>{format(date, 'EEE dd/MM', { locale: he })}</span>
+                      {isSelected && <span className="text-xs">נבחר</span>}
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
         )}
         <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl mt-3">
@@ -354,22 +362,32 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'time' && (
-          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto">
             {availableSlots.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center">אין שעות פנויות ביום שנבחר.</p>
+              <p className="text-sm text-gray-500 text-center py-4">אין שעות פנויות ביום שנבחר.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {availableSlots.map(slot => (
-                  <Button
-                    key={slot.formatted}
-                    variant={selectedSlot?.formatted === slot.formatted ? "default" : "outline"}
-                    onClick={() => setSelectedSlot(slot)}
-                    className="text-xs"
-                  >
-                    {slot.formatted}
-                  </Button>
-                ))}
-              </div>
+              <ul className="divide-y divide-gray-100">
+                {availableSlots.map(slot => {
+                  const isSelected = selectedSlot?.formatted === slot.formatted;
+                  return (
+                    <li key={slot.formatted} className="px-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSlot(slot);
+                          setEditingField(null);
+                        }}
+                        className={`w-full py-3 flex items-center justify-between text-sm ${
+                          isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
+                        }`}
+                      >
+                        <span>{slot.formatted}</span>
+                        {isSelected && <span className="text-xs">נבחר</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         )}

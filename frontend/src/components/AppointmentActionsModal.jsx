@@ -337,7 +337,7 @@ export default function AppointmentActionsModal({
                         handleSelectDate(date);
                         setEditingField(null);
                       }}
-                      className={`w-full py-2 flex items-center justify-between text-sm ${
+                      className={`w-full py-2 flex flex-row-reverse items-center justify-between text-sm ${
                         isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
                       } ${!isEditable || dayIsPast ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
@@ -377,7 +377,7 @@ export default function AppointmentActionsModal({
                           setSelectedSlot(slot);
                           setEditingField(null);
                         }}
-                        className={`w-full py-2 flex items-center justify-between text-sm ${
+                        className={`w-full py-2 flex flex-row-reverse items-center justify-between text-sm ${
                           isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
                         }`}
                       >

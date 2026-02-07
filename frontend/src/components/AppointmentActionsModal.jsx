@@ -2,10 +2,11 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, X, ChevronRight } from 'lucide-react';
+import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, ChevronRight } from 'lucide-react';
 import { format, addMinutes, addDays, isAfter, isBefore, parse, startOfDay, isSameDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
+import { Admin as AdminApi } from '@/api/base44Client';
 
 export default function AppointmentActionsModal({
   appointment,
@@ -18,14 +19,17 @@ export default function AppointmentActionsModal({
   allAppointments = [],
   businessHours = [],
 }) {
-  const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring'
+  const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring' | 'message'
   const [deleting, setDeleting] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('10');
   const [creatingRecurring, setCreatingRecurring] = useState(false);
+  const [messageText, setMessageText] = useState('');
   const [editingField, setEditingField] = useState(null); // 'date' | 'time' | null
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [savingReschedule, setSavingReschedule] = useState(false);
+  const [appointmentsForDate, setAppointmentsForDate] = useState(allAppointments);
+  const [appointmentsDateKey, setAppointmentsDateKey] = useState(null);
 
 // ממיר למספר בינ״ל ל-wa.me / api.whatsapp.com (ללא פלוס)
   const toWaMsisdn = (raw) => {
@@ -59,7 +63,35 @@ export default function AppointmentActionsModal({
     });
     setEditingField(null);
     setSavingReschedule(false);
+    setMessageText('');
   }, [appointment]);
+
+  useEffect(() => {
+    setAppointmentsForDate(allAppointments);
+  }, [allAppointments]);
+
+  useEffect(() => {
+    if (!selectedDate || !isOpen) return;
+    const dateKey = format(startOfDay(selectedDate), 'yyyy-MM-dd');
+    if (dateKey === appointmentsDateKey) return;
+    let isActive = true;
+    const loadAppointments = async () => {
+      try {
+        const data = await AdminApi.appointmentsByDate(dateKey).catch(() => []);
+        if (!isActive) return;
+        setAppointmentsForDate(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (!isActive) return;
+        setAppointmentsForDate(allAppointments);
+      } finally {
+        if (isActive) setAppointmentsDateKey(dateKey);
+      }
+    };
+    loadAppointments();
+    return () => {
+      isActive = false;
+    };
+  }, [selectedDate, isOpen, appointmentsDateKey, allAppointments]);
 
   const handleClose = () => {
     setView('main'); // Reset view on close
@@ -127,6 +159,10 @@ export default function AppointmentActionsModal({
 
     // עכשיו אפשר לסגור את המודל
     handleClose();
+  };
+
+  const handleSendMessage = () => {
+    alert('שליחת הודעות תתווסף בהמשך.');
   };
 
 
@@ -198,10 +234,15 @@ export default function AppointmentActionsModal({
     while (isBefore(addMinutes(currentTime, durationMinutes), closeTime)) {
       if (!isSameDay(date, now) || isAfter(currentTime, now)) {
         const slotEnd = addMinutes(currentTime, durationMinutes);
-        const hasConflict = allAppointments.some(apt => {
+        const hasConflict = appointmentsForDate.some(apt => {
           if (apt.status !== 'booked' || apt.id === appointment.id) return false;
-          const aptStart = new Date(apt.starts_at);
-          const aptEnd = new Date(apt.ends_at);
+          const aptStart = new Date(apt.starts_at ?? apt.startsAt);
+          const aptEnd =
+            new Date(
+              apt.ends_at ??
+              apt.endsAt ??
+              addMinutes(aptStart, Number(apt.duration_minutes ?? durationMinutes ?? 30)),
+            );
           return isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart);
         });
 
@@ -222,7 +263,7 @@ export default function AppointmentActionsModal({
   const availableSlots = useMemo(() => {
     if (!selectedDate) return [];
     return buildSlotsForDate(selectedDate);
-  }, [selectedDate, service, allAppointments, businessHours]);
+  }, [selectedDate, service, appointmentsForDate, businessHours]);
 
   const selectedStart = selectedSlot?.time;
   const hasChanges = selectedStart && selectedStart.getTime() !== appointmentStart.getTime();
@@ -260,14 +301,7 @@ export default function AppointmentActionsModal({
               <a className="underline" href={`tel:${phone(appointment)}`}>{phone(appointment) || '-'}</a>
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClose}
-            className="rounded-full"
-          >
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="w-6"></div>
         </div>
       </DialogHeader>
 
@@ -288,23 +322,31 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'date' && (
-          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto mx-auto w-full max-w-xs">
+            <ul className="divide-y divide-gray-100 text-right">
               {dateOptions.map(date => {
                 const dayIsPast = isBefore(date, startOfDay(new Date()));
+                const isSelected = isSameDay(date, selectedDate);
                 return (
-                  <Button
-                    key={date.toISOString()}
-                    variant={isSameDay(date, selectedDate) ? "default" : "outline"}
-                    disabled={!isEditable || dayIsPast}
-                    onClick={() => handleSelectDate(date)}
-                    className="text-xs"
-                  >
-                    {format(date, 'EEE dd/MM', { locale: he })}
-                  </Button>
+                  <li key={date.toISOString()} className="px-3">
+                    <button
+                      type="button"
+                      disabled={!isEditable || dayIsPast}
+                      onClick={() => {
+                        handleSelectDate(date);
+                        setEditingField(null);
+                      }}
+                      className={`w-full py-2 flex flex-row-reverse items-center justify-between text-sm ${
+                        isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
+                      } ${!isEditable || dayIsPast ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <span>{format(date, 'EEE dd/MM', { locale: he })}</span>
+                      {isSelected && <span className="text-xs">נבחר</span>}
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
         )}
         <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl mt-3">
@@ -319,22 +361,32 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'time' && (
-          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm max-h-52 overflow-y-auto">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto mx-auto w-full max-w-xs">
             {availableSlots.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center">אין שעות פנויות ביום שנבחר.</p>
+              <p className="text-sm text-gray-500 text-center py-4">אין שעות פנויות ביום שנבחר.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {availableSlots.map(slot => (
-                  <Button
-                    key={slot.formatted}
-                    variant={selectedSlot?.formatted === slot.formatted ? "default" : "outline"}
-                    onClick={() => setSelectedSlot(slot)}
-                    className="text-xs"
-                  >
-                    {slot.formatted}
-                  </Button>
-                ))}
-              </div>
+              <ul className="divide-y divide-gray-100 text-right">
+                {availableSlots.map(slot => {
+                  const isSelected = selectedSlot?.formatted === slot.formatted;
+                  return (
+                    <li key={slot.formatted} className="px-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSlot(slot);
+                          setEditingField(null);
+                        }}
+                        className={`w-full py-2 flex flex-row-reverse items-center justify-between text-sm ${
+                          isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
+                        }`}
+                      >
+                        <span>{slot.formatted}</span>
+                        {isSelected && <span className="text-xs">נבחר</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         )}
@@ -356,6 +408,7 @@ export default function AppointmentActionsModal({
         <Button onClick={handleCall} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Phone className="w-5 h-5"/><span className="text-xs font-medium">התקשר</span></Button>
         <Button onClick={() => setView('delay')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><MessageCircle className="w-5 h-5"/><span className="text-xs font-medium">הודעת עיכוב</span></Button>
         <Button onClick={() => setView('recurring')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Repeat className="w-5 h-5"/><span className="text-xs font-medium">תור קבוע</span></Button>
+        <Button onClick={() => setView('message')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Send className="w-5 h-5"/><span className="text-xs font-medium">שלח הודעה</span></Button>
       </div>
 
       <DialogFooter className="mt-6">
@@ -393,6 +446,36 @@ export default function AppointmentActionsModal({
         <div className="flex gap-3">
           <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
           <Button onClick={handleSendDelayMessage} className="flex-1 bg-black text-white rounded-full py-3"><Send className="w-4 h-4 ml-2"/>שלח הודעה</Button>
+        </div>
+      </div>
+    </>
+  );
+
+  const renderMessageView = () => (
+    <>
+      <DialogHeader className="text-center mb-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setView('main')} className="rounded-full">
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+          <div className="flex-1 text-center">
+            <DialogTitle className="text-xl font-bold text-gray-900">שליחת הודעה</DialogTitle>
+            <p className="text-sm text-gray-600">כתוב הודעה ללקוח</p>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="space-y-4">
+        <textarea
+          value={messageText}
+          onChange={(event) => setMessageText(event.target.value)}
+          placeholder="הקלד הודעה..."
+          rows={4}
+          className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+        />
+        <div className="flex gap-3">
+          <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
+          <Button onClick={handleSendMessage} className="flex-1 rounded-full py-3">שלח הודעה</Button>
         </div>
       </div>
     </>
@@ -446,7 +529,10 @@ export default function AppointmentActionsModal({
           className="bg-white rounded-3xl p-6 max-w-sm mx-auto max-h-[90vh] overflow-y-auto"
           aria-describedby={undefined}
       >
-        {view === 'main' ? renderMainView() : view === 'delay' ? renderDelayView() : renderRecurringView()}
+        {view === 'main' && renderMainView()}
+        {view === 'delay' && renderDelayView()}
+        {view === 'recurring' && renderRecurringView()}
+        {view === 'message' && renderMessageView()}
       </DialogContent>
     </Dialog>
   );

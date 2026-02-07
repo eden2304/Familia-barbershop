@@ -8,7 +8,9 @@ import {
     HttpStatus,
     NotFoundException,
     Param,
+    Patch,
     Post,
+    Put,
     Query,
     UseGuards,
 } from '@nestjs/common';
@@ -135,6 +137,72 @@ export class AdminAppointmentsController {
             throw new NotFoundException('Appointment not found');
         }
         return { ok: true, id };
+    }
+
+    private async handleReschedule(idFromParam: string | undefined, body: any) {
+        const appointmentId = idFromParam ?? body?.id ?? body?.appointmentId ?? body?.appointment_id;
+        if (!appointmentId) throw new BadRequestException('Missing appointment id');
+
+        const rawStart =
+            body?.newStartAt ??
+            body?.starts_at ??
+            body?.startsAt ??
+            body?.startAt ??
+            body?.start_at;
+        const rawEnd =
+            body?.newEndAt ??
+            body?.ends_at ??
+            body?.endsAt ??
+            body?.endAt ??
+            body?.end_at;
+
+        if (!rawStart) throw new BadRequestException('Missing new start time');
+
+        const newStart = new Date(rawStart);
+        if (!Number.isFinite(newStart.getTime())) {
+            throw new BadRequestException('Invalid start time');
+        }
+
+        const appt = await this.apptRepo.findOne({ where: { id: appointmentId } });
+        if (!appt) throw new NotFoundException('Appointment not found');
+
+        let newEnd: Date;
+        if (rawEnd) {
+            newEnd = new Date(rawEnd);
+            if (!Number.isFinite(newEnd.getTime())) {
+                throw new BadRequestException('Invalid end time');
+            }
+        } else {
+            const prevStart = appt.startsAt ? new Date(appt.startsAt) : null;
+            const prevEnd = appt.endsAt ? new Date(appt.endsAt) : null;
+            let durationMs = 0;
+            if (prevStart && prevEnd && Number.isFinite(prevStart.getTime()) && Number.isFinite(prevEnd.getTime())) {
+                durationMs = prevEnd.getTime() - prevStart.getTime();
+            }
+            if (durationMs <= 0) {
+                const durationMinutes = appt.service?.durationMinutes ?? 30;
+                durationMs = Math.max(Number(durationMinutes) || 30, 15) * 60 * 1000;
+            }
+            newEnd = new Date(newStart.getTime() + durationMs);
+        }
+
+        await this.apptRepo.update({ id: appointmentId }, { startsAt: newStart, endsAt: newEnd });
+        return { ok: true, id: appointmentId, startsAt: newStart, endsAt: newEnd };
+    }
+
+    @Post('appointments/reschedule')
+    async reschedule(@Body() body: any) {
+        return this.handleReschedule(undefined, body);
+    }
+
+    @Put('appointments/:id/reschedule')
+    async rescheduleByPut(@Param('id') id: string, @Body() body: any) {
+        return this.handleReschedule(id, body);
+    }
+
+    @Patch('appointments/:id/reschedule')
+    async rescheduleByPatch(@Param('id') id: string, @Body() body: any) {
+        return this.handleReschedule(id, body);
     }
 
     @Get('clients/:id/appointments')

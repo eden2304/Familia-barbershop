@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, X, ChevronRight } from 'lucide-react';
+import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, ChevronRight } from 'lucide-react';
 import { format, addMinutes, addDays, isAfter, isBefore, parse, startOfDay, isSameDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
@@ -301,14 +301,7 @@ export default function AppointmentActionsModal({
               <a className="underline" href={`tel:${phone(appointment)}`}>{phone(appointment) || '-'}</a>
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClose}
-            className="rounded-full"
-          >
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="w-6"></div>
         </div>
       </DialogHeader>
 

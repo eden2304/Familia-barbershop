@@ -19,10 +19,11 @@ export default function AppointmentActionsModal({
   allAppointments = [],
   businessHours = [],
 }) {
-  const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring'
+  const [view, setView] = useState('main'); // 'main' | 'delay' | 'recurring' | 'message'
   const [deleting, setDeleting] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('10');
   const [creatingRecurring, setCreatingRecurring] = useState(false);
+  const [messageText, setMessageText] = useState('');
   const [editingField, setEditingField] = useState(null); // 'date' | 'time' | null
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -62,6 +63,7 @@ export default function AppointmentActionsModal({
     });
     setEditingField(null);
     setSavingReschedule(false);
+    setMessageText('');
   }, [appointment]);
 
   useEffect(() => {
@@ -157,6 +159,10 @@ export default function AppointmentActionsModal({
 
     // עכשיו אפשר לסגור את המודל
     handleClose();
+  };
+
+  const handleSendMessage = () => {
+    alert('שליחת הודעות תתווסף בהמשך.');
   };
 
 
@@ -409,6 +415,7 @@ export default function AppointmentActionsModal({
         <Button onClick={handleCall} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Phone className="w-5 h-5"/><span className="text-xs font-medium">התקשר</span></Button>
         <Button onClick={() => setView('delay')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><MessageCircle className="w-5 h-5"/><span className="text-xs font-medium">הודעת עיכוב</span></Button>
         <Button onClick={() => setView('recurring')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Repeat className="w-5 h-5"/><span className="text-xs font-medium">תור קבוע</span></Button>
+        <Button onClick={() => setView('message')} variant="outline" className="h-auto py-3 flex flex-col gap-1 items-center justify-center rounded-2xl"><Send className="w-5 h-5"/><span className="text-xs font-medium">שלח הודעה</span></Button>
       </div>
 
       <DialogFooter className="mt-6">
@@ -446,6 +453,36 @@ export default function AppointmentActionsModal({
         <div className="flex gap-3">
           <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
           <Button onClick={handleSendDelayMessage} className="flex-1 bg-black text-white rounded-full py-3"><Send className="w-4 h-4 ml-2"/>שלח הודעה</Button>
+        </div>
+      </div>
+    </>
+  );
+
+  const renderMessageView = () => (
+    <>
+      <DialogHeader className="text-center mb-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setView('main')} className="rounded-full">
+            <ChevronRight className="w-5 h-5" />
+          </Button>
+          <div className="flex-1 text-center">
+            <DialogTitle className="text-xl font-bold text-gray-900">שליחת הודעה</DialogTitle>
+            <p className="text-sm text-gray-600">כתוב הודעה ללקוח</p>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="space-y-4">
+        <textarea
+          value={messageText}
+          onChange={(event) => setMessageText(event.target.value)}
+          placeholder="הקלד הודעה..."
+          rows={4}
+          className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+        />
+        <div className="flex gap-3">
+          <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
+          <Button onClick={handleSendMessage} className="flex-1 rounded-full py-3">שלח הודעה</Button>
         </div>
       </div>
     </>
@@ -499,7 +536,10 @@ export default function AppointmentActionsModal({
           className="bg-white rounded-3xl p-6 max-w-sm mx-auto max-h-[90vh] overflow-y-auto"
           aria-describedby={undefined}
       >
-        {view === 'main' ? renderMainView() : view === 'delay' ? renderDelayView() : renderRecurringView()}
+        {view === 'main' && renderMainView()}
+        {view === 'delay' && renderDelayView()}
+        {view === 'recurring' && renderRecurringView()}
+        {view === 'message' && renderMessageView()}
       </DialogContent>
     </Dialog>
   );

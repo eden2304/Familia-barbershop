@@ -2030,8 +2030,8 @@ const extractRecurringSchedules = (client) => {
             {navItems.map(item => (
                 <Button
                     key={item.id}
-                    variant={activeTab === item.id ? "secondary" : "ghost"}
-                    className="w-full justify-start text-lg gap-3 py-3"
+                    variant="ghost"
+                    className={`w-full justify-start text-lg gap-3 py-3 ${activeTab === item.id ? "font-semibold text-gray-900 bg-transparent" : "text-gray-700"}`}
                     onClick={() => {
                       setActiveTab(item.id);
                       setShowWaitingListView(false);

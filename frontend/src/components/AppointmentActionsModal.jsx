@@ -323,8 +323,8 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'date' && (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto">
-            <ul className="divide-y divide-gray-100">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto mx-auto w-full max-w-xs">
+            <ul className="divide-y divide-gray-100 text-right">
               {dateOptions.map(date => {
                 const dayIsPast = isBefore(date, startOfDay(new Date()));
                 const isSelected = isSameDay(date, selectedDate);
@@ -337,7 +337,7 @@ export default function AppointmentActionsModal({
                         handleSelectDate(date);
                         setEditingField(null);
                       }}
-                      className={`w-full py-3 flex items-center justify-between text-sm ${
+                      className={`w-full py-2 flex items-center justify-between text-sm ${
                         isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
                       } ${!isEditable || dayIsPast ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
@@ -362,11 +362,11 @@ export default function AppointmentActionsModal({
           </Button>
         </div>
         {editingField === 'time' && (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-h-56 overflow-y-auto mx-auto w-full max-w-xs">
             {availableSlots.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">אין שעות פנויות ביום שנבחר.</p>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-gray-100 text-right">
                 {availableSlots.map(slot => {
                   const isSelected = selectedSlot?.formatted === slot.formatted;
                   return (
@@ -377,7 +377,7 @@ export default function AppointmentActionsModal({
                           setSelectedSlot(slot);
                           setEditingField(null);
                         }}
-                        className={`w-full py-3 flex items-center justify-between text-sm ${
+                        className={`w-full py-2 flex items-center justify-between text-sm ${
                           isSelected ? 'text-white bg-gray-900 rounded-lg px-3' : 'text-gray-700'
                         }`}
                       >

@@ -2031,7 +2031,7 @@ const extractRecurringSchedules = (client) => {
                 <Button
                     key={item.id}
                     variant="ghost"
-                    className={`w-full justify-start text-lg gap-3 py-3 ${activeTab === item.id ? "font-semibold text-gray-900 bg-transparent" : "text-gray-700"}`}
+                    className={`w-full justify-start text-lg gap-3 py-3 hover:bg-transparent focus:bg-transparent active:bg-transparent ${activeTab === item.id ? "font-semibold text-gray-900 bg-transparent" : "text-gray-700"}`}
                     onClick={() => {
                       setActiveTab(item.id);
                       setShowWaitingListView(false);

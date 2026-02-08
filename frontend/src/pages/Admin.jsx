@@ -354,6 +354,8 @@ export default function Admin() { // Removed props
 
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [messagePhones, setMessagePhones] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
   const [recurringConflictModal, setRecurringConflictModal] = useState({ isOpen: false, message: '', conflicts: [], hasMore: false });
 
@@ -1128,6 +1130,39 @@ const extractRecurringSchedules = (client) => {
 
   const closeRecurringSuccessModal = () => {
     setRecurringSuccessModal({ isOpen: false, message: '', skippedDates: [] });
+  };
+
+  const closeMessageModal = () => {
+    setShowMessageModal(false);
+    setMessageText('');
+    setMessagePhones('');
+    setSendingMessage(false);
+  };
+
+  const handleSendGeneralWhatsApp = async () => {
+    if (sendingMessage) return;
+    const phones = messagePhones
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    const text = messageText.trim();
+    if (phones.length === 0 || !text) {
+      toast({ title: 'נא למלא טלפונים ותוכן הודעה', variant: 'destructive' });
+      return;
+    }
+    try {
+      setSendingMessage(true);
+      await AdminApi.whatsappBroadcast({ phones, messageText: text });
+      toast({ title: 'ההודעה נשלחה בהצלחה' });
+      setShowMessageModal(false);
+      setMessageText('');
+      setMessagePhones('');
+    } catch (error) {
+      const description = error?.message || 'שליחת ההודעה נכשלה';
+      toast({ title: 'שגיאה בשליחת הודעה', description, variant: 'destructive' });
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   const closeRecurringConflictModal = () => {
@@ -3318,7 +3353,7 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showMessageModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={() => setShowMessageModal(false)}>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={closeMessageModal}>
               <motion.div
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -3331,7 +3366,7 @@ const extractRecurringSchedules = (client) => {
                   <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setShowMessageModal(false)}
+                      onClick={closeMessageModal}
                       className="rounded-full"
                   >
                     <X className="w-5 h-5" />
@@ -3339,6 +3374,17 @@ const extractRecurringSchedules = (client) => {
                 </div>
 
                 <div className="space-y-4">
+                  <div>
+                    <Label className="block text-sm font-medium text-gray-700 mb-2">
+                      מספרי טלפון (מופרדים בפסיקים)
+                    </Label>
+                    <input
+                        value={messagePhones}
+                        onChange={(e) => setMessagePhones(e.target.value)}
+                        placeholder="לדוגמה: 0501234567, 0527654321"
+                        className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent"
+                    />
+                  </div>
                   <div>
                     <Label className="block text-sm font-medium text-gray-700 mb-2">
                       תוכן ההודעה
@@ -3353,23 +3399,19 @@ const extractRecurringSchedules = (client) => {
 
                   <div className="flex gap-3">
                     <Button
-                        onClick={() => setShowMessageModal(false)}
+                        onClick={closeMessageModal}
                         variant="outline"
                         className="flex-1 rounded-full py-3"
                     >
                       ביטול
                     </Button>
                     <Button
-                        onClick={() => {
-                          alert("ההודעה נשלחה בהצלחה!");
-                          setShowMessageModal(false);
-                          setMessageText('');
-                        }}
+                        onClick={handleSendGeneralWhatsApp}
                         className="flex-1 bg-black text-white rounded-full py-3"
-                        disabled={!messageText.trim()}
+                        disabled={!messageText.trim() || !messagePhones.trim() || sendingMessage}
                     >
                       <Send className="w-4 h-4 ml-2" />
-                      שלח הודעה
+                      {sendingMessage ? 'שולח...' : 'שלח הודעה'}
                     </Button>
                   </div>
                 </div>

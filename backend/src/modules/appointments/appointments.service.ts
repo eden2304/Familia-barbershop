@@ -20,6 +20,7 @@ import { Client } from '../../clients/client.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { Setting } from '../../entities/setting.entity';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 import { DateTime } from 'luxon';
 const TZ = 'Asia/Jerusalem';
@@ -62,6 +63,7 @@ export class AppointmentsService {
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
+        private readonly whatsappService: WhatsAppService,
     ) {}
 
     private clampAdvanceDays(value: any, fallback: number): number {
@@ -419,7 +421,14 @@ export class AppointmentsService {
             // note: dto.note ?? null,
         });
 
-        return this.apptRepo.save(appt);
+        const saved = await this.apptRepo.save(appt);
+        try {
+            await this.whatsappService.sendAppointmentConfirmed(saved);
+        } catch (error) {
+            // לא מפיל את הבקשה אם שליחת WA נכשלת
+            console.warn('WhatsApp send failed (appointment_confirmed).');
+        }
+        return saved;
     }
 
     private israelOffsetForDate(dateStr: string): string {

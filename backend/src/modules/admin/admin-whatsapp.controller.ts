@@ -49,9 +49,9 @@ export class AdminWhatsAppController {
         }
 
         if (clientIds.length > 0) {
-            const ids = clientIds.map((id: any) => Number(id)).filter(Number.isFinite);
+            const ids = clientIds.map((id: any) => String(id).trim()).filter(Boolean);
             if (ids.length > 0) {
-                const clients = await this.clientRepo.find({ where: { id: In(ids) } });
+                const clients = await this.clientRepo.find({ where: { id: In(ids as any) } });
                 clients.forEach(client => {
                     const clientAny = client as any;
                     const first = clientAny.firstName ?? clientAny.first_name ?? '';
@@ -65,9 +65,12 @@ export class AdminWhatsAppController {
             }
         }
 
+        const normalizeKey = (value: string) => String(value || '').replace(/\D/g, '');
         const unique = new Map<string, { phone: string; name: string }>();
         recipients.forEach(entry => {
-            if (!unique.has(entry.phone)) unique.set(entry.phone, entry);
+            const key = normalizeKey(entry.phone);
+            if (!key) return;
+            if (!unique.has(key)) unique.set(key, entry);
         });
 
         let sent = 0;
@@ -100,6 +103,6 @@ export class AdminWhatsAppController {
         if (!appointment) throw new BadRequestException('Appointment not found');
 
         const result = await this.whatsappService.sendAdminAppointmentMessage(appointment, messageText);
-        return { ok: true, status: result.status };
+        return { ok: result.ok, status: result.status, error: result.error ?? null };
     }
 }

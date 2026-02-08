@@ -4,6 +4,7 @@ export class CreateWhatsappLogs1735000000000 implements MigrationInterface {
     name = 'CreateWhatsappLogs1735000000000';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
         await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS whatsapp_message_logs (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

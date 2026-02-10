@@ -47,3 +47,7 @@ export function formatTimeForTemplate(date: Date, timeZone: string): string {
 export function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+export function toMetaRecipientFromE164(e164: string): string {
+    return String(e164 || '').replace(/^\+/, '');
+}

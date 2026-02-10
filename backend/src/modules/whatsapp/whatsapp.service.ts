@@ -4,7 +4,13 @@ import { Repository } from 'typeorm';
 import { Appointment } from '../../entities/appointment.entity';
 import { WhatsAppMessageLog } from '../../entities/whatsapp-message-log.entity';
 import { WHATSAPP_TEMPLATES, WhatsAppTemplateName } from './whatsapp.constants';
-import { formatDateForTemplate, formatTimeForTemplate, normalizeIsraeliPhoneToE164, sleep } from './whatsapp.utils';
+import {
+    formatDateForTemplate,
+    formatTimeForTemplate,
+    normalizeIsraeliPhoneToE164,
+    sleep,
+    toMetaRecipientFromE164,
+} from './whatsapp.utils';
 
 interface SendTemplateResult {
     ok: boolean;
@@ -156,7 +162,8 @@ export class WhatsAppService {
         }
 
         const normalized = normalizeIsraeliPhoneToE164(params.toPhone || '');
-        const payload = this.buildTemplatePayload(template.name, normalized || '', params.params);
+        const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
+        const payload = this.buildTemplatePayload(template.name, recipientForMeta, params.params);
 
         if (!normalized) {
             await this.saveLog({

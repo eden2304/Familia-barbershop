@@ -61,7 +61,6 @@ export class WhatsAppService {
 
     async sendAppointmentRescheduled(appointment: Appointment, previousStart: Date) {
         const clientName = this.getClientName(appointment);
-        const serviceName = appointment.service?.name || '';
         const oldDate = formatDateForTemplate(previousStart, this.timeZone);
         const oldTime = formatTimeForTemplate(previousStart, this.timeZone);
         const newDate = formatDateForTemplate(appointment.startsAt, this.timeZone);
@@ -70,7 +69,7 @@ export class WhatsAppService {
         return this.sendTemplateMessage({
             templateName: 'appointment_rescheduled',
             toPhone: this.getAppointmentPhone(appointment),
-            params: [clientName, oldDate, oldTime, newDate, newTime, serviceName],
+            params: [clientName, oldDate, oldTime, newDate, newTime],
             appointmentId: appointment.id,
         });
     }
@@ -85,14 +84,13 @@ export class WhatsAppService {
 
     async sendAdminAppointmentMessage(appointment: Appointment, messageText: string) {
         const clientName = this.getClientName(appointment);
-        const serviceName = appointment.service?.name || '';
         const date = formatDateForTemplate(appointment.startsAt, this.timeZone);
         const time = formatTimeForTemplate(appointment.startsAt, this.timeZone);
 
         return this.sendTemplateMessage({
             templateName: 'admin_appointment_message',
             toPhone: this.getAppointmentPhone(appointment),
-            params: [clientName, date, time, serviceName, messageText],
+            params: [clientName, date, time, messageText],
             appointmentId: appointment.id,
         });
     }
@@ -103,14 +101,13 @@ export class WhatsAppService {
         opts: { appointmentId?: string } = {},
     ) {
         const clientName = this.getClientName(appointment);
-        const serviceName = appointment.service?.name || '';
         const date = formatDateForTemplate(appointment.startsAt, this.timeZone);
         const time = formatTimeForTemplate(appointment.startsAt, this.timeZone);
 
         return this.sendTemplateMessage({
             templateName,
             toPhone: this.getAppointmentPhone(appointment),
-            params: [clientName, date, time, serviceName],
+            params: [clientName, date, time],
             appointmentId: opts.appointmentId ?? appointment.id,
         });
     }

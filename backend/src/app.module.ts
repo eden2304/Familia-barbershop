@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 
@@ -29,7 +28,6 @@ import { WaitingListModule } from './modules/waiting-list/waiting-list.module';
 @Module({
     imports: [
         ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '.env.development'] }),
-        ScheduleModule.forRoot(),
         TypeOrmModule.forRootAsync({
             useFactory: (): TypeOrmModuleOptions => {
                 const hasUrl = !!process.env.DATABASE_URL;

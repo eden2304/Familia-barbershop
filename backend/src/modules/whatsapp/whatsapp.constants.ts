@@ -1,6 +1,6 @@
 export const WHATSAPP_TEMPLATES = {
-    auth_and_register: {
-        name: 'auth_and_register',
+    login_and_register: {
+        name: 'login_and_register',
         params: ['code'] as const,
     },
     appointment_booked: {

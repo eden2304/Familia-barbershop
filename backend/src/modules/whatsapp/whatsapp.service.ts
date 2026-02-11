@@ -90,7 +90,7 @@ export class WhatsAppService {
 
     async sendAuthCode(toPhone: string, code: string) {
         return this.sendTemplateMessage({
-            templateName: 'auth_and_register',
+            templateName: 'login_and_register',
             toPhone,
             params: [code],
         });

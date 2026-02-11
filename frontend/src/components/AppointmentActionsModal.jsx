@@ -24,23 +24,13 @@ export default function AppointmentActionsModal({
   const [delayMinutes, setDelayMinutes] = useState('10');
   const [creatingRecurring, setCreatingRecurring] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [editingField, setEditingField] = useState(null); // 'date' | 'time' | null
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [savingReschedule, setSavingReschedule] = useState(false);
   const [appointmentsForDate, setAppointmentsForDate] = useState(allAppointments);
   const [appointmentsDateKey, setAppointmentsDateKey] = useState(null);
-
-// ממיר למספר בינ״ל ל-wa.me / api.whatsapp.com (ללא פלוס)
-  const toWaMsisdn = (raw) => {
-    const d = String(raw || '').replace(/\D/g, ''); // ספרות בלבד
-    if (!d) return '';
-    if (d.startsWith('972')) return d;          // כבר בינ״ל
-    if (d.startsWith('0'))  return `972${d.slice(1)}`; // 052... -> 97252...
-    if (d.startsWith('5'))  return `972${d}`;   // 52...  -> 97252...
-    return `972${d}`;                            // fallback
-  };
-
 
   if (!appointment) return null;
 
@@ -64,6 +54,7 @@ export default function AppointmentActionsModal({
     setEditingField(null);
     setSavingReschedule(false);
     setMessageText('');
+    setSendingMessage(false);
   }, [appointment]);
 
   useEffect(() => {
@@ -116,7 +107,7 @@ export default function AppointmentActionsModal({
     window.location.href = `tel:${phone(appointment)}`;
   };
 
-  const handleSendDelayMessage = () => {
+  const handleSendDelayMessage = async () => {
     const originalTime = new Date(appointment.starts_at);
     const delay = parseInt(delayMinutes, 10) || 0;
     const newTime = addMinutes(originalTime, delay);
@@ -128,41 +119,29 @@ export default function AppointmentActionsModal({
         `היי ${firstName || ''}, לגבי התור שלך היום בשעה ${format(originalTime, 'HH:mm')}, ` +
         `תגיע בבקשה בעיכוב של ${delay} דקות, כלומר בשעה ${format(newTime, 'HH:mm')}.`;
 
-    const msisdn = toWaMsisdn(phone(appointment) || '');
-    if (!msisdn) {
-      alert('לא נמצא מספר טלפון תקין לוואטסאפ עבור הלקוח.');
-      return;
+    if (!appointment?.id || sendingMessage) return;
+    try {
+      setSendingMessage(true);
+      await AdminApi.whatsappAppointmentMessage(appointment.id, message);
+      handleClose();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSendingMessage(false);
     }
-
-    const ua = navigator.userAgent || '';
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
-
-    const appUrl = `whatsapp://send?phone=${msisdn}&text=${encodeURIComponent(message)}`;
-    const waMeUrl = `https://wa.me/${msisdn}?text=${encodeURIComponent(message)}`;
-
-    if (isMobile) {
-      // מובייל: ניווט בטאב הנוכחי → נחשב user gesture, לא נחסם.
-      window.location.href = appUrl;
-      // אל תסגור את המודל לפני הניווט כדי לא לשבור את ה־gesture.
-      return;
-    }
-
-    // דסקטופ: לא נוגעים ב־whatsapp:// כדי לא לקבל התראה; פותחים wa.me בלשונית חדשה.
-    const a = document.createElement('a');
-    a.href = waMeUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    // עכשיו אפשר לסגור את המודל
-    handleClose();
   };
 
-  const handleSendMessage = () => {
-    alert('שליחת הודעות תתווסף בהמשך.');
+  const handleSendMessage = async () => {
+    if (!appointment?.id || !messageText.trim() || sendingMessage) return;
+    try {
+      setSendingMessage(true);
+      await AdminApi.whatsappAppointmentMessage(appointment.id, messageText.trim());
+      handleClose();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
 
@@ -445,7 +424,9 @@ export default function AppointmentActionsModal({
 
         <div className="flex gap-3">
           <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
-          <Button onClick={handleSendDelayMessage} className="flex-1 bg-black text-white rounded-full py-3"><Send className="w-4 h-4 ml-2"/>שלח הודעה</Button>
+          <Button onClick={handleSendDelayMessage} disabled={sendingMessage} className="flex-1 bg-black text-white rounded-full py-3">
+            <Send className="w-4 h-4 ml-2"/>{sendingMessage ? 'שולח...' : 'שלח הודעה'}
+          </Button>
         </div>
       </div>
     </>
@@ -475,7 +456,9 @@ export default function AppointmentActionsModal({
         />
         <div className="flex gap-3">
           <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
-          <Button onClick={handleSendMessage} className="flex-1 rounded-full py-3">שלח הודעה</Button>
+          <Button onClick={handleSendMessage} disabled={!messageText.trim() || sendingMessage} className="flex-1 rounded-full py-3">
+            {sendingMessage ? 'שולח...' : 'שלח הודעה'}
+          </Button>
         </div>
       </div>
     </>

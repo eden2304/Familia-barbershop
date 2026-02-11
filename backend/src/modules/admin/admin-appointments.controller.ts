@@ -22,6 +22,7 @@ import { DateTime } from 'luxon';
 
 import { Appointment } from '../../entities/appointment.entity';
 import { ensureRecurringSchema, MAX_RECURRING_OCCURRENCES } from '../appointments/recurring.helpers';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 function parseBoolean(value: any, fallback = false): boolean {
     if (value === undefined || value === null) return fallback;
@@ -71,6 +72,7 @@ export class AdminAppointmentsController {
     constructor(
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
         @InjectDataSource() private readonly ds: DataSource,
+        private readonly whatsappService: WhatsAppService,
     ) {}
 
     @Get('appointments')
@@ -132,9 +134,17 @@ export class AdminAppointmentsController {
     @Delete('appointments/:id')
     async remove(@Param('id') id: string) {
         if (!id) throw new BadRequestException('Missing id');
+        const appointment = await this.apptRepo.findOne({ where: { id }, relations: ['client', 'service'] });
         const result = await this.apptRepo.delete({ id });
         if (!result.affected) {
             throw new NotFoundException('Appointment not found');
+        }
+        if (appointment) {
+            try {
+                await this.whatsappService.sendAppointmentCanceled(appointment);
+            } catch (error) {
+                console.warn('WhatsApp send failed (appointment_canceled).');
+            }
         }
         return { ok: true, id };
     }
@@ -163,8 +173,9 @@ export class AdminAppointmentsController {
             throw new BadRequestException('Invalid start time');
         }
 
-        const appt = await this.apptRepo.findOne({ where: { id: appointmentId } });
+        const appt = await this.apptRepo.findOne({ where: { id: appointmentId }, relations: ['client', 'service'] });
         if (!appt) throw new NotFoundException('Appointment not found');
+        const previousStart = appt.startsAt ? new Date(appt.startsAt) : null;
 
         let newEnd: Date;
         if (rawEnd) {
@@ -187,6 +198,15 @@ export class AdminAppointmentsController {
         }
 
         await this.apptRepo.update({ id: appointmentId }, { startsAt: newStart, endsAt: newEnd });
+        if (previousStart) {
+            appt.startsAt = newStart;
+            appt.endsAt = newEnd;
+            try {
+                await this.whatsappService.sendAppointmentRescheduled(appt, previousStart);
+            } catch (error) {
+                console.warn('WhatsApp send failed (appointment_rescheduled).');
+            }
+        }
         return { ok: true, id: appointmentId, startsAt: newStart, endsAt: newEnd };
     }
 

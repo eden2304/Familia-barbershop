@@ -780,6 +780,19 @@ const api = {
       return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
     },
 
+    whatsappBroadcast: async ({ phones, clientIds, messageText }) => {
+      const payload = {
+        phones: Array.isArray(phones) ? phones : undefined,
+        clientIds: Array.isArray(clientIds) ? clientIds : undefined,
+        messageText,
+      };
+      return httpPost('/admin/whatsapp/broadcast', payload);
+    },
+
+    whatsappAppointmentMessage: async (appointmentId, messageText) => {
+      return httpPost(`/admin/whatsapp/appointment/${encodeURIComponent(appointmentId)}/message`, { messageText });
+    },
+
     // שינוי מועד תור קיים (מקבל ISO מלאים)
     reschedule: async (id, newStartAtIso, newEndAtIso) => {
       const appointmentId = encodeURIComponent(id);

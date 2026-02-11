@@ -9,6 +9,7 @@
     "start:prod": "node dist/main.js",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
+    "whatsapp:test": "node scripts/whatsapp_send_test.js",
     "typeorm:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:run",
     "typeorm:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:revert",
     "typeorm:show": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:show",

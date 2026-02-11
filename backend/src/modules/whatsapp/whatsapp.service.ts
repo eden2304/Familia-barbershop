@@ -104,34 +104,14 @@ export class WhatsAppService {
     async sendVerificationCode(toPhone: string, code: string): Promise<SendTemplateResult> {
         const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const payload = {
-            messaging_product: 'whatsapp',
-            to: recipientForMeta,
-            type: 'template',
-            template: {
-                name: 'verification_code',
-                language: { code: this.defaultLang },
-                components: [
-                    {
-                        type: 'button',
-                        sub_type: 'copy_code',
-                        index: '0',
-                        parameters: [
-                            {
-                                type: 'text',
-                                text: String(code || ''),
-                            },
-                        ],
-                    },
-                ],
-            },
-        };
+        const payloadVariants = this.buildVerificationCodePayloadVariants(recipientForMeta, code);
+        const defaultPayload = payloadVariants[0];
 
         if (!normalized) {
             await this.saveLog({
                 toPhone: toPhone || '',
                 templateName: 'verification_code',
-                payloadJson: payload,
+                payloadJson: defaultPayload,
                 status: 'failed',
                 metaMessageId: null,
                 error: 'invalid_phone',
@@ -145,7 +125,7 @@ export class WhatsAppService {
             await this.saveLog({
                 toPhone: normalized,
                 templateName: 'verification_code',
-                payloadJson: payload,
+                payloadJson: defaultPayload,
                 status: 'skipped',
                 metaMessageId: null,
                 error: 'disabled',
@@ -160,7 +140,7 @@ export class WhatsAppService {
             await this.saveLog({
                 toPhone: normalized,
                 templateName: 'verification_code',
-                payloadJson: payload,
+                payloadJson: defaultPayload,
                 status: 'failed',
                 metaMessageId: null,
                 error,
@@ -170,11 +150,19 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
-        const result = await this.sendWithRetries(payload);
+        let usedPayload = defaultPayload;
+        let result = await this.sendWithRetries(usedPayload);
+
+        for (let i = 1; i < payloadVariants.length && !result.ok && this.shouldRetryVerificationWithFallback(result.error); i += 1) {
+            usedPayload = payloadVariants[i];
+            this.logger.warn(`Retrying verification_code payload variant #${i + 1} after Meta error: ${result.error || 'unknown_error'}`);
+            result = await this.sendWithRetries(usedPayload);
+        }
+
         await this.saveLog({
             toPhone: normalized,
             templateName: 'verification_code',
-            payloadJson: payload,
+            payloadJson: usedPayload,
             status: result.status,
             metaMessageId: result.messageId,
             error: result.error,
@@ -186,6 +174,58 @@ export class WhatsAppService {
         }
 
         return result;
+    }
+
+    private buildVerificationCodePayloadVariants(toPhone: string, code: string): Record<string, any>[] {
+        const base = {
+            messaging_product: 'whatsapp',
+            to: toPhone,
+            type: 'template',
+            template: {
+                name: 'verification_code',
+                language: { code: this.defaultLang },
+            },
+        };
+
+        return [
+            {
+                ...base,
+                template: {
+                    ...base.template,
+                    components: [
+                        {
+                            type: 'button',
+                            sub_type: 'copy_code',
+                            index: '0',
+                            parameters: [{ type: 'text', text: String(code || '') }],
+                        },
+                    ],
+                },
+            },
+            {
+                ...base,
+                template: {
+                    ...base.template,
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [{ type: 'text', text: String(code || '') }],
+                        },
+                    ],
+                },
+            },
+            base,
+        ];
+    }
+
+    private shouldRetryVerificationWithFallback(error: string | null): boolean {
+        const msg = String(error || '').toLowerCase();
+        if (!msg) return false;
+        return msg.includes('#132000')
+            || msg.includes('number of parameters')
+            || msg.includes('unexpected key')
+            || msg.includes('components')
+            || msg.includes('parameters');
     }
 
     private async sendAppointmentTemplate(

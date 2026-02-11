@@ -118,8 +118,8 @@ export class WhatsAppService {
                         index: '0',
                         parameters: [
                             {
-                                type: 'otp',
-                                otp: String(code || ''),
+                                type: 'text',
+                                text: String(code || ''),
                             },
                         ],
                     },

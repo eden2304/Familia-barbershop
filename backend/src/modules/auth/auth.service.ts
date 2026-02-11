@@ -131,12 +131,12 @@ export class AuthService {
         const meta = await this.getOtpMeta(phone);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BadRequestException('Invalid code');
         }
         const recent = meta.requests.filter((ts) => now - ts < this.otpRequestWindowMs);
         if (recent.length >= this.otpRequestLimit) {
             await this.saveOtpMeta(phone, { ...meta, requests: recent, lockedUntil: meta.lockedUntil, failedAttempts: meta.failedAttempts });
-            throw new HttpException("OTP_RATE_LIMIT", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BadRequestException('Please wait before requesting another code');
         }
         recent.push(now);
         await this.saveOtpMeta(phone, { ...meta, requests: recent });
@@ -209,7 +209,7 @@ export class AuthService {
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BadRequestException('Invalid code');
         }
         const record = await this.loadOtp(norm);
         if (!record) {
@@ -242,7 +242,7 @@ export class AuthService {
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BadRequestException('Invalid code');
         }
         const record = await this.loadOtp(norm);
         if (!record) throw new BadRequestException('Invalid code');

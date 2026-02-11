@@ -252,10 +252,14 @@ async function bootstrap() {
     });
 
     const otpLimiter = createMemoryRateLimiter({
-        limit: 6,
+        limit: 8,
         windowMs: 10 * 60_000,
-        name: 'otp',
+        name: 'otp-request',
         keyGenerator: (req) => {
+            const rawPhone = String((req.body as any)?.phone || '').replace(/\D/g, '');
+            if (rawPhone) {
+                return { key: `phone:${rawPhone}`, type: 'user', masked: maskUser(rawPhone) };
+            }
             const ip = getClientIp(req);
             return { key: ip, type: 'ip', masked: maskIp(ip) };
         },
@@ -278,11 +282,9 @@ async function bootstrap() {
     app.use(['/admin/appointments', '/admin/recurring-appointments'], appointmentLimiter);
     app.use([
         '/auth/request-code',
-        '/auth/verify-code',
         '/auth/request-code-login',
-        '/auth/verify',
         '/users/request-code',
-        '/users/verify-code',
+        '/users/request-code-login',
     ], otpLimiter);
 
     app.useGlobalPipes(new ValidationPipe({

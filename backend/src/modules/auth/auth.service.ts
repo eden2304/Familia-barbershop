@@ -190,7 +190,7 @@ export class AuthService {
 
         await this.storeOtp(norm, code);
 
-        const waResult = await this.whatsappService.sendAuthVerificationCode(norm, code);
+        const waResult = await this.whatsappService.sendVerificationCode(norm, code);
         if (!waResult.ok) {
             this.logger.warn(
                 `Failed sending OTP over WhatsApp for ${maskPhone(norm)}: ${waResult.error || waResult.status}`

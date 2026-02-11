@@ -101,13 +101,91 @@ export class WhatsAppService {
         });
     }
 
-    async sendAuthVerificationCode(toPhone: string, code: string) {
-        return this.sendTemplateMessage({
+    async sendVerificationCode(toPhone: string, code: string): Promise<SendTemplateResult> {
+        const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
+        const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: recipientForMeta,
+            type: 'template',
+            template: {
+                name: 'verification_code',
+                language: { code: this.defaultLang },
+                components: [
+                    {
+                        type: 'button',
+                        sub_type: 'copy_code',
+                        index: '0',
+                        parameters: [
+                            {
+                                type: 'otp',
+                                otp: String(code || ''),
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        if (!normalized) {
+            await this.saveLog({
+                toPhone: toPhone || '',
+                templateName: 'verification_code',
+                payloadJson: payload,
+                status: 'failed',
+                metaMessageId: null,
+                error: 'invalid_phone',
+                appointmentId: null,
+            });
+            this.logger.warn('WhatsApp verification code skipped (invalid phone)');
+            return { ok: false, status: 'failed', messageId: null, error: 'invalid_phone' };
+        }
+
+        if (!this.enabled) {
+            await this.saveLog({
+                toPhone: normalized,
+                templateName: 'verification_code',
+                payloadJson: payload,
+                status: 'skipped',
+                metaMessageId: null,
+                error: 'disabled',
+                appointmentId: null,
+            });
+            this.logger.warn('WhatsApp disabled: template=verification_code');
+            return { ok: true, status: 'skipped', messageId: null, error: 'disabled' };
+        }
+
+        if (!this.token || !this.phoneNumberId) {
+            const error = 'missing_config';
+            await this.saveLog({
+                toPhone: normalized,
+                templateName: 'verification_code',
+                payloadJson: payload,
+                status: 'failed',
+                metaMessageId: null,
+                error,
+                appointmentId: null,
+            });
+            this.logger.warn('WhatsApp config missing: template=verification_code');
+            return { ok: false, status: 'failed', messageId: null, error };
+        }
+
+        const result = await this.sendWithRetries(payload);
+        await this.saveLog({
+            toPhone: normalized,
             templateName: 'verification_code',
-            toPhone,
-            params: [code],
+            payloadJson: payload,
+            status: result.status,
+            metaMessageId: result.messageId,
+            error: result.error,
             appointmentId: null,
         });
+
+        if (!result.ok) {
+            this.logger.warn(`WhatsApp send failed: template=verification_code, error=${result.error}`);
+        }
+
+        return result;
     }
 
     private async sendAppointmentTemplate(

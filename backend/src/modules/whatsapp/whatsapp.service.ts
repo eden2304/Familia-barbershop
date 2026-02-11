@@ -28,6 +28,10 @@ export class WhatsAppService {
     private readonly wabaId = process.env.WHATSAPP_WABA_ID || '';
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
+    private readonly verificationCodeParamMode: 'payload' | 'text' =
+        String(process.env.WHATSAPP_VERIFICATION_CODE_PARAM_MODE || 'payload').toLowerCase() === 'text'
+            ? 'text'
+            : 'payload';
 
     constructor(
         @InjectRepository(WhatsAppMessageLog) private readonly logRepo: Repository<WhatsAppMessageLog>,
@@ -116,12 +120,7 @@ export class WhatsAppService {
                         type: 'button',
                         sub_type: 'copy_code',
                         index: '0',
-                        parameters: [
-                            {
-                                type: 'otp',
-                                otp: String(code),
-                            },
-                        ],
+                        parameters: [this.buildVerificationCodeButtonParameter(code)],
                     },
                 ],
             },
@@ -186,6 +185,14 @@ export class WhatsAppService {
         }
 
         return result;
+    }
+
+    private buildVerificationCodeButtonParameter(code: string) {
+        const value = String(code ?? '');
+        if (this.verificationCodeParamMode === 'text') {
+            return { type: 'text', text: value };
+        }
+        return { type: 'payload', payload: value };
     }
 
     private async sendAppointmentTemplate(
@@ -365,7 +372,19 @@ export class WhatsAppService {
                     return { ok: true, status: 'sent', messageId, error: null };
                 }
 
-                lastError = data?.error?.message || raw || `http_${res.status}`;
+                const errorObj = data?.error || null;
+                const errorDebug = {
+                    status: res.status,
+                    code: errorObj?.code ?? null,
+                    error_subcode: errorObj?.error_subcode ?? null,
+                    error_data: errorObj?.error_data ?? null,
+                    message: errorObj?.message || null,
+                    type: errorObj?.type || null,
+                    fbtrace_id: errorObj?.fbtrace_id || null,
+                };
+                this.logger.warn(`WhatsApp Graph API error: ${JSON.stringify(errorDebug)}`);
+
+                lastError = errorObj?.message || raw || `http_${res.status}`;
             } catch (error: any) {
                 lastError = error?.message || 'network_error';
             }

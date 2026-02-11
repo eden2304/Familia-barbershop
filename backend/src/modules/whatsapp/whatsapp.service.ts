@@ -177,6 +177,7 @@ export class WhatsAppService {
     }
 
     private buildVerificationCodePayloadVariants(toPhone: string, code: string): Record<string, any>[] {
+        const codeText = String(code || '');
         const base = {
             messaging_product: 'whatsapp',
             to: toPhone,
@@ -187,31 +188,49 @@ export class WhatsAppService {
             },
         };
 
+        const bodyComponent = {
+            type: 'body',
+            parameters: [{ type: 'text', text: codeText }],
+        };
+        const copyCodeButtonWithText = {
+            type: 'button',
+            sub_type: 'copy_code',
+            index: '0',
+            parameters: [{ type: 'text', text: codeText }],
+        };
+        const copyCodeButtonNoParams = {
+            type: 'button',
+            sub_type: 'copy_code',
+            index: '0',
+        };
+
         return [
             {
                 ...base,
                 template: {
                     ...base.template,
-                    components: [
-                        {
-                            type: 'button',
-                            sub_type: 'copy_code',
-                            index: '0',
-                            parameters: [{ type: 'text', text: String(code || '') }],
-                        },
-                    ],
+                    components: [bodyComponent, copyCodeButtonWithText],
                 },
             },
             {
                 ...base,
                 template: {
                     ...base.template,
-                    components: [
-                        {
-                            type: 'body',
-                            parameters: [{ type: 'text', text: String(code || '') }],
-                        },
-                    ],
+                    components: [bodyComponent],
+                },
+            },
+            {
+                ...base,
+                template: {
+                    ...base.template,
+                    components: [copyCodeButtonWithText],
+                },
+            },
+            {
+                ...base,
+                template: {
+                    ...base.template,
+                    components: [copyCodeButtonNoParams],
                 },
             },
             base,
@@ -222,7 +241,9 @@ export class WhatsAppService {
         const msg = String(error || '').toLowerCase();
         if (!msg) return false;
         return msg.includes('#132000')
+            || msg.includes('#131008')
             || msg.includes('number of parameters')
+            || msg.includes('required parameter is missing')
             || msg.includes('unexpected key')
             || msg.includes('components')
             || msg.includes('parameters');

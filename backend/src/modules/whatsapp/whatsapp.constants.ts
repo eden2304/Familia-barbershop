@@ -1,6 +1,6 @@
 export const WHATSAPP_TEMPLATES = {
-    appointment_confirmed: {
-        name: 'appointment_confirmed',
+    appointment_booked: {
+        name: 'appointment_booked',
         params: ['clientName', 'date', 'time'] as const,
     },
     appointment_reminder_same_day: {

@@ -42,7 +42,7 @@ export class WhatsAppService {
     }
 
     async sendAppointmentConfirmed(appointment: Appointment) {
-        return this.sendAppointmentTemplate('appointment_confirmed', appointment, {
+        return this.sendAppointmentTemplate('appointment_booked', appointment, {
             appointmentId: appointment.id,
         });
     }
@@ -102,7 +102,7 @@ export class WhatsAppService {
     }
 
     private async sendAppointmentTemplate(
-        templateName: 'appointment_confirmed' | 'appointment_reminder_same_day' | 'appointment_canceled',
+        templateName: 'appointment_booked' | 'appointment_reminder_same_day' | 'appointment_canceled',
         appointment: Appointment,
         opts: { appointmentId?: string } = {},
     ) {

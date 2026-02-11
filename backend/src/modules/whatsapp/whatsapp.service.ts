@@ -32,6 +32,14 @@ export class WhatsAppService {
         String(process.env.WHATSAPP_VERIFICATION_CODE_PARAM_MODE || 'payload').toLowerCase() === 'text'
             ? 'text'
             : 'payload';
+    private readonly verificationCodeParamLocation: 'none' | 'body' | 'button' =
+        ['none', 'body', 'button'].includes(String(process.env.VERIFICATION_CODE_PARAM_LOCATION || 'none').toLowerCase())
+            ? (String(process.env.VERIFICATION_CODE_PARAM_LOCATION || 'none').toLowerCase() as 'none' | 'body' | 'button')
+            : 'none';
+    private readonly verificationCodeExpectedParams = Number.parseInt(
+        String(process.env.VERIFICATION_CODE_EXPECTED_PARAMS ?? '0'),
+        10,
+    );
 
     constructor(
         @InjectRepository(WhatsAppMessageLog) private readonly logRepo: Repository<WhatsAppMessageLog>,
@@ -108,6 +116,37 @@ export class WhatsAppService {
     async sendVerificationCode(toPhone: string, code: string): Promise<SendTemplateResult> {
         const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
+        const components = this.buildVerificationCodeComponents(code);
+        if (!components) {
+            const error = 'invalid_verification_template_config';
+            const configDebug = {
+                expectedParams: this.verificationCodeExpectedParams,
+                location: this.verificationCodeParamLocation,
+                paramMode: this.verificationCodeParamMode,
+            };
+            const payload = {
+                messaging_product: 'whatsapp',
+                to: recipientForMeta,
+                type: 'template',
+                template: {
+                    name: 'verification_code',
+                    language: { code: this.defaultLang },
+                    components: [],
+                },
+            };
+            await this.saveLog({
+                toPhone: normalized || toPhone || '',
+                templateName: 'verification_code',
+                payloadJson: payload,
+                status: 'failed',
+                metaMessageId: null,
+                error,
+                appointmentId: null,
+            });
+            this.logger.error(`WhatsApp verification template config error: ${JSON.stringify(configDebug)}`);
+            return { ok: false, status: 'failed', messageId: null, error };
+        }
+
         const payload = {
             messaging_product: 'whatsapp',
             to: recipientForMeta,
@@ -115,14 +154,7 @@ export class WhatsAppService {
             template: {
                 name: 'verification_code',
                 language: { code: this.defaultLang },
-                components: [
-                    {
-                        type: 'button',
-                        sub_type: 'copy_code',
-                        index: '0',
-                        parameters: [this.buildVerificationCodeButtonParameter(code)],
-                    },
-                ],
+                components,
             },
         };
 
@@ -193,6 +225,42 @@ export class WhatsAppService {
             return { type: 'text', text: value };
         }
         return { type: 'payload', payload: value };
+    }
+
+    private buildVerificationCodeComponents(code: string): Record<string, any>[] | null {
+        const expected = Number.isFinite(this.verificationCodeExpectedParams)
+            ? this.verificationCodeExpectedParams
+            : 0;
+        const copyCodeButtonBase = {
+            type: 'button',
+            sub_type: 'copy_code',
+            index: '0',
+        };
+
+        if (this.verificationCodeParamLocation === 'none' && expected === 0) {
+            return [copyCodeButtonBase];
+        }
+
+        if (this.verificationCodeParamLocation === 'body' && expected === 1) {
+            return [
+                {
+                    type: 'body',
+                    parameters: [{ type: 'text', text: String(code ?? '') }],
+                },
+                copyCodeButtonBase,
+            ];
+        }
+
+        if (this.verificationCodeParamLocation === 'button' && expected === 1) {
+            return [
+                {
+                    ...copyCodeButtonBase,
+                    parameters: [this.buildVerificationCodeButtonParameter(code)],
+                },
+            ];
+        }
+
+        return null;
     }
 
     private async sendAppointmentTemplate(

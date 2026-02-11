@@ -43,7 +43,7 @@ export class AuthService {
     private readonly accessTokenTtl: string;
     private readonly accessTokenMs: number;
     private readonly refreshTokenMs: number;
-    private readonly otpTtlMs = 3 * 60 * 1000;
+    private readonly otpTtlMs = 5 * 60 * 1000;
     private readonly otpRequestLimit = 3;
     private readonly otpRequestWindowMs = 10 * 60 * 1000;
     private readonly otpMaxAttempts = 5;
@@ -182,11 +182,9 @@ export class AuthService {
     async requestCode(rawPhone: string) {
         const norm = normalizePhone(rawPhone);
         if (!norm) throw new BadRequestException('Phone required');
-
         await this.assertOtpRequestAllowance(norm);
 
-        const devOtp = this.configService.get<string>('DEV_OTP');
-        const code = devOtp ? String(devOtp) : this.generateOtpCode();
+        const code = this.generateOtpCode();
 
         await this.storeOtp(norm, code);
 
@@ -197,7 +195,7 @@ export class AuthService {
         }
 
         this.logger.log(
-            `OTP issued for ${maskPhone(norm)}${devOtp ? ' (DEV_OTP)' : ''}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
+            `OTP issued for ${maskPhone(norm)}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
         );
 
         return { ok: true };
@@ -207,6 +205,7 @@ export class AuthService {
     async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
+        if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
@@ -240,6 +239,7 @@ export class AuthService {
     async register(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
+        if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
             throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);

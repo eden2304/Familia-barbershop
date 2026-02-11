@@ -88,6 +88,14 @@ export class WhatsAppService {
         });
     }
 
+    async sendAuthCode(toPhone: string, code: string) {
+        return this.sendTemplateMessage({
+            templateName: 'login_and_register',
+            toPhone,
+            params: [code],
+        });
+    }
+
     async sendAdminAppointmentMessage(appointment: Appointment, messageText: string) {
         const clientName = this.getClientName(appointment);
         const date = formatDateForTemplate(appointment.startsAt, this.timeZone);

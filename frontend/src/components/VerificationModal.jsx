@@ -76,6 +76,21 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [resendTimer, setResendTimer] = useState(0);
   const inputRefs = useRef([]);
 
+  const resetToHomeAfterOtpExceeded = () => {
+    setCode(new Array(4).fill(""));
+    setError("בוצעו 3 ניסיונות שגויים. יש להתחיל התחברות מחדש.");
+    setView("loginPhone");
+    setResendTimer(0);
+    if (typeof onCancel === "function") {
+      setTimeout(() => onCancel(), 700);
+    }
+  };
+
+  const isOtpAttemptsExceeded = (err) => {
+    const message = err?.payload?.message ?? err?.message;
+    return err?.status === 400 && message === "OTP_ATTEMPTS_EXCEEDED";
+  };
+
   // חסימת גלילה בזמן מודאל
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -226,12 +241,16 @@ export default function VerificationModal({ onVerify, onCancel }) {
           if (e2?.status === 409 || e2?.message === "UNREGISTERED_CLIENT") {
             setError("המספר לא רשום. יש להירשם קודם.");
             setView("registerForm");
+          } else if (isOtpAttemptsExceeded(e2)) {
+            resetToHomeAfterOtpExceeded();
           } else if (e2?.status === 400) {
             setError("קוד לא תקין.");
           } else {
             setError("שגיאה באימות. נסה שוב.");
           }
         }
+      } else if (isOtpAttemptsExceeded(e1)) {
+        resetToHomeAfterOtpExceeded();
       } else if (e1?.status === 400) {
         setError("קוד לא תקין.");
       } else {
@@ -338,6 +357,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
         setView("loginPhone");
       } else if (e?.status === 400 && (e?.message === "NAME_REQUIRED" || e?.payload?.message === "NAME_REQUIRED")) {
         setError("חובה להזין שם פרטי ושם משפחה.");
+      } else if (isOtpAttemptsExceeded(e)) {
+        resetToHomeAfterOtpExceeded();
       } else if (e?.status === 400) {
         setError("קוד לא תקין.");
       } else {

@@ -11,11 +11,13 @@ import { RefreshToken } from '../../entities/refresh-token.entity';
 import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from './roles.guard';
 import { type SignOptions } from 'jsonwebtoken';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Client, Setting, AdminPhone, RefreshToken]),
+        WhatsAppModule,
         JwtModule.register({
             secret: process.env.JWT_SECRET,          // חובה שזה יהיה אותו SECRET של כל המערכת
             signOptions: { expiresIn: '30d' },       // או מה שבא לך

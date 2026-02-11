@@ -21,6 +21,7 @@ import {
     verifyOtp
 } from '../../common/security.utils';
 import { JwtService } from '@nestjs/jwt';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 
 interface OtpRecord {
@@ -42,10 +43,10 @@ export class AuthService {
     private readonly accessTokenTtl: string;
     private readonly accessTokenMs: number;
     private readonly refreshTokenMs: number;
-    private readonly otpTtlMs = 3 * 60 * 1000;
+    private readonly otpTtlMs = 5 * 60 * 1000;
     private readonly otpRequestLimit = 3;
     private readonly otpRequestWindowMs = 10 * 60 * 1000;
-    private readonly otpMaxAttempts = 5;
+    private readonly otpMaxAttempts = 3;
     private readonly otpLockMs = 10 * 60 * 1000;
     private readonly defaultRemember = false;
     private readonly otpSecret: string;
@@ -57,6 +58,7 @@ export class AuthService {
         @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
         private readonly configService: ConfigService,
         private readonly jwt: JwtService,
+        private readonly whatsAppService: WhatsAppService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
@@ -129,25 +131,31 @@ export class AuthService {
         const meta = await this.getOtpMeta(phone);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            await this.deleteOtp(phone);
+            await this.clearOtpMeta(phone);
         }
         const recent = meta.requests.filter((ts) => now - ts < this.otpRequestWindowMs);
         if (recent.length >= this.otpRequestLimit) {
             await this.saveOtpMeta(phone, { ...meta, requests: recent, lockedUntil: meta.lockedUntil, failedAttempts: meta.failedAttempts });
-            throw new HttpException("OTP_RATE_LIMIT", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BadRequestException('Please wait before requesting another code');
         }
         recent.push(now);
         await this.saveOtpMeta(phone, { ...meta, requests: recent });
     }
 
-    private async recordFailedOtpAttempt(phone: string) {
+    private async recordFailedOtpAttempt(phone: string): Promise<boolean> {
         const meta = await this.getOtpMeta(phone);
         const failedAttempts = (meta.failedAttempts || 0) + 1;
-        const lockedUntil = failedAttempts >= this.otpMaxAttempts ? Date.now() + this.otpLockMs : meta.lockedUntil;
-        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil });
-        if (lockedUntil && failedAttempts >= this.otpMaxAttempts) {
-            this.logger.warn(`OTP locked for ${maskPhone(phone)} until ${new Date(lockedUntil).toISOString()}`);
+
+        if (failedAttempts >= this.otpMaxAttempts) {
+            await this.deleteOtp(phone);
+            await this.clearOtpMeta(phone);
+            this.logger.warn(`OTP attempts exceeded for ${maskPhone(phone)}. Forcing new login flow.`);
+            return true;
         }
+
+        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil: undefined });
+        return false;
     }
 
     private async storeOtp(phone: string, code: string) {
@@ -180,16 +188,20 @@ export class AuthService {
     async requestCode(rawPhone: string) {
         const norm = normalizePhone(rawPhone);
         if (!norm) throw new BadRequestException('Phone required');
-
         await this.assertOtpRequestAllowance(norm);
 
-        const devOtp = this.configService.get<string>('DEV_OTP');
-        const code = devOtp ? String(devOtp) : this.generateOtpCode();
+        const code = this.generateOtpCode();
 
         await this.storeOtp(norm, code);
 
+        const whatsappResult = await this.whatsAppService.sendAuthCode(norm, code);
+        if (!whatsappResult.ok && whatsappResult.status === 'failed') {
+            this.logger.error(`OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.error || 'unknown_error'}`);
+            throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);
+        }
+
         this.logger.log(
-            `OTP issued for ${maskPhone(norm)}${devOtp ? ' (DEV_OTP)' : ''}`
+            `OTP issued for ${maskPhone(norm)}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
         );
 
         return { ok: true };
@@ -199,10 +211,13 @@ export class AuthService {
     async verifyCode(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
+        if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            await this.deleteOtp(norm);
+            await this.clearOtpMeta(norm);
+            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
         }
         const record = await this.loadOtp(norm);
         if (!record) {
@@ -216,7 +231,8 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
+            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
             throw new BadRequestException('Invalid code');
         }
 
@@ -232,9 +248,12 @@ export class AuthService {
     async register(body: { phone: string; code: string; firstName?: string; lastName?: string; rememberMe?: boolean; userAgent?: string; }) {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
+        if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
-            throw new HttpException("OTP_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS);
+            await this.deleteOtp(norm);
+            await this.clearOtpMeta(norm);
+            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
         }
         const record = await this.loadOtp(norm);
         if (!record) throw new BadRequestException('Invalid code');
@@ -246,7 +265,8 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
+            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
             throw new BadRequestException('Invalid code');
         }
 
@@ -424,7 +444,7 @@ export class AuthService {
     // }
 
     private generateOtpCode(): string {
-        return ('' + Math.floor(100000 + Math.random() * 900000)).substring(0, 6);
+        return ('' + Math.floor(1000 + Math.random() * 9000)).substring(0, 4);
     }
 
     private generateTokenValue(): string {

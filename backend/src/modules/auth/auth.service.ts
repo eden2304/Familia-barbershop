@@ -21,6 +21,7 @@ import {
     verifyOtp
 } from '../../common/security.utils';
 import { JwtService } from '@nestjs/jwt';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
 
 interface OtpRecord {
@@ -57,6 +58,7 @@ export class AuthService {
         @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
         private readonly configService: ConfigService,
         private readonly jwt: JwtService,
+        private readonly whatsAppService: WhatsAppService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
@@ -188,8 +190,14 @@ export class AuthService {
 
         await this.storeOtp(norm, code);
 
+        const whatsappResult = await this.whatsAppService.sendAuthCode(norm, code);
+        if (!whatsappResult.ok && whatsappResult.status === 'failed') {
+            this.logger.error(`OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.error || 'unknown_error'}`);
+            throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);
+        }
+
         this.logger.log(
-            `OTP issued for ${maskPhone(norm)}${devOtp ? ' (DEV_OTP)' : ''}`
+            `OTP issued for ${maskPhone(norm)}${devOtp ? ' (DEV_OTP)' : ''}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
         );
 
         return { ok: true };
@@ -424,7 +432,7 @@ export class AuthService {
     // }
 
     private generateOtpCode(): string {
-        return ('' + Math.floor(100000 + Math.random() * 900000)).substring(0, 6);
+        return ('' + Math.floor(1000 + Math.random() * 9000)).substring(0, 4);
     }
 
     private generateTokenValue(): string {

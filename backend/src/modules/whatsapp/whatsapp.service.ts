@@ -101,6 +101,15 @@ export class WhatsAppService {
         });
     }
 
+    async sendAuthVerificationCode(toPhone: string, code: string) {
+        return this.sendTemplateMessage({
+            templateName: 'verification_code',
+            toPhone,
+            params: [code],
+            appointmentId: null,
+        });
+    }
+
     private async sendAppointmentTemplate(
         templateName: 'appointment_booked' | 'appointment_reminder_same_day' | 'appointment_canceled',
         appointment: Appointment,

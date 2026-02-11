@@ -23,6 +23,10 @@ export const WHATSAPP_TEMPLATES = {
         name: 'admin_appointment_message',
         params: ['clientName', 'date', 'time', 'messageText'] as const,
     },
+    verification_code: {
+        name: 'verification_code',
+        params: ['code'] as const,
+    },
 } as const;
 
 export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;

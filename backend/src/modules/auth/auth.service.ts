@@ -46,7 +46,7 @@ export class AuthService {
     private readonly otpTtlMs = 5 * 60 * 1000;
     private readonly otpRequestLimit = 3;
     private readonly otpRequestWindowMs = 10 * 60 * 1000;
-    private readonly otpMaxAttempts = 5;
+    private readonly otpMaxAttempts = 3;
     private readonly otpLockMs = 10 * 60 * 1000;
     private readonly defaultRemember = false;
     private readonly otpSecret: string;
@@ -131,7 +131,8 @@ export class AuthService {
         const meta = await this.getOtpMeta(phone);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new BadRequestException('Invalid code');
+            await this.deleteOtp(phone);
+            await this.clearOtpMeta(phone);
         }
         const recent = meta.requests.filter((ts) => now - ts < this.otpRequestWindowMs);
         if (recent.length >= this.otpRequestLimit) {
@@ -142,14 +143,19 @@ export class AuthService {
         await this.saveOtpMeta(phone, { ...meta, requests: recent });
     }
 
-    private async recordFailedOtpAttempt(phone: string) {
+    private async recordFailedOtpAttempt(phone: string): Promise<boolean> {
         const meta = await this.getOtpMeta(phone);
         const failedAttempts = (meta.failedAttempts || 0) + 1;
-        const lockedUntil = failedAttempts >= this.otpMaxAttempts ? Date.now() + this.otpLockMs : meta.lockedUntil;
-        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil });
-        if (lockedUntil && failedAttempts >= this.otpMaxAttempts) {
-            this.logger.warn(`OTP locked for ${maskPhone(phone)} until ${new Date(lockedUntil).toISOString()}`);
+
+        if (failedAttempts >= this.otpMaxAttempts) {
+            await this.deleteOtp(phone);
+            await this.clearOtpMeta(phone);
+            this.logger.warn(`OTP attempts exceeded for ${maskPhone(phone)}. Forcing new login flow.`);
+            return true;
         }
+
+        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil: undefined });
+        return false;
     }
 
     private async storeOtp(phone: string, code: string) {
@@ -209,7 +215,9 @@ export class AuthService {
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new BadRequestException('Invalid code');
+            await this.deleteOtp(norm);
+            await this.clearOtpMeta(norm);
+            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
         }
         const record = await this.loadOtp(norm);
         if (!record) {
@@ -223,7 +231,8 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
+            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
             throw new BadRequestException('Invalid code');
         }
 
@@ -242,7 +251,9 @@ export class AuthService {
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
-            throw new BadRequestException('Invalid code');
+            await this.deleteOtp(norm);
+            await this.clearOtpMeta(norm);
+            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
         }
         const record = await this.loadOtp(norm);
         if (!record) throw new BadRequestException('Invalid code');
@@ -254,7 +265,8 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
+            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
             throw new BadRequestException('Invalid code');
         }
 

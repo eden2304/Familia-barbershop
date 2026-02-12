@@ -426,7 +426,7 @@ export class AppointmentsService {
             await this.whatsappService.sendAppointmentConfirmed(saved);
         } catch (error) {
             // לא מפיל את הבקשה אם שליחת WA נכשלת
-            console.warn('WhatsApp send failed (appointment_booked).');
+            console.warn('WhatsApp send failed (appointment_approved).');
         }
         return saved;
     }

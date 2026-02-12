@@ -7,7 +7,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { Client } from '../../clients/client.entity';
@@ -30,64 +30,28 @@ export class AdminWhatsAppController {
         const messageText = String(body?.messageText ?? '').trim();
         if (!messageText) throw new BadRequestException('messageText is required');
 
-        const phonesInput = Array.isArray(body?.phones) ? body.phones : [];
-        const clientIds = Array.isArray(body?.clientIds) ? body.clientIds : [];
-
-        if (phonesInput.length === 0 && clientIds.length === 0) {
-            throw new BadRequestException('phones or clientIds are required');
-        }
-
-        const recipients: Array<{ phone: string; name: string }> = [];
-
-        if (phonesInput.length > 0) {
-            phonesInput.forEach((phone: any) => {
-                const text = String(phone || '').trim();
-                if (text) {
-                    recipients.push({ phone: text, name: '' });
-                }
-            });
-        }
-
-        if (clientIds.length > 0) {
-            const ids = clientIds.map((id: any) => String(id).trim()).filter(Boolean);
-            if (ids.length > 0) {
-                const clients = await this.clientRepo.find({ where: { id: In(ids as any) } });
-                clients.forEach(client => {
-                    const clientAny = client as any;
-                    const first = clientAny.firstName ?? clientAny.first_name ?? '';
-                    const last = clientAny.lastName ?? clientAny.last_name ?? '';
-                    const name = [first, last].filter(Boolean).join(' ').trim();
-                    const phone = clientAny.phone ?? '';
-                    if (phone) {
-                        recipients.push({ phone, name });
-                    }
-                });
-            }
-        }
-
+        const clients = await this.clientRepo.find();
         const normalizeKey = (value: string) => String(value || '').replace(/\D/g, '');
-        const unique = new Map<string, { phone: string; name: string }>();
-        recipients.forEach(entry => {
-            const key = normalizeKey(entry.phone);
+        const uniquePhones = new Map<string, string>();
+
+        clients.forEach(client => {
+            const phone = String((client as any)?.phone ?? '').trim();
+            const key = normalizeKey(phone);
             if (!key) return;
-            if (!unique.has(key)) unique.set(key, entry);
+            if (!uniquePhones.has(key)) uniquePhones.set(key, phone);
         });
 
         let sent = 0;
         let failed = 0;
 
-        for (const entry of unique.values()) {
-            const result = await this.whatsappService.sendAdminGeneralMessage(
-                entry.phone,
-                entry.name || '',
-                messageText,
-            );
+        for (const phone of uniquePhones.values()) {
+            const result = await this.whatsappService.sendAdminGeneralMessage(phone, messageText);
             if (result.ok) sent += 1;
             else failed += 1;
             await sleep(200);
         }
 
-        return { ok: true, sent, failed, total: unique.size };
+        return { ok: true, sent, failed, total: uniquePhones.size };
     }
 
     @Post('appointment/:appointmentId/message')

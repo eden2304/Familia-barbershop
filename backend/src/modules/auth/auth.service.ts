@@ -196,8 +196,25 @@ export class AuthService {
 
         const whatsappResult = await this.whatsAppAuthService.sendVerificationCode(norm, code);
         if (!whatsappResult.ok) {
-            this.logger.error(`OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.error || 'unknown_error'}`);
-            throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);
+            await this.deleteOtp(norm);
+
+            const status = whatsappResult.error === 'missing_whatsapp_configuration'
+                ? HttpStatus.SERVICE_UNAVAILABLE
+                : HttpStatus.BAD_GATEWAY;
+
+            this.logger.error(
+                `OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.metaError || whatsappResult.error || 'unknown_error'}`,
+            );
+
+            throw new HttpException(
+                {
+                    ok: false,
+                    error: 'whatsapp_send_failed',
+                    metaError: whatsappResult.metaError || whatsappResult.error || 'unknown_error',
+                    code: whatsappResult.code,
+                },
+                status,
+            );
         }
 
         this.logger.log(

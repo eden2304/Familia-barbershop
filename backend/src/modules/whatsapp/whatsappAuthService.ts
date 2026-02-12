@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+type AuthTemplateMode = 'body_only' | 'button_only' | 'body_and_button';
+
 interface VerificationSendResult {
     ok: boolean;
     messageId?: string;
     error?: string;
+    metaError?: string;
+    code?: number;
 }
 
 interface RateLimitBucket {
@@ -12,14 +16,57 @@ interface RateLimitBucket {
     windowStart: number;
 }
 
+interface MetaErrorDetails {
+    message: string;
+    code?: number;
+}
+
+interface ComponentBuildResult {
+    components: Array<Record<string, any>>;
+    included: Array<'body' | 'button'>;
+    mode: AuthTemplateMode;
+}
+
+const DEFAULT_TEMPLATE_MODE: AuthTemplateMode = 'body_and_button';
+
+function resolveTemplateMode(rawMode: string | undefined): AuthTemplateMode {
+    const mode = String(rawMode || DEFAULT_TEMPLATE_MODE).trim().toLowerCase();
+    if (mode === 'body_only' || mode === 'button_only' || mode === 'body_and_button') {
+        return mode;
+    }
+    return DEFAULT_TEMPLATE_MODE;
+}
+
+export function buildAuthComponents(code: string, mode: AuthTemplateMode): ComponentBuildResult {
+    const components: Array<Record<string, any>> = [];
+    const included: Array<'body' | 'button'> = [];
+
+    if (mode === 'body_only' || mode === 'body_and_button') {
+        components.push({
+            type: 'body',
+            parameters: [{ type: 'text', text: code }],
+        });
+        included.push('body');
+    }
+
+    if (mode === 'button_only' || mode === 'body_and_button') {
+        components.push({
+            type: 'button',
+            sub_type: 'copy_code',
+            index: '0',
+            parameters: [{ type: 'text', text: code }],
+        });
+        included.push('button');
+    }
+
+    return { components, included, mode };
+}
+
 @Injectable()
 export class WhatsAppAuthService {
     private readonly logger = new Logger(WhatsAppAuthService.name);
-
     private readonly timeoutMs = 10_000;
-    private readonly maxAttempts = 2; // first attempt + 1 retry
-
-    // Basic anti-abuse guard.
+    private readonly maxAttempts = 2;
     private readonly rateLimitMax = 5;
     private readonly rateLimitWindowMs = 10 * 60 * 1000;
     private readonly rateLimit = new Map<string, RateLimitBucket>();
@@ -52,6 +99,7 @@ export class WhatsAppAuthService {
             const phoneNumberId = this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID') || '';
             const templateName = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_NAME') || 'verification_code';
             const templateLang = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_LANG') || 'he';
+            const mode = resolveTemplateMode(this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_MODE'));
 
             if (!token || !phoneNumberId) {
                 this.logger.error('Missing WhatsApp auth config: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
@@ -59,9 +107,9 @@ export class WhatsAppAuthService {
             }
 
             const endpoint = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
-            const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang);
+            const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang, mode);
 
-            let lastError = 'unknown_error';
+            let metaError: MetaErrorDetails = { message: 'unknown_error' };
 
             for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
                 try {
@@ -73,23 +121,34 @@ export class WhatsAppAuthService {
                         return messageId ? { ok: true, messageId } : { ok: true };
                     }
 
-                    lastError = this.extractError(response.status, responseBody);
-                    this.logger.error(`WhatsApp auth send failed (${attempt}/${this.maxAttempts}): ${lastError}`);
+                    metaError = this.extractError(response.status, responseBody);
+                    this.logger.error(`WhatsApp auth send failed (${attempt}/${this.maxAttempts}) code=${metaError.code ?? 'n/a'} error=${metaError.message}`);
                 } catch (error: any) {
-                    lastError = error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error';
-                    this.logger.error(`WhatsApp auth request failed (${attempt}/${this.maxAttempts}): ${lastError}`);
+                    metaError = {
+                        message: error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error',
+                    };
+                    this.logger.error(`WhatsApp auth request failed (${attempt}/${this.maxAttempts}): ${metaError.message}`);
                 }
             }
 
-            return { ok: false, error: lastError };
+            return { ok: false, error: 'whatsapp_send_failed', metaError: metaError.message, code: metaError.code };
         } catch (error: any) {
             const err = error?.message || 'unexpected_error';
             this.logger.error(`Unexpected WhatsApp auth service error: ${err}`);
-            return { ok: false, error: err };
+            return { ok: false, error: 'whatsapp_send_failed', metaError: err };
         }
     }
 
-    private buildAuthPayload(to: string, code: string, templateName: string, templateLang: string) {
+    private buildAuthPayload(
+        to: string,
+        code: string,
+        templateName: string,
+        templateLang: string,
+        mode: AuthTemplateMode,
+    ) {
+        const { components, included } = buildAuthComponents(code, mode);
+        this.logger.log(`WhatsApp auth payload mode=${mode} components=${included.join('+') || 'none'}`);
+
         return {
             messaging_product: 'whatsapp',
             to,
@@ -97,19 +156,7 @@ export class WhatsAppAuthService {
             template: {
                 name: templateName,
                 language: { code: templateLang },
-                components: [
-                    {
-                        type: 'button',
-                        sub_type: 'copy_code',
-                        index: '0',
-                        parameters: [
-                            {
-                                type: 'text',
-                                text: code,
-                            },
-                        ],
-                    },
-                ],
+                components,
             },
         };
     }
@@ -118,22 +165,10 @@ export class WhatsAppAuthService {
         const digits = String(phone || '').replace(/\D/g, '');
         if (!digits) return null;
 
-        if (digits.startsWith('009725') && digits.length === 14) {
-            return digits.slice(2);
-        }
-
-        if (digits.startsWith('9725') && digits.length === 12) {
-            return digits;
-        }
-
-        if (digits.startsWith('05') && digits.length === 10) {
-            return `972${digits.slice(1)}`;
-        }
-
-        if (digits.startsWith('5') && digits.length === 9) {
-            return `972${digits}`;
-        }
-
+        if (digits.startsWith('009725') && digits.length === 14) return digits.slice(2);
+        if (digits.startsWith('9725') && digits.length === 12) return digits;
+        if (digits.startsWith('05') && digits.length === 10) return `972${digits.slice(1)}`;
+        if (digits.startsWith('5') && digits.length === 9) return `972${digits}`;
         return null;
     }
 
@@ -146,9 +181,7 @@ export class WhatsAppAuthService {
             return true;
         }
 
-        if (bucket.count >= this.rateLimitMax) {
-            return false;
-        }
+        if (bucket.count >= this.rateLimitMax) return false;
 
         bucket.count += 1;
         this.rateLimit.set(phone, bucket);
@@ -177,7 +210,6 @@ export class WhatsAppAuthService {
     private async safeJson(response: Response): Promise<any> {
         const text = await response.text();
         if (!text) return null;
-
         try {
             return JSON.parse(text);
         } catch {
@@ -185,17 +217,14 @@ export class WhatsAppAuthService {
         }
     }
 
-    private extractError(status: number, responseBody: any): string {
+    private extractError(status: number, responseBody: any): MetaErrorDetails {
         if (responseBody?.error?.message) {
-            const code = responseBody?.error?.code ? ` code=${responseBody.error.code}` : '';
-            const subcode = responseBody?.error?.error_subcode ? ` subcode=${responseBody.error.error_subcode}` : '';
-            return `${responseBody.error.message}${code}${subcode}`;
+            return {
+                message: responseBody.error.message,
+                code: Number.isFinite(Number(responseBody?.error?.code)) ? Number(responseBody.error.code) : undefined,
+            };
         }
-
-        if (responseBody?.raw) {
-            return `http_${status}: ${responseBody.raw}`;
-        }
-
-        return `http_${status}`;
+        if (responseBody?.raw) return { message: `http_${status}: ${responseBody.raw}` };
+        return { message: `http_${status}` };
     }
 }

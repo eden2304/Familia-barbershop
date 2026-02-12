@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
 import { Appointment } from '../../entities/appointment.entity';
+import { WhatsAppMessageLog } from '../../entities/whatsapp-message-log.entity';
 import { WhatsAppService } from './whatsapp.service';
 import { DateTime } from 'luxon';
 import { sleep } from './whatsapp.utils';
@@ -11,11 +12,15 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
     private readonly logger = new Logger(WhatsAppReminderScheduler.name);
     private readonly cronExpr = process.env.WHATSAPP_REMINDER_CRON || '0 8 * * *';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
+    private readonly logRetentionDays = this.parsePositiveInt(process.env.WHATSAPP_LOG_RETENTION_DAYS, 3);
+    private readonly cleanupEveryHours = this.parsePositiveInt(process.env.WHATSAPP_LOG_CLEANUP_EVERY_HOURS, 72);
     private timer: NodeJS.Timeout | null = null;
     private lastRunKey: string | null = null;
+    private lastCleanupAt: DateTime | null = null;
 
     constructor(
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
+        @InjectRepository(WhatsAppMessageLog) private readonly messageLogRepo: Repository<WhatsAppMessageLog>,
         private readonly whatsappService: WhatsAppService,
     ) {}
 
@@ -29,6 +34,14 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         this.tick().catch(error => {
             this.logger.warn(`WhatsApp reminder initial tick failed: ${error?.message || error}`);
         });
+    }
+
+    private parsePositiveInt(value: string | undefined, fallback: number): number {
+        const parsed = Number.parseInt(String(value || ''), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return fallback;
+        }
+        return parsed;
     }
 
     onModuleDestroy() {
@@ -49,6 +62,8 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
     }
 
     private async tick() {
+        await this.cleanupMessageLogs();
+
         if (!this.whatsappService.isEnabled()) {
             return;
         }
@@ -67,6 +82,30 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         this.lastRunKey = runKey;
 
         await this.sendSameDayReminders();
+    }
+
+    private async cleanupMessageLogs() {
+        const now = DateTime.now().setZone(this.timeZone);
+        if (this.lastCleanupAt) {
+            const hoursSinceLastCleanup = now.diff(this.lastCleanupAt, 'hours').hours;
+            if (hoursSinceLastCleanup < this.cleanupEveryHours) {
+                return;
+            }
+        }
+
+        const cutoff = now.minus({ days: this.logRetentionDays }).toUTC().toJSDate();
+        const result = await this.messageLogRepo
+            .createQueryBuilder()
+            .delete()
+            .from(WhatsAppMessageLog)
+            .where('created_at < :cutoff', { cutoff: cutoff.toISOString() })
+            .execute();
+
+        this.lastCleanupAt = now;
+        const deletedCount = result.affected ?? 0;
+        if (deletedCount > 0) {
+            this.logger.log(`WhatsApp logs cleanup removed ${deletedCount} rows older than ${this.logRetentionDays} days`);
+        }
     }
 
     private async sendSameDayReminders() {

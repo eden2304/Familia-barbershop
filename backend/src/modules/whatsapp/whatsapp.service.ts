@@ -42,7 +42,7 @@ export class WhatsAppService {
     }
 
     async sendAppointmentConfirmed(appointment: Appointment) {
-        return this.sendAppointmentTemplate('appointment_booked', appointment, {
+        return this.sendAppointmentTemplate('appointment_approved', appointment, {
             appointmentId: appointment.id,
         });
     }
@@ -80,11 +80,11 @@ export class WhatsAppService {
         });
     }
 
-    async sendAdminGeneralMessage(toPhone: string, clientName: string, messageText: string) {
+    async sendAdminGeneralMessage(toPhone: string, messageText: string) {
         return this.sendTemplateMessage({
-            templateName: 'admin_general_message',
+            templateName: 'general_message',
             toPhone,
-            params: [clientName, messageText],
+            params: [messageText],
         });
     }
 
@@ -110,7 +110,7 @@ export class WhatsAppService {
     }
 
     private async sendAppointmentTemplate(
-        templateName: 'appointment_booked' | 'appointment_reminder_same_day' | 'appointment_canceled',
+        templateName: 'appointment_approved' | 'appointment_reminder_same_day' | 'appointment_canceled',
         appointment: Appointment,
         opts: { appointmentId?: string } = {},
     ) {

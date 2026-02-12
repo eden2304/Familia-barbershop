@@ -780,13 +780,8 @@ const api = {
       return httpGet('/admin/appointments?date=' + encodeURIComponent(d));
     },
 
-    whatsappBroadcast: async ({ phones, clientIds, messageText }) => {
-      const payload = {
-        phones: Array.isArray(phones) ? phones : undefined,
-        clientIds: Array.isArray(clientIds) ? clientIds : undefined,
-        messageText,
-      };
-      return httpPost('/admin/whatsapp/broadcast', payload);
+    whatsappBroadcast: async ({ messageText }) => {
+      return httpPost('/admin/whatsapp/broadcast', { messageText });
     },
 
     whatsappAppointmentMessage: async (appointmentId, messageText) => {

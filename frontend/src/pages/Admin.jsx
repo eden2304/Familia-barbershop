@@ -354,7 +354,6 @@ export default function Admin() { // Removed props
 
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageText, setMessageText] = useState('');
-  const [messagePhones, setMessagePhones] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
   const [recurringConflictModal, setRecurringConflictModal] = useState({ isOpen: false, message: '', conflicts: [], hasMore: false });
@@ -1135,28 +1134,22 @@ const extractRecurringSchedules = (client) => {
   const closeMessageModal = () => {
     setShowMessageModal(false);
     setMessageText('');
-    setMessagePhones('');
     setSendingMessage(false);
   };
 
   const handleSendGeneralWhatsApp = async () => {
     if (sendingMessage) return;
-    const phones = messagePhones
-      .split(',')
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
     const text = messageText.trim();
-    if (phones.length === 0 || !text) {
-      toast({ title: 'נא למלא טלפונים ותוכן הודעה', variant: 'destructive' });
+    if (!text) {
+      toast({ title: 'נא למלא תוכן הודעה', variant: 'destructive' });
       return;
     }
     try {
       setSendingMessage(true);
-      await AdminApi.whatsappBroadcast({ phones, messageText: text });
+      await AdminApi.whatsappBroadcast({ messageText: text });
       toast({ title: 'ההודעה נשלחה בהצלחה' });
       setShowMessageModal(false);
       setMessageText('');
-      setMessagePhones('');
     } catch (error) {
       const description = error?.message || 'שליחת ההודעה נכשלה';
       toast({ title: 'שגיאה בשליחת הודעה', description, variant: 'destructive' });
@@ -3376,17 +3369,6 @@ const extractRecurringSchedules = (client) => {
                 <div className="space-y-4">
                   <div>
                     <Label className="block text-sm font-medium text-gray-700 mb-2">
-                      מספרי טלפון (מופרדים בפסיקים)
-                    </Label>
-                    <input
-                        value={messagePhones}
-                        onChange={(e) => setMessagePhones(e.target.value)}
-                        placeholder="לדוגמה: 0501234567, 0527654321"
-                        className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <Label className="block text-sm font-medium text-gray-700 mb-2">
                       תוכן ההודעה
                     </Label>
                     <textarea
@@ -3408,7 +3390,7 @@ const extractRecurringSchedules = (client) => {
                     <Button
                         onClick={handleSendGeneralWhatsApp}
                         className="flex-1 bg-black text-white rounded-full py-3"
-                        disabled={!messageText.trim() || !messagePhones.trim() || sendingMessage}
+                        disabled={!messageText.trim() || sendingMessage}
                     >
                       <Send className="w-4 h-4 ml-2" />
                       {sendingMessage ? 'שולח...' : 'שלח הודעה'}

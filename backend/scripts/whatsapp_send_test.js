@@ -22,13 +22,12 @@ const payload = {
   to: toPhone,
   type: 'template',
   template: {
-    name: 'admin_general_message',
+    name: 'general_message',
     language: { code: lang },
     components: [
       {
         type: 'body',
         parameters: [
-          { type: 'text', text: 'לקוח' },
           { type: 'text', text: 'בדיקת הודעה אוטומטית' },
         ],
       },

@@ -3,8 +3,8 @@ export const WHATSAPP_TEMPLATES = {
         name: 'login_and_register',
         params: ['code'] as const,
     },
-    appointment_booked: {
-        name: 'appointment_booked',
+    appointment_approved: {
+        name: 'appointment_approved',
         params: ['clientName', 'date', 'time'] as const,
     },
     appointment_reminder_same_day: {
@@ -19,9 +19,9 @@ export const WHATSAPP_TEMPLATES = {
         name: 'appointment_rescheduled',
         params: ['clientName', 'oldDate', 'oldTime', 'newDate', 'newTime'] as const,
     },
-    admin_general_message: {
-        name: 'admin_general_message',
-        params: ['clientNameOrEmpty', 'messageText'] as const,
+    general_message: {
+        name: 'general_message',
+        params: ['messageText'] as const,
     },
     admin_appointment_message: {
         name: 'admin_appointment_message',

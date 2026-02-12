@@ -97,7 +97,7 @@ export class WhatsAppAuthService {
     }
 
     private buildAuthPayload(to: string, code: string, templateName: string, templateLang: string) {
-        this.logger.log('WhatsApp auth payload mode=authentication_copy_code components=button');
+        this.logger.log('WhatsApp auth payload mode=authentication_copy_code components=button param=text');
 
         return {
             messaging_product: 'whatsapp',
@@ -113,8 +113,8 @@ export class WhatsAppAuthService {
                         index: '0',
                         parameters: [
                             {
-                                type: 'otp',
-                                otp: code,
+                                type: 'text',
+                                text: code,
                             },
                         ],
                     },

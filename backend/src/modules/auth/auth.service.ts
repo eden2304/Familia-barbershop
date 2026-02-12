@@ -188,40 +188,54 @@ export class AuthService {
     async requestCode(rawPhone: string) {
         const norm = normalizePhone(rawPhone);
         if (!norm) throw new BadRequestException('Phone required');
-        await this.assertOtpRequestAllowance(norm);
 
-        const code = this.generateOtpCode();
+        try {
+            await this.assertOtpRequestAllowance(norm);
 
-        await this.storeOtp(norm, code);
+            const code = this.generateOtpCode();
+            await this.storeOtp(norm, code);
+            this.logger.log(`OTP generated + persisted for ${maskPhone(norm)}`);
 
-        const whatsappResult = await this.whatsAppAuthService.sendVerificationCode(norm, code);
-        if (!whatsappResult.ok) {
-            await this.deleteOtp(norm);
+            this.logger.log(`Sending OTP via WhatsApp for ${maskPhone(norm)}`);
+            const whatsappResult = await this.whatsAppAuthService.sendVerificationCode(norm, code);
+            this.logger.log(`WhatsAppAuthService returned for ${maskPhone(norm)} ok=${whatsappResult.ok}`);
 
-            const status = whatsappResult.error === 'missing_whatsapp_configuration'
-                ? HttpStatus.SERVICE_UNAVAILABLE
-                : HttpStatus.BAD_GATEWAY;
+            if (!whatsappResult.ok) {
+                await this.deleteOtp(norm);
 
-            this.logger.error(
-                `OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.metaError || whatsappResult.error || 'unknown_error'}`,
-            );
+                this.logger.error(
+                    `OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.metaError || whatsappResult.error || 'unknown_error'}`,
+                );
+
+                throw new HttpException(
+                    {
+                        ok: false,
+                        error: 'WHATSAPP_SEND_FAILED',
+                        metaError: whatsappResult.metaError || whatsappResult.error || 'unknown_error',
+                        code: whatsappResult.code,
+                    },
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                );
+            }
+
+            this.logger.log(`OTP issued for ${maskPhone(norm)} (WHATSAPP_SENT)`);
+            return { ok: true };
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error;
+            }
+
+            this.logger.error(`OTP request flow failed for ${maskPhone(norm)}: ${error?.message || error}`, error?.stack);
 
             throw new HttpException(
                 {
                     ok: false,
-                    error: 'whatsapp_send_failed',
-                    metaError: whatsappResult.metaError || whatsappResult.error || 'unknown_error',
-                    code: whatsappResult.code,
+                    error: 'OTP_GENERATION_FAILED',
+                    message: error?.message || 'unknown_error',
                 },
-                status,
+                HttpStatus.INTERNAL_SERVER_ERROR,
             );
         }
-
-        this.logger.log(
-            `OTP issued for ${maskPhone(norm)}${whatsappResult.ok ? ' (WHATSAPP_SENT)' : ''}`
-        );
-
-        return { ok: true };
     }
 
 

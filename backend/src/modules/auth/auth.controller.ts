@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, ConflictException, Res, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, ConflictException, Res, Req, UnauthorizedException, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { RequestCodeDto } from './dto/request-code.dto';
@@ -16,7 +16,15 @@ function parseCookies(req: Request): Record<string, string> {
 
 @Controller()
 export class AuthController {
+    private readonly logger = new Logger(AuthController.name);
+
     constructor(private readonly svc: AuthService) {}
+
+    private maskPhoneForLogs(phone: string): string {
+        const digits = String(phone || '').replace(/\D/g, '');
+        if (digits.length <= 3) return `***${digits}`;
+        return `***${digits.slice(-3)}`;
+    }
 
     @Public()
     @Post('auth/request-code')
@@ -34,12 +42,35 @@ export class AuthController {
     @Post('auth/request-code-login')
     @HttpCode(200)
     async requestCodeLogin(@Body() body: RequestCodeDto) {
-        const exists = await this.svc.isRegistered(body.phone);
-        if (!exists) {
-            throw new ConflictException('UNREGISTERED_CLIENT');
+        const maskedPhone = this.maskPhoneForLogs(body.phone);
+        this.logger.log(`request-code-login hit phone=${maskedPhone}`);
+
+        try {
+            const exists = await this.svc.isRegistered(body.phone);
+            if (!exists) {
+                throw new ConflictException('UNREGISTERED_CLIENT');
+            }
+
+            const result = await this.svc.requestCode(body.phone);
+            return { ok: true, success: true, ...(result || {}) };
+        } catch (error: any) {
+            const stack = error?.stack;
+            const message = error?.message || 'unknown_error';
+            this.logger.error(`request-code-login failed phone=${maskedPhone}: ${message}`, stack);
+
+            if (error instanceof HttpException) {
+                throw error;
+            }
+
+            throw new HttpException(
+                {
+                    ok: false,
+                    error: 'REQUEST_CODE_LOGIN_FAILED',
+                    message,
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
         }
-        await this.svc.requestCode(body.phone);
-        return { ok: true, success: true };
     }
 
     @Public()

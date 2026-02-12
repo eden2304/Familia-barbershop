@@ -112,14 +112,67 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
 }
 
 async function pruneOldRecords(ds: DataSource) {
+    const hasTable = async (tableName: string): Promise<boolean> => {
+        try {
+            const rows = await ds.query(
+                `select 1 from information_schema.tables where table_schema = 'public' and table_name = $1 limit 1`,
+                [tableName],
+            );
+            return Array.isArray(rows) && rows.length > 0;
+        } catch (error: any) {
+            logger.error(`[pruneOldRecords] Failed checking table ${tableName}: ${error?.message || error}`, error?.stack);
+            return false;
+        }
+    };
+
+    const hasColumn = async (tableName: string, columnName: string): Promise<boolean> => {
+        try {
+            const rows = await ds.query(
+                `select 1 from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2 limit 1`,
+                [tableName, columnName],
+            );
+            return Array.isArray(rows) && rows.length > 0;
+        } catch (error: any) {
+            logger.error(
+                `[pruneOldRecords] Failed checking column ${tableName}.${columnName}: ${error?.message || error}`,
+                error?.stack,
+            );
+            return false;
+        }
+    };
+
     try {
-        await ds.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
-        await ds.query(`delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`);
-        await ds.query(
-            `delete from blocked_times where coalesce(end_at, start_at) < now() - interval '${RETENTION_DAYS} days'`,
-        );
-    } catch (error) {
-        logger.error('[pruneOldRecords] Failed to prune old data', error);
+        if (await hasTable('appointments')) {
+            if (await hasColumn('appointments', 'ends_at')) {
+                await ds.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
+            } else {
+                logger.warn('[pruneOldRecords] Skip appointments prune: missing column ends_at');
+            }
+        }
+
+        if (await hasTable('waiting_list')) {
+            if (await hasColumn('waiting_list', 'desired_starts_at')) {
+                await ds.query(`delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`);
+            } else {
+                logger.warn('[pruneOldRecords] Skip waiting_list prune: missing column desired_starts_at');
+            }
+        }
+
+        if (await hasTable('blocked_times')) {
+            const hasEndsAt = await hasColumn('blocked_times', 'ends_at');
+            const hasStartsAt = await hasColumn('blocked_times', 'starts_at');
+
+            if (hasEndsAt && hasStartsAt) {
+                await ds.query(
+                    `delete from blocked_times where coalesce(ends_at, starts_at) < now() - interval '${RETENTION_DAYS} days'`,
+                );
+            } else {
+                logger.warn('[pruneOldRecords] Skip blocked_times prune: missing starts_at/ends_at columns');
+            }
+        }
+    } catch (error: any) {
+        logger.error(`[pruneOldRecords] Failed to prune old data: ${error?.message || error}`, error?.stack);
+        return;
     }
 }
 

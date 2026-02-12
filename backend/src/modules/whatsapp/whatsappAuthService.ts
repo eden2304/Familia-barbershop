@@ -37,6 +37,12 @@ function resolveTemplateMode(rawMode: string | undefined): AuthTemplateMode {
     return DEFAULT_TEMPLATE_MODE;
 }
 
+
+function getModeCandidates(preferredMode: AuthTemplateMode): AuthTemplateMode[] {
+    const allModes: AuthTemplateMode[] = ['body_and_button', 'body_only', 'button_only'];
+    return [preferredMode, ...allModes.filter(mode => mode !== preferredMode)];
+}
+
 export function buildAuthComponents(code: string, mode: AuthTemplateMode): ComponentBuildResult {
     const components: Array<Record<string, any>> = [];
     const included: Array<'body' | 'button'> = [];
@@ -107,27 +113,36 @@ export class WhatsAppAuthService {
             }
 
             const endpoint = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
-            const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang, mode);
-
+            const modeCandidates = getModeCandidates(mode);
             let metaError: MetaErrorDetails = { message: 'unknown_error' };
 
-            for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-                try {
-                    const response = await this.postWithTimeout(endpoint, token, payload);
-                    const responseBody = await this.safeJson(response);
+            for (let modeIndex = 0; modeIndex < modeCandidates.length; modeIndex += 1) {
+                const activeMode = modeCandidates[modeIndex];
+                const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang, activeMode);
 
-                    if (response.ok) {
-                        const messageId = responseBody?.messages?.[0]?.id;
-                        return messageId ? { ok: true, messageId } : { ok: true };
+                for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+                    try {
+                        const response = await this.postWithTimeout(endpoint, token, payload);
+                        const responseBody = await this.safeJson(response);
+
+                        if (response.ok) {
+                            const messageId = responseBody?.messages?.[0]?.id;
+                            return messageId ? { ok: true, messageId } : { ok: true };
+                        }
+
+                        metaError = this.extractError(response.status, responseBody);
+                        this.logger.error(`WhatsApp auth send failed mode=${activeMode} (${attempt}/${this.maxAttempts}) code=${metaError.code ?? 'n/a'} error=${metaError.message}`);
+
+                        if (this.isTemplateParamError(metaError.code) && modeIndex < modeCandidates.length - 1) {
+                            this.logger.warn(`Template parameter mismatch in mode=${activeMode}. Trying next mode.`);
+                            break;
+                        }
+                    } catch (error: any) {
+                        metaError = {
+                            message: error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error',
+                        };
+                        this.logger.error(`WhatsApp auth request failed mode=${activeMode} (${attempt}/${this.maxAttempts}): ${metaError.message}`);
                     }
-
-                    metaError = this.extractError(response.status, responseBody);
-                    this.logger.error(`WhatsApp auth send failed (${attempt}/${this.maxAttempts}) code=${metaError.code ?? 'n/a'} error=${metaError.message}`);
-                } catch (error: any) {
-                    metaError = {
-                        message: error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error',
-                    };
-                    this.logger.error(`WhatsApp auth request failed (${attempt}/${this.maxAttempts}): ${metaError.message}`);
                 }
             }
 
@@ -215,6 +230,10 @@ export class WhatsAppAuthService {
         } catch {
             return { raw: text };
         }
+    }
+
+    private isTemplateParamError(code?: number): boolean {
+        return code === 132000 || code === 132018;
     }
 
     private extractError(status: number, responseBody: any): MetaErrorDetails {

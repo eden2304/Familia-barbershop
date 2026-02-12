@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 type AuthTemplateMode = 'body_only' | 'button_only' | 'body_and_button';
+type ButtonParamMode = 'text' | 'coupon_code' | 'payload';
 
 interface VerificationSendResult {
     ok: boolean;
@@ -28,6 +29,7 @@ interface ComponentBuildResult {
 }
 
 const DEFAULT_TEMPLATE_MODE: AuthTemplateMode = 'body_and_button';
+const DEFAULT_BUTTON_PARAM_MODE: ButtonParamMode = 'text';
 
 function resolveTemplateMode(rawMode: string | undefined): AuthTemplateMode {
     const mode = String(rawMode || DEFAULT_TEMPLATE_MODE).trim().toLowerCase();
@@ -37,13 +39,41 @@ function resolveTemplateMode(rawMode: string | undefined): AuthTemplateMode {
     return DEFAULT_TEMPLATE_MODE;
 }
 
+function resolveButtonParamMode(rawMode: string | undefined): ButtonParamMode {
+    const mode = String(rawMode || DEFAULT_BUTTON_PARAM_MODE).trim().toLowerCase();
+    if (mode === 'text' || mode === 'coupon_code' || mode === 'payload') {
+        return mode;
+    }
+    return DEFAULT_BUTTON_PARAM_MODE;
+}
 
 function getModeCandidates(preferredMode: AuthTemplateMode): AuthTemplateMode[] {
     const allModes: AuthTemplateMode[] = ['body_and_button', 'body_only', 'button_only'];
     return [preferredMode, ...allModes.filter(mode => mode !== preferredMode)];
 }
 
-export function buildAuthComponents(code: string, mode: AuthTemplateMode): ComponentBuildResult {
+function getButtonParamCandidates(preferred: ButtonParamMode): ButtonParamMode[] {
+    const all: ButtonParamMode[] = ['text', 'coupon_code', 'payload'];
+    return [preferred, ...all.filter(mode => mode !== preferred)];
+}
+
+function usesButton(mode: AuthTemplateMode): boolean {
+    return mode === 'button_only' || mode === 'body_and_button';
+}
+
+function createButtonParameter(code: string, paramMode: ButtonParamMode): Record<string, any> {
+    if (paramMode === 'coupon_code') {
+        return { type: 'coupon_code', coupon_code: code };
+    }
+
+    if (paramMode === 'payload') {
+        return { type: 'payload', payload: code };
+    }
+
+    return { type: 'text', text: code };
+}
+
+export function buildAuthComponents(code: string, mode: AuthTemplateMode, buttonParamMode: ButtonParamMode): ComponentBuildResult {
     const components: Array<Record<string, any>> = [];
     const included: Array<'body' | 'button'> = [];
 
@@ -60,7 +90,7 @@ export function buildAuthComponents(code: string, mode: AuthTemplateMode): Compo
             type: 'button',
             sub_type: 'copy_code',
             index: '0',
-            parameters: [{ type: 'text', text: code }],
+            parameters: [createButtonParameter(code, buttonParamMode)],
         });
         included.push('button');
     }
@@ -106,6 +136,7 @@ export class WhatsAppAuthService {
             const templateName = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_NAME') || 'verification_code';
             const templateLang = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_LANG') || 'he';
             const mode = resolveTemplateMode(this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_MODE'));
+            const buttonParamMode = resolveButtonParamMode(this.configService.get<string>('WHATSAPP_AUTH_BUTTON_PARAM_TYPE'));
 
             if (!token || !phoneNumberId) {
                 this.logger.error('Missing WhatsApp auth config: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
@@ -118,30 +149,58 @@ export class WhatsAppAuthService {
 
             for (let modeIndex = 0; modeIndex < modeCandidates.length; modeIndex += 1) {
                 const activeMode = modeCandidates[modeIndex];
-                const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang, activeMode);
+                const buttonParamCandidates = usesButton(activeMode)
+                    ? getButtonParamCandidates(buttonParamMode)
+                    : [buttonParamMode];
 
-                for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-                    try {
-                        const response = await this.postWithTimeout(endpoint, token, payload);
-                        const responseBody = await this.safeJson(response);
+                for (let paramIndex = 0; paramIndex < buttonParamCandidates.length; paramIndex += 1) {
+                    const activeParamMode = buttonParamCandidates[paramIndex];
+                    const payload = this.buildAuthPayload(
+                        normalizedPhone,
+                        code,
+                        templateName,
+                        templateLang,
+                        activeMode,
+                        activeParamMode,
+                    );
 
-                        if (response.ok) {
-                            const messageId = responseBody?.messages?.[0]?.id;
-                            return messageId ? { ok: true, messageId } : { ok: true };
+                    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+                        try {
+                            const response = await this.postWithTimeout(endpoint, token, payload);
+                            const responseBody = await this.safeJson(response);
+
+                            if (response.ok) {
+                                const messageId = responseBody?.messages?.[0]?.id;
+                                return messageId ? { ok: true, messageId } : { ok: true };
+                            }
+
+                            metaError = this.extractError(response.status, responseBody);
+                            this.logger.error(
+                                `WhatsApp auth send failed mode=${activeMode} buttonParam=${activeParamMode} (${attempt}/${this.maxAttempts}) code=${metaError.code ?? 'n/a'} error=${metaError.message}`,
+                            );
+
+                            if (this.isTemplateParamError(metaError.code)) {
+                                const hasNextParam = paramIndex < buttonParamCandidates.length - 1;
+                                const hasNextMode = modeIndex < modeCandidates.length - 1;
+
+                                if (hasNextParam) {
+                                    this.logger.warn(`Template parameter mismatch with buttonParam=${activeParamMode}. Trying next button parameter mode.`);
+                                    break;
+                                }
+
+                                if (hasNextMode) {
+                                    this.logger.warn(`Template parameter mismatch in mode=${activeMode}. Trying next template mode.`);
+                                    break;
+                                }
+                            }
+                        } catch (error: any) {
+                            metaError = {
+                                message: error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error',
+                            };
+                            this.logger.error(
+                                `WhatsApp auth request failed mode=${activeMode} buttonParam=${activeParamMode} (${attempt}/${this.maxAttempts}): ${metaError.message}`,
+                            );
                         }
-
-                        metaError = this.extractError(response.status, responseBody);
-                        this.logger.error(`WhatsApp auth send failed mode=${activeMode} (${attempt}/${this.maxAttempts}) code=${metaError.code ?? 'n/a'} error=${metaError.message}`);
-
-                        if (this.isTemplateParamError(metaError.code) && modeIndex < modeCandidates.length - 1) {
-                            this.logger.warn(`Template parameter mismatch in mode=${activeMode}. Trying next mode.`);
-                            break;
-                        }
-                    } catch (error: any) {
-                        metaError = {
-                            message: error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error',
-                        };
-                        this.logger.error(`WhatsApp auth request failed mode=${activeMode} (${attempt}/${this.maxAttempts}): ${metaError.message}`);
                     }
                 }
             }
@@ -160,9 +219,10 @@ export class WhatsAppAuthService {
         templateName: string,
         templateLang: string,
         mode: AuthTemplateMode,
+        buttonParamMode: ButtonParamMode,
     ) {
-        const { components, included } = buildAuthComponents(code, mode);
-        this.logger.log(`WhatsApp auth payload mode=${mode} components=${included.join('+') || 'none'}`);
+        const { components, included } = buildAuthComponents(code, mode, buttonParamMode);
+        this.logger.log(`WhatsApp auth payload mode=${mode} buttonParam=${buttonParamMode} components=${included.join('+') || 'none'}`);
 
         return {
             messaging_product: 'whatsapp',
@@ -233,7 +293,7 @@ export class WhatsAppAuthService {
     }
 
     private isTemplateParamError(code?: number): boolean {
-        return code === 132000 || code === 132018;
+        return code === 132000 || code === 132018 || code === 131008;
     }
 
     private extractError(status: number, responseBody: any): MetaErrorDetails {

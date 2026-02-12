@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 interface VerificationSendResult {
     ok: boolean;
@@ -14,76 +15,88 @@ interface RateLimitBucket {
 @Injectable()
 export class WhatsAppAuthService {
     private readonly logger = new Logger(WhatsAppAuthService.name);
-    private readonly token = process.env.WHATSAPP_TOKEN || '';
-    private readonly phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
-    private readonly templateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || 'verification_code';
-    private readonly templateLang = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || 'he';
 
-    private readonly endpoint = `https://graph.facebook.com/v19.0/${this.phoneNumberId}/messages`;
     private readonly timeoutMs = 10_000;
-    private readonly maxAttempts = 2; // first attempt + 1 automatic retry
+    private readonly maxAttempts = 2; // first attempt + 1 retry
 
-    // Basic anti-abuse guard: max 5 sends per phone each 10 minutes.
+    // Basic anti-abuse guard.
     private readonly rateLimitMax = 5;
     private readonly rateLimitWindowMs = 10 * 60 * 1000;
     private readonly rateLimit = new Map<string, RateLimitBucket>();
 
+    constructor(private readonly configService: ConfigService) {}
+
     async sendVerificationCode(phone: string, code: string): Promise<VerificationSendResult> {
-        if (!/^\d{4}$/.test(String(code || ''))) {
-            return { ok: false, error: 'invalid_code_format' };
-        }
-
-        const normalizedPhone = this.normalizeIsraeliPhone(phone);
-        if (!normalizedPhone) {
-            return { ok: false, error: 'invalid_phone_format' };
-        }
-
-        if (!this.isAllowedByRateLimit(normalizedPhone)) {
-            this.logger.warn(`Rate limit exceeded for ${normalizedPhone}`);
-            return { ok: false, error: 'rate_limited' };
-        }
-
-        if (!this.token || !this.phoneNumberId) {
-            this.logger.error('Missing WhatsApp Cloud API credentials: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
-            return { ok: false, error: 'missing_whatsapp_configuration' };
-        }
-
-        const payload = this.buildAuthPayload(normalizedPhone, code);
-        let lastError = 'unknown_error';
-
-        for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-            try {
-                const response = await this.postWithTimeout(payload);
-                const responseBody = await this.safeJson(response);
-
-                if (response.ok) {
-                    const messageId = responseBody?.messages?.[0]?.id;
-                    return messageId ? { ok: true, messageId } : { ok: true };
-                }
-
-                lastError = this.extractError(response.status, responseBody);
-                this.logger.error(
-                    `WhatsApp auth template send failed (attempt ${attempt}/${this.maxAttempts}): ${lastError}`,
-                );
-            } catch (error: any) {
-                lastError = error?.message || 'network_error';
-                this.logger.error(
-                    `WhatsApp auth template request error (attempt ${attempt}/${this.maxAttempts}): ${lastError}`,
-                );
+        try {
+            if (!/^\d{4}$/.test(String(code || ''))) {
+                return { ok: false, error: 'invalid_code_format' };
             }
-        }
 
-        return { ok: false, error: lastError };
+            const normalizedPhone = this.normalizeIsraeliPhone(phone);
+            if (!normalizedPhone) {
+                return { ok: false, error: 'invalid_phone_format' };
+            }
+
+            if (!this.isAllowedByRateLimit(normalizedPhone)) {
+                this.logger.warn(`WhatsApp auth rate limit exceeded: ${normalizedPhone}`);
+                return { ok: false, error: 'rate_limited' };
+            }
+
+            const enabled = String(this.configService.get<string>('WHATSAPP_ENABLED') || '').toLowerCase() === 'true';
+            if (!enabled) {
+                this.logger.warn('WhatsApp auth send skipped because WHATSAPP_ENABLED is false');
+                return { ok: true };
+            }
+
+            const token = this.configService.get<string>('WHATSAPP_TOKEN') || '';
+            const phoneNumberId = this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID') || '';
+            const templateName = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_NAME') || 'verification_code';
+            const templateLang = this.configService.get<string>('WHATSAPP_AUTH_TEMPLATE_LANG') || 'he';
+
+            if (!token || !phoneNumberId) {
+                this.logger.error('Missing WhatsApp auth config: WHATSAPP_TOKEN or WHATSAPP_PHONE_NUMBER_ID');
+                return { ok: false, error: 'missing_whatsapp_configuration' };
+            }
+
+            const endpoint = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+            const payload = this.buildAuthPayload(normalizedPhone, code, templateName, templateLang);
+
+            let lastError = 'unknown_error';
+
+            for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+                try {
+                    const response = await this.postWithTimeout(endpoint, token, payload);
+                    const responseBody = await this.safeJson(response);
+
+                    if (response.ok) {
+                        const messageId = responseBody?.messages?.[0]?.id;
+                        return messageId ? { ok: true, messageId } : { ok: true };
+                    }
+
+                    lastError = this.extractError(response.status, responseBody);
+                    this.logger.error(`WhatsApp auth send failed (${attempt}/${this.maxAttempts}): ${lastError}`);
+                } catch (error: any) {
+                    lastError = error?.name === 'AbortError' ? 'request_timeout' : error?.message || 'network_error';
+                    this.logger.error(`WhatsApp auth request failed (${attempt}/${this.maxAttempts}): ${lastError}`);
+                }
+            }
+
+            return { ok: false, error: lastError };
+        } catch (error: any) {
+            const err = error?.message || 'unexpected_error';
+            this.logger.error(`Unexpected WhatsApp auth service error: ${err}`);
+            return { ok: false, error: err };
+        }
     }
 
-    private buildAuthPayload(to: string, code: string) {
+    private buildAuthPayload(to: string, code: string, templateName: string, templateLang: string) {
         return {
             messaging_product: 'whatsapp',
             to,
             type: 'template',
             template: {
-                name: this.templateName,
-                language: { code: this.templateLang },
+                name: templateName,
+                language: { code: templateLang },
                 components: [
                     {
                         type: 'button',
@@ -105,12 +118,20 @@ export class WhatsAppAuthService {
         const digits = String(phone || '').replace(/\D/g, '');
         if (!digits) return null;
 
-        if (digits.startsWith('05') && digits.length === 10) {
-            return `972${digits.slice(1)}`;
+        if (digits.startsWith('009725') && digits.length === 14) {
+            return digits.slice(2);
         }
 
         if (digits.startsWith('9725') && digits.length === 12) {
             return digits;
+        }
+
+        if (digits.startsWith('05') && digits.length === 10) {
+            return `972${digits.slice(1)}`;
+        }
+
+        if (digits.startsWith('5') && digits.length === 9) {
+            return `972${digits}`;
         }
 
         return null;
@@ -134,15 +155,15 @@ export class WhatsAppAuthService {
         return true;
     }
 
-    private async postWithTimeout(payload: Record<string, any>): Promise<Response> {
+    private async postWithTimeout(endpoint: string, token: string, payload: Record<string, any>): Promise<Response> {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
         try {
-            return await fetch(this.endpoint, {
+            return await fetch(endpoint, {
                 method: 'POST',
                 headers: {
-                    Authorization: `Bearer ${this.token}`,
+                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(payload),
@@ -165,8 +186,16 @@ export class WhatsAppAuthService {
     }
 
     private extractError(status: number, responseBody: any): string {
-        if (responseBody?.error?.message) return responseBody.error.message;
-        if (responseBody?.raw) return `http_${status}: ${responseBody.raw}`;
+        if (responseBody?.error?.message) {
+            const code = responseBody?.error?.code ? ` code=${responseBody.error.code}` : '';
+            const subcode = responseBody?.error?.error_subcode ? ` subcode=${responseBody.error.error_subcode}` : '';
+            return `${responseBody.error.message}${code}${subcode}`;
+        }
+
+        if (responseBody?.raw) {
+            return `http_${status}: ${responseBody.raw}`;
+        }
+
         return `http_${status}`;
     }
 }

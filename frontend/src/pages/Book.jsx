@@ -553,6 +553,12 @@ export default function Book() {
 
   /* -------- derived -------- */
   const weekDays = visibleWeekDays;
+  const weekRangeLabel = useMemo(() => {
+    if (!weekDays.length) return "";
+    const firstDay = weekDays[0];
+    const lastDay = weekDays[weekDays.length - 1];
+    return `${format(firstDay, "d.M", { locale: he })} - ${format(lastDay, "d.M", { locale: he })}`;
+  }, [weekDays]);
   const availableSlots =
       selectedDate && selectedService
           ? (availableByDate[toYMD(selectedDate)] || [])
@@ -791,24 +797,24 @@ export default function Book() {
                     <div className="flex justify-between items-center mb-6">
                       <Button
                           variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedWeek((p) => (canViewWeek(p + 1) ? p + 1 : p))}
-                          disabled={!canGoForward}
-                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full p-2"
+                          size="icon"
+                          onClick={() => setSelectedWeek((p) => Math.max(0, p - 1))}
+                          disabled={selectedWeek === 0}
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11"
                       >
-                        <ChevronLeft className="w-4 h-4"/>
+                        <ChevronLeft className="w-6 h-6"/>
                       </Button>
                       <span className="text-xs text-gray-500 font-medium">
-                    {selectedWeek === 0 ? "השבוע" : `שבוע +${selectedWeek}`}
+                    {weekRangeLabel}
                   </span>
                       <Button
                           variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedWeek((p) => Math.max(0, p - 1))}
-                          disabled={selectedWeek === 0}
-                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full p-2"
+                          size="icon"
+                          onClick={() => setSelectedWeek((p) => (canViewWeek(p + 1) ? p + 1 : p))}
+                          disabled={!canGoForward}
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11"
                       >
-                        <ChevronRight className="w-4 h-4"/>
+                        <ChevronRight className="w-6 h-6"/>
                       </Button>
                     </div>
                     <div className="text-xs text-gray-500 mb-4">

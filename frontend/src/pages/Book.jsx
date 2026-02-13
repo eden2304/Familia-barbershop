@@ -209,6 +209,23 @@ export default function Book() {
   const [showWaitingList, setShowWaitingList] = useState(false);
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
 
+  const shouldAutoOpenNextWeek = useCallback(() => {
+    const now = new Date();
+    const day = now.getDay();
+
+    // בשבת אין יותר תורים לשבוע הנוכחי.
+    if (day === 6) return true;
+
+    // ביום שישי - רק אחרי שעת הסגירה של היום נפתח אוטומטית את השבוע הבא.
+    if (day === 5) {
+      const fridayClose = getClosingDateFor(now, businessHours);
+      if (!fridayClose) return false;
+      return now.getTime() >= fridayClose.getTime();
+    }
+
+    return false;
+  }, [businessHours]);
+
   const getInitialWeekOffset = () => (new Date().getDay() === 6 ? 1 : 0);
   const [selectedWeek, setSelectedWeek] = useState(getInitialWeekOffset());
 
@@ -268,6 +285,12 @@ export default function Book() {
       console.warn("Failed to refresh client membership", error);
     }
   }, []);
+
+  useEffect(() => {
+    if (selectedWeek === 0 && shouldAutoOpenNextWeek()) {
+      setSelectedWeek(1);
+    }
+  }, [selectedWeek, shouldAutoOpenNextWeek]);
 
   useEffect(() => {
     if (!canViewWeek(selectedWeek)) {

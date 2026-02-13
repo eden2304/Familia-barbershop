@@ -4,6 +4,7 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -13,6 +14,7 @@ import {
     MoreThanOrEqual,
     LessThanOrEqual,
     DeepPartial,
+    QueryFailedError,
 } from 'typeorm';
 import { Appointment } from '../../entities/appointment.entity';
 import { ServiceEntity } from '../../entities/service.entity';
@@ -32,6 +34,7 @@ export interface CreateAppointmentDto {
     serviceId: string;
     startsAtISO: string;
     note?: string;
+    requestId?: string;
 }
 
 interface BookingRules {
@@ -56,6 +59,8 @@ const DEFAULT_BOOKING_RULES: BookingRules = {
 
 @Injectable()
 export class AppointmentsService {
+    private readonly logger = new Logger(AppointmentsService.name);
+
     constructor(
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
         @InjectRepository(ServiceEntity) private readonly svcRepo: Repository<ServiceEntity>,
@@ -404,7 +409,13 @@ export class AppointmentsService {
         const hasApptOverlap = await this.apptRepo.exist({
             where: { startsAt: LessThan(endAt), endsAt: MoreThan(startAt) },
         });
-        if (hasApptOverlap) throw new ConflictException('Slot overlaps with another appointment');
+        if (hasApptOverlap) {
+            throw new ConflictException({
+                error: 'SLOT_TAKEN',
+                message: 'This slot was just booked. Please choose another time.',
+                suggestedAction: 'RESELECT_SLOT',
+            });
+        }
 
         const overlappingBlocks = await this.blockRepo.find({
             where: { startsAt: LessThan(endAt), endsAt: MoreThan(startAt) },
@@ -421,7 +432,30 @@ export class AppointmentsService {
             // note: dto.note ?? null,
         });
 
-        const saved = await this.apptRepo.save(appt);
+        let saved: Appointment;
+        try {
+            saved = await this.apptRepo.save(appt);
+        } catch (error) {
+            if (error instanceof QueryFailedError && this.isSlotTakenDbError(error)) {
+                this.logger.warn(
+                    JSON.stringify({
+                        event: 'appointment_booking_conflict',
+                        conflict: true,
+                        requestId: dto.requestId ?? null,
+                        phone,
+                        service_id: service.id,
+                        starts_at: startAt.toISOString(),
+                    }),
+                );
+                throw new ConflictException({
+                    error: 'SLOT_TAKEN',
+                    message: 'This slot was just booked. Please choose another time.',
+                    suggestedAction: 'RESELECT_SLOT',
+                });
+            }
+            throw error;
+        }
+
         try {
             await this.whatsappService.sendAppointmentConfirmed(saved);
         } catch (error) {
@@ -640,4 +674,11 @@ export class AppointmentsService {
             order: { startsAt: 'DESC' },
         });
     }
+    private isSlotTakenDbError(error: QueryFailedError): boolean {
+        const driverError: any = (error as any)?.driverError ?? {};
+        const code = String(driverError?.code ?? '');
+        const constraint = String(driverError?.constraint ?? '');
+        return code === '23P01' || constraint === 'appointments_no_overlap_active';
+    }
+
 }

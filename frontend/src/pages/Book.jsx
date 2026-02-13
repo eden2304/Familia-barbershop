@@ -785,7 +785,7 @@ export default function Book() {
                   >
                     <div className="flex items-center justify-between mb-4">
                       <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="rounded-full">
-                        <ChevronRight className="w-20 h-20"/>
+                        <ChevronRight className="w-14 h-14"/>
                       </Button>
                       <div className="text-center">
                         <h2 className="text-lg font-bold text-gray-900 mb-1">בחר תאריך נוח</h2>
@@ -802,7 +802,7 @@ export default function Book() {
                           disabled={selectedWeek === 0}
                           className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11"
                       >
-                        <ChevronRight className="w-8 h-8"/>
+                        <ChevronRight className="w-14 h-14"/>
 
                       </Button>
                       <span className="text-xs text-gray-500 font-medium">
@@ -815,7 +815,7 @@ export default function Book() {
                           disabled={!canGoForward}
                           className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11"
                       >
-                        <ChevronLeft className="w-8 h-8"/>
+                        <ChevronLeft className="w-14 h-14"/>
 
                       </Button>
                     </div>

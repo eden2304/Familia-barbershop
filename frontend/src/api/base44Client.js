@@ -356,6 +356,9 @@ function buildHttpError(method, path, status, payload) {
     err.code = 'UNREGISTERED_CLIENT';
   } else if (status === 409 && (codeFromPayload === 'ALREADY_REGISTERED' || (payload && payload.message === 'ALREADY_REGISTERED'))) {
     err.code = 'ALREADY_REGISTERED';
+  } else if (status === 409 && (codeFromPayload === 'SLOT_TAKEN' || (payload && payload.error === 'SLOT_TAKEN'))) {
+    err.code = 'SLOT_TAKEN';
+    err.message = (payload && payload.message) || 'This slot was just booked. Please choose another time.';
   } else if (status === 400 && (codeFromPayload === 'NAME_REQUIRED' || (payload && payload.message === 'NAME_REQUIRED'))) {
     err.code = 'NAME_REQUIRED';
   } else if (status === 400 && (codeFromPayload === 'Invalid code' || (payload && payload.message === 'Invalid code'))) {

@@ -89,6 +89,7 @@ export class AppointmentsController {
             serviceId,
             startsAtISO,
             note: note ?? undefined,
+            requestId: body.requestId ?? body.request_id ?? undefined,
         };
 
         const saved = await this.svc.create(dto);

@@ -15,7 +15,8 @@
     "typeorm:show": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/data-source.ts migration:show",
     "migrate:run": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run",
     "migrate:show": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:show",
-    "migrate:revert": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:revert"
+    "migrate:revert": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:revert",
+    "test:booking-concurrency": "node scripts/test_booking_concurrency.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

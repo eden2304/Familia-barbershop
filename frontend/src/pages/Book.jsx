@@ -537,6 +537,22 @@ export default function Book() {
     else setShowVerification(true);
   };
 
+  const refreshAvailabilityForDate = useCallback(async (dateObj, serviceId) => {
+    if (!dateObj || !serviceId) return;
+    const ymd = toYMD(dateObj);
+    try {
+      const raw = await api.Appointment.getAvailable(serviceId, ymd, { isMember: clientIsMember === true });
+      const slots = extractSlotTimes(raw).map((slot) => ({
+        hhmm: slot.hhmm,
+        memberOnly: Boolean(slot.memberOnly),
+        formatted: slot.formatted ?? slot.hhmm,
+      }));
+      setAvailableByDate((prev) => ({ ...prev, [ymd]: slots }));
+    } catch (e) {
+      console.warn('Failed to refresh availability after conflict', e);
+    }
+  }, [clientIsMember]);
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -568,7 +584,12 @@ export default function Book() {
       await loadInitialData();
     } catch (err) {
       console.error("Appointment creation error:", err);
-      setError("שגיאה ביצירת התור: " + (err.code || err.message || "נסה שוב."));
+      if (err?.status === 409 && err?.code === 'SLOT_TAKEN') {
+        setError('התור נתפס ממש עכשיו. בבקשה לבחור שעה אחרת.');
+        await refreshAvailabilityForDate(selectedDate, selectedService?.id);
+      } else {
+        setError("שגיאה ביצירת התור: " + (err.code || err.message || "נסה שוב."));
+      }
     } finally {
       setLoading(false);
     }

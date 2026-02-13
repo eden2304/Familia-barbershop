@@ -785,7 +785,7 @@ export default function Book() {
                   >
                     <div className="flex items-center justify-between mb-4">
                       <Button variant="ghost" size="icon" onClick={() => setStep(1)} className="rounded-full">
-                        <ChevronRight className="w-8 h-8"/>
+                        <ChevronRight className="w-20 h-20"/>
                       </Button>
                       <div className="text-center">
                         <h2 className="text-lg font-bold text-gray-900 mb-1">בחר תאריך נוח</h2>

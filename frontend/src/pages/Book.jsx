@@ -800,7 +800,7 @@ export default function Book() {
                           size="icon"
                           onClick={() => setSelectedWeek((p) => Math.max(0, p - 1))}
                           disabled={selectedWeek === 0}
-                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11 [&_svg]:size-8"
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11 [&_svg]:size-4"
                       >
                         <ChevronRight className="w-14 h-14"/>
 
@@ -813,7 +813,7 @@ export default function Book() {
                           size="icon"
                           onClick={() => setSelectedWeek((p) => (canViewWeek(p + 1) ? p + 1 : p))}
                           disabled={!canGoForward}
-                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11 [&_svg]:size-8"
+                          className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11 [&_svg]:size-4"
                       >
                         <ChevronLeft className="w-14 h-14"/>
 

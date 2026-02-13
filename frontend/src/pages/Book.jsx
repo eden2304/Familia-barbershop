@@ -802,7 +802,7 @@ export default function Book() {
                           disabled={selectedWeek === 0}
                           className="text-gray-600 hover:text-gray-900 disabled:opacity-30 rounded-full h-11 w-11"
                       >
-                        <ChevronRight size={32}/>
+                        <ChevronRight size={150}/>
 
                       </Button>
                       <span className="text-xs text-gray-500 font-medium">

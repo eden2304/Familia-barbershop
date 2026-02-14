@@ -1,5 +1,4 @@
-process.env.UPSTASH_REDIS_REST_URL = 'http://mock-redis';
-process.env.UPSTASH_REDIS_REST_TOKEN = 'token';
+process.env.REDIS_URL = 'redis://localhost:6379/0';
 
 import { strict as assert } from 'assert';
 import { HttpException } from '@nestjs/common';
@@ -65,39 +64,45 @@ class FailingStoreStub {
   } as any);
   assert.equal(failOpenResult, true);
 
-  const state = new Map<string, { value: number; ttl: number }>();
-  global.fetch = (async (_url: string, init: any) => {
-    const parts = JSON.parse(init.body)[0] as string[];
-    const cmd = parts[0].toUpperCase();
-    const key = parts[1];
-    let result: any = 0;
+  const redisStore = new RedisRateLimitStore();
+  const state = new Map<string, { value: number; ttl: number; expireCalls: number }>();
+  (redisStore as any).cmd = async (...command: string[]) => {
+    const cmd = command[0].toUpperCase();
+    const key = command[1];
     if (cmd === 'INCR') {
-      const item = state.get(key) || { value: 0, ttl: 60 };
+      const item = state.get(key) || { value: 0, ttl: -1, expireCalls: 0 };
       item.value += 1;
       state.set(key, item);
-      result = item.value;
-    } else if (cmd === 'EXPIRE') {
-      const item = state.get(key) || { value: 0, ttl: Number(parts[2]) };
-      item.ttl = Number(parts[2]);
-      state.set(key, item);
-      result = 1;
-    } else if (cmd === 'TTL') {
-      result = state.get(key)?.ttl ?? -1;
-    } else if (cmd === 'SET') {
-      state.set(key, { value: 1, ttl: Number(parts[4]) });
-      result = 'OK';
-    } else if (cmd === 'DEL') {
-      state.delete(key);
-      result = 1;
+      return item.value;
     }
-    return { ok: true, json: async () => [{ result }] } as any;
-  }) as any;
+    if (cmd === 'EXPIRE') {
+      const item = state.get(key) || { value: 0, ttl: -1, expireCalls: 0 };
+      item.ttl = Number(command[2]);
+      item.expireCalls += 1;
+      state.set(key, item);
+      return 1;
+    }
+    if (cmd === 'TTL') {
+      return state.get(key)?.ttl ?? -1;
+    }
+    if (cmd === 'SET') {
+      state.set(key, { value: 1, ttl: Number(command[4]), expireCalls: 0 });
+      return 'OK';
+    }
+    if (cmd === 'DEL') {
+      state.delete(key);
+      return 1;
+    }
+    throw new Error(`Unsupported command: ${command.join(' ')}`);
+  };
 
-  const redisStore = new RedisRateLimitStore();
-  const first = await redisStore.consume('dist:key', 3, 60);
-  const second = await redisStore.consume('dist:key', 3, 60);
+  const first = await redisStore.consume('dist:key', 2, 60);
+  const second = await redisStore.consume('dist:key', 2, 60);
+  const third = await redisStore.consume('dist:key', 2, 60);
   assert.equal(first.totalHits, 1);
   assert.equal(second.totalHits, 2);
+  assert.equal(third.isBlocked, true);
+  assert.equal(state.get('familia:ratelimit:dist:key')?.expireCalls, 1, 'EXPIRE should be called only on first hit');
 
   await redisStore.recordFailure('fail-ip', 'lock-ip', 2, 60, 300);
   const lock = await redisStore.recordFailure('fail-ip', 'lock-ip', 2, 60, 300);

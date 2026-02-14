@@ -7,8 +7,7 @@ const toInt = (value: string | undefined, fallback: number): number => {
 
 export const rateLimitConfig = {
     redis: {
-        restUrl: process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_REST_URL || '',
-        restToken: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_REST_TOKEN || '',
+        url: process.env.REDIS_URL || '',
         prefix: process.env.RATE_LIMIT_PREFIX || 'familia:ratelimit',
     },
     global: {

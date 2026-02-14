@@ -19,7 +19,7 @@ This keeps overlap prevention isolated per barber while retaining DB-level atomi
 
 ## Rate limiting
 
-The backend now uses a **distributed Redis-backed limiter** (via Upstash REST), so limits are shared across all instances.
+The backend now uses a **distributed Redis-backed limiter** (via `REDIS_URL`, e.g. Railway Redis), so limits are shared across all instances.
 
 ### Policies
 - OTP request (`POST /auth/request-code`, `/auth/request-code-login`, aliases):

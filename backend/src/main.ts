@@ -37,6 +37,7 @@ async function pruneOldRecords(ds: DataSource) {
 
 async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    app.enableShutdownHooks();
     app.set('trust proxy', 1);
 
     const uploadDir = path.resolve(process.cwd(), 'uploads');

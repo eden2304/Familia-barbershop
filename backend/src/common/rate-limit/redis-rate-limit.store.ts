@@ -202,9 +202,10 @@ export type ConsumeResult = {
 export class RedisRateLimitStore implements OnApplicationShutdown {
     private readonly logger = new Logger(RedisRateLimitStore.name);
     private static sharedClient: RedisTcpClient | null = null;
+    private static disabledByAuthFailure = false;
 
     private get enabled(): boolean {
-        return Boolean(rateLimitConfig.redis.url);
+        return Boolean(rateLimitConfig.redis.url) && !RedisRateLimitStore.disabledByAuthFailure;
     }
 
     constructor() {
@@ -233,7 +234,27 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
     }
 
     private async cmd(...command: (string | number)[]): Promise<any> {
-        return this.client.command(command.map((item) => String(item)));
+        if (RedisRateLimitStore.disabledByAuthFailure) {
+            throw new Error('RATE_LIMIT_REDIS_DISABLED');
+        }
+        try {
+            return await this.client.command(command.map((item) => String(item)));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes('NOAUTH') || message.includes('WRONGPASS')) {
+                if (!RedisRateLimitStore.disabledByAuthFailure) {
+                    this.logger.error(JSON.stringify({
+                        event: 'rate_limit_redis_error',
+                        action: 'auth',
+                        message,
+                        note: 'disabling redis limiter until restart to prevent log spam',
+                    }));
+                }
+                RedisRateLimitStore.disabledByAuthFailure = true;
+                throw new Error('RATE_LIMIT_REDIS_DISABLED');
+            }
+            throw error;
+        }
     }
 
     private withPrefix(key: string): string {
@@ -293,5 +314,6 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
         if (!RedisRateLimitStore.sharedClient) return;
         await RedisRateLimitStore.sharedClient.quit();
         RedisRateLimitStore.sharedClient = null;
+        RedisRateLimitStore.disabledByAuthFailure = false;
     }
 }

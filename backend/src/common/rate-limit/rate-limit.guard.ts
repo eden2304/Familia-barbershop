@@ -46,14 +46,17 @@ export class RateLimitGuard implements CanActivate {
                 if (error instanceof HttpException) {
                     throw error;
                 }
-                this.logger.error(JSON.stringify({
-                    event: 'rate_limit_redis_error',
-                    route: req.originalUrl,
-                    method: req.method,
-                    ip: maskIp(getClientIp(req)),
-                    policy,
-                    message: error instanceof Error ? error.message : 'unknown',
-                }));
+                const message = error instanceof Error ? error.message : 'unknown';
+                if (message !== 'RATE_LIMIT_REDIS_DISABLED') {
+                    this.logger.error(JSON.stringify({
+                        event: 'rate_limit_redis_error',
+                        route: req.originalUrl,
+                        method: req.method,
+                        ip: maskIp(getClientIp(req)),
+                        policy,
+                        message,
+                    }));
+                }
                 return true;
             }
         }

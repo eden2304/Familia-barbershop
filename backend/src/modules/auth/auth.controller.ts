@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
 import {Public} from "./public.decorator";
+import { RateLimitPolicy } from '../../common/rate-limit/rate-limit.decorator';
 
 function parseCookies(req: Request): Record<string, string> {
     const header = req.headers['cookie'] || '';
@@ -19,6 +20,7 @@ export class AuthController {
     constructor(private readonly svc: AuthService) {}
 
     @Public()
+    @RateLimitPolicy('otp-request')
     @Post('auth/request-code')
     @HttpCode(200)
     async requestCode(@Body() body: RequestCodeDto) {
@@ -31,6 +33,7 @@ export class AuthController {
     }
 
     @Public()
+    @RateLimitPolicy('otp-request')
     @Post('auth/request-code-login')
     @HttpCode(200)
     async requestCodeLogin(@Body() body: RequestCodeDto) {
@@ -43,6 +46,7 @@ export class AuthController {
     }
 
     @Public()
+    @RateLimitPolicy('otp-verify')
     @Post('auth/verify-code')
     @HttpCode(200)
     async verifyCode(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
@@ -125,18 +129,26 @@ export class AuthController {
         return { ok: true, exists };
     }
 
+    @Public()
+    @RateLimitPolicy('otp-request')
     @Post('auth/send-otp')
     @HttpCode(200)
     sendOtp(@Body() b: RequestCodeDto) { return this.requestCode(b); }
 
+    @Public()
+    @RateLimitPolicy('otp-verify')
     @Post('auth/verify')
     @HttpCode(200)
     verifyAlias(@Body() b: VerifyCodeDto, @Res({ passthrough: true }) r: Response, @Req() req: Request) { return this.verifyCode(b, r, req); }
 
+    @Public()
+    @RateLimitPolicy('otp-request')
     @Post('users/request-code')
     @HttpCode(200)
     uReq(@Body() b: RequestCodeDto) { return this.requestCode(b); }
 
+    @Public()
+    @RateLimitPolicy('otp-verify')
     @Post('users/verify-code')
     @HttpCode(200)
     uVer(@Body() b: VerifyCodeDto, @Res({ passthrough: true }) r: Response, @Req() req: Request) { return this.verifyCode(b, r, req); }
@@ -149,6 +161,8 @@ export class AuthController {
     @HttpCode(200)
     regUsers(@Body() b: VerifyCodeDto, @Res({ passthrough: true }) r: Response, @Req() req: Request) { return this.register(b, r, req); }
 
+    @Public()
+    @RateLimitPolicy('otp-request')
     @Post('users/request-code-login')
     @HttpCode(200)
     uReqLogin(@Body() b: RequestCodeDto) { return this.requestCodeLogin(b); }

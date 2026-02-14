@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import {Public} from "../auth/public.decorator";
+import { RateLimitPolicy } from "../../common/rate-limit/rate-limit.decorator";
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -27,6 +28,7 @@ export class AppointmentsController {
     }
 
     @Public()
+    @RateLimitPolicy('booking-available')
     @Get('available')
     async getAvailable(
         @Query('serviceId') serviceId: string,
@@ -50,6 +52,7 @@ export class AppointmentsController {
         return this.svc.getOccupiedSlots(serviceId, norm);
     }
 
+    @RateLimitPolicy('booking-create')
     @Post()
     async create(@Body() body: any) {
         // (ללא שינוי מהגרסה האחרונה ששלחתי)

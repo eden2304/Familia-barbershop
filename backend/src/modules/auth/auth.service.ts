@@ -46,7 +46,7 @@ export class AuthService {
     private readonly otpTtlMs = 5 * 60 * 1000;
     private readonly otpRequestLimit = 3;
     private readonly otpRequestWindowMs = 10 * 60 * 1000;
-    private readonly otpMaxAttempts = 3;
+    private readonly otpMaxAttempts = 10;
     private readonly otpLockMs = 10 * 60 * 1000;
     private readonly defaultRemember = false;
     private readonly otpSecret: string;
@@ -143,19 +143,16 @@ export class AuthService {
         await this.saveOtpMeta(phone, { ...meta, requests: recent });
     }
 
-    private async recordFailedOtpAttempt(phone: string): Promise<boolean> {
+    private async recordFailedOtpAttempt(phone: string): Promise<void> {
         const meta = await this.getOtpMeta(phone);
         const failedAttempts = (meta.failedAttempts || 0) + 1;
+        const lockedUntil = failedAttempts >= this.otpMaxAttempts ? Date.now() + this.otpLockMs : undefined;
 
-        if (failedAttempts >= this.otpMaxAttempts) {
-            await this.deleteOtp(phone);
-            await this.clearOtpMeta(phone);
-            this.logger.warn(`OTP attempts exceeded for ${maskPhone(phone)}. Forcing new login flow.`);
-            return true;
+        if (lockedUntil) {
+            this.logger.warn(`OTP attempts exceeded for ${maskPhone(phone)}. Locked for ${this.otpLockMs / 1000}s.`);
         }
 
-        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil: undefined });
-        return false;
+        await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil });
     }
 
     private async storeOtp(phone: string, code: string) {
@@ -188,8 +185,6 @@ export class AuthService {
     async requestCode(rawPhone: string) {
         const norm = normalizePhone(rawPhone);
         if (!norm) throw new BadRequestException('Phone required');
-        await this.assertOtpRequestAllowance(norm);
-
         const code = this.generateOtpCode();
 
         await this.storeOtp(norm, code);
@@ -215,9 +210,7 @@ export class AuthService {
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            await this.deleteOtp(norm);
-            await this.clearOtpMeta(norm);
-            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
+            throw new BadRequestException('Invalid code');
         }
         const record = await this.loadOtp(norm);
         if (!record) {
@@ -231,8 +224,7 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
-            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
+            await this.recordFailedOtpAttempt(norm);
             throw new BadRequestException('Invalid code');
         }
 
@@ -241,7 +233,7 @@ export class AuthService {
 
         const variants = phoneVariants(norm);
         const client = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
-        if (!client) throw new ConflictException('UNREGISTERED_CLIENT');
+        if (!client) throw new BadRequestException('Invalid code');
         return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
@@ -251,9 +243,7 @@ export class AuthService {
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
         if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
-            await this.deleteOtp(norm);
-            await this.clearOtpMeta(norm);
-            throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
+            throw new BadRequestException('Invalid code');
         }
         const record = await this.loadOtp(norm);
         if (!record) throw new BadRequestException('Invalid code');
@@ -265,8 +255,7 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            const attemptsExceeded = await this.recordFailedOtpAttempt(norm);
-            if (attemptsExceeded) throw new BadRequestException('OTP_ATTEMPTS_EXCEEDED');
+            await this.recordFailedOtpAttempt(norm);
             throw new BadRequestException('Invalid code');
         }
 

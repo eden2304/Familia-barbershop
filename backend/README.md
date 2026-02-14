@@ -16,3 +16,43 @@ To scope availability per barber/resource, add `barber_id` (or `resource_id`) to
 - `tstzrange(starts_at, ends_at, '[)') WITH &&`
 
 This keeps overlap prevention isolated per barber while retaining DB-level atomic guarantees across all app instances.
+
+## Rate limiting
+
+The backend now uses a **distributed Redis-backed limiter** (via `REDIS_URL`, e.g. Railway Redis), so limits are shared across all instances.
+
+### Policies
+- OTP request (`POST /auth/request-code`, `/auth/request-code-login`, aliases):
+  - 3/10m per normalized phone
+  - 10/10m per IP
+- OTP verify (`POST /auth/verify-code`, alias):
+  - 10/10m per phone
+  - 30/10m per IP
+  - 10-minute lockout per phone after 10 failed attempts
+- Availability (`GET /appointments/available`):
+  - 60/min per IP
+  - 120/5m per authenticated phone
+- Booking create (`POST /appointments`):
+  - 3/5m per phone
+  - 5/day per phone
+  - 20/day per IP
+- Admin verify (`POST /admin/verify-code`):
+  - 20/hour per IP
+  - 5-minute lockout after 10 failed attempts per IP
+
+### Response format
+When throttled, the API returns:
+```json
+{ "error": "RATE_LIMITED", "retryAfterSeconds": 12 }
+```
+And sets `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` headers (`RateLimit-Reset` is epoch seconds).
+
+### Cloudflare / proxy
+`main.ts` uses `app.set('trust proxy', 1)`, and limiter keying uses Express `req.ip` to respect Cloudflare-forwarded client IP through the trusted proxy chain.
+
+If Redis is temporarily unavailable, rate-limit checks fail-open (request is allowed) and a structured `rate_limit_redis_error` log is emitted, so outages do not take down the API.
+
+
+## Prune job note
+
+`blocked_times` cleanup uses `COALESCE(<end_col>, <start_col>)` so nullable/legacy end columns do not prevent pruning, and falls back to start-only cleanup if schema drift is detected.

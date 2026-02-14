@@ -1,46 +1,54 @@
 import {
-    BadRequestException,
     Body,
     Controller,
-    Delete,
-    Get,
-    Param,
     Post,
+    Req,
     UnauthorizedException,
-    UseGuards
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { BlockedTime } from '../../entities/blocked-time.entity';
-import { Repository } from 'typeorm';
-import { AddBlockDto } from '../appointments/dtos';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles } from '../auth/roles.decorator';
 import { JwtService } from '@nestjs/jwt';
+import { RedisRateLimitStore } from '../../common/rate-limit/redis-rate-limit.store';
+import { RateLimitPolicy } from '../../common/rate-limit/rate-limit.decorator';
+import { rateLimitConfig } from '../../common/rate-limit/rate-limit.config';
+import { Request } from 'express';
+import { getClientIp } from '../../common/rate-limit/rate-limit.utils';
 
 @Controller('admin')
 export class AdminController {
     constructor(
-        @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
         private readonly jwtService: JwtService,
+        private readonly rateLimitStore: RedisRateLimitStore,
     ) {}
 
-    private parseBoolean(value: any): boolean {
-        if (value === undefined || value === null) return false;
-        if (typeof value === 'boolean') return value;
-        if (typeof value === 'number') return value === 1;
-        const norm = String(value).trim().toLowerCase();
-        return ['1', 'true', 'yes', 'y', 'on'].includes(norm);
-    }
-
+    @RateLimitPolicy('admin-verify')
     @Post('verify-code')
-    verifyAdminCode(@Body() body: any) {
-        const code = String(body?.code ?? '').trim();
+    async verifyAdminCode(@Body() body: any, @Req() req: Request) {
+        const ip = getClientIp(req);
+        const lockKey = `admin-verify:lock:${ip}`;
+        const counterKey = `admin-verify:failed:${ip}`;
 
+        const lockTtl = await this.rateLimitStore.isLocked(lockKey);
+        if (lockTtl > 0) {
+            throw new UnauthorizedException('INVALID_ADMIN_CODE');
+        }
+
+        const code = String(body?.code ?? '').trim();
         const expected = String(process.env.ADMIN_CODE ?? '').trim();
         const fallback = '12345';
 
         const ok = (expected && code === expected) || code === fallback;
-        if (!ok) throw new UnauthorizedException('INVALID_ADMIN_CODE');
+        if (!ok) {
+            await this.rateLimitStore.recordFailure(
+                counterKey,
+                lockKey,
+                rateLimitConfig.adminVerify.failedLockThreshold,
+                rateLimitConfig.adminVerify.ipWindowSec,
+                rateLimitConfig.adminVerify.failedLockSec,
+            );
+            throw new UnauthorizedException('INVALID_ADMIN_CODE');
+        }
+
+        await this.rateLimitStore.clear(counterKey);
+        await this.rateLimitStore.clear(lockKey);
 
         const token = this.jwtService.sign({
             phone: 'admin',
@@ -50,7 +58,4 @@ export class AdminController {
 
         return { accessToken: token };
     }
-
-
-
 }

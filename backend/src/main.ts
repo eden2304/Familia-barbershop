@@ -23,15 +23,40 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
     next();
 }
 
+async function resolveBlockedTimesPruneSql(ds: DataSource): Promise<string> {
+    const rows = await ds.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'blocked_times' ORDER BY ordinal_position",
+    ) as Array<{ column_name: string }>;
+
+    const columns = new Set(rows.map((row) => row.column_name));
+    if (columns.has('ends_at')) {
+        return `delete from blocked_times where coalesce(ends_at, starts_at) < now() - interval '${RETENTION_DAYS} days'`;
+    }
+    if (columns.has('end_at')) {
+        return `delete from blocked_times where coalesce(end_at, start_at) < now() - interval '${RETENTION_DAYS} days'`;
+    }
+    if (columns.has('start_at')) {
+        return `delete from blocked_times where start_at < now() - interval '${RETENTION_DAYS} days'`;
+    }
+    return `delete from blocked_times where starts_at < now() - interval '${RETENTION_DAYS} days'`;
+}
+
 async function pruneOldRecords(ds: DataSource) {
     try {
         await ds.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
         await ds.query(`delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`);
-        await ds.query(
-            `delete from blocked_times where coalesce(end_at, start_at) < now() - interval '${RETENTION_DAYS} days'`,
-        );
+
+        try {
+            const blockedTimesPruneSql = await resolveBlockedTimesPruneSql(ds);
+            await ds.query(blockedTimesPruneSql);
+        } catch (error) {
+            logger.warn(
+                `[pruneOldRecords] blocked_times schema drift detected, falling back to start column only: ${error instanceof Error ? error.message : 'unknown'}`,
+            );
+            await ds.query(`delete from blocked_times where coalesce(starts_at, start_at) < now() - interval '${RETENTION_DAYS} days'`);
+        }
     } catch (error) {
-        logger.error('[pruneOldRecords] Failed to prune old data', error);
+        logger.warn(`[pruneOldRecords] Failed to prune old data: ${error instanceof Error ? error.message : 'unknown'}`);
     }
 }
 

@@ -51,3 +51,8 @@ And sets `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Res
 `main.ts` uses `app.set('trust proxy', 1)`, and limiter keying uses Express `req.ip` to respect Cloudflare-forwarded client IP through the trusted proxy chain.
 
 If Redis is temporarily unavailable, rate-limit checks fail-open (request is allowed) and a structured `rate_limit_redis_error` log is emitted, so outages do not take down the API.
+
+
+## Prune job note
+
+`blocked_times` cleanup uses `COALESCE(<end_col>, <start_col>)` so nullable/legacy end columns do not prevent pruning, and falls back to start-only cleanup if schema drift is detected.

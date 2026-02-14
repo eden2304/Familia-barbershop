@@ -10,14 +10,14 @@ type PendingCommand = {
 
 type ParsedResp = { value: any; nextOffset: number };
 
-class TcpRedisClient {
+class Redis {
     private socket: Socket | tls.TLSSocket | null = null;
-    private readonly logger = new Logger(TcpRedisClient.name);
+    private readonly logger = new Logger(Redis.name);
     private readonly pending: PendingCommand[] = [];
     private readBuffer = Buffer.alloc(0);
     private connectPromise: Promise<void> | null = null;
 
-    constructor(private readonly redisUrl: string) {}
+    constructor(private readonly redisUrl: string | undefined) {}
 
     private parseResp(offset = 0): ParsedResp | null {
         if (!this.readBuffer.length || this.readBuffer.length <= offset) return null;
@@ -100,6 +100,7 @@ class TcpRedisClient {
 
         this.connectPromise = new Promise<void>((resolve, reject) => {
             try {
+                if (!this.redisUrl) throw new Error('REDIS_URL is missing');
                 const parsed = new URL(this.redisUrl);
                 const isTls = parsed.protocol === 'rediss:';
                 const host = parsed.hostname;
@@ -202,22 +203,22 @@ export type ConsumeResult = {
 @Injectable()
 export class RedisRateLimitStore implements OnApplicationShutdown {
     private readonly logger = new Logger(RedisRateLimitStore.name);
-    private static sharedClient: TcpRedisClient | null = null;
+    private static sharedClient: Redis | null = null;
 
     private get enabled(): boolean {
         return Boolean(rateLimitConfig.redis.url);
     }
 
     constructor() {
-        this.logger.log(`RateLimit redis enabled=${this.enabled} prefix=${rateLimitConfig.redis.prefix}`);
+        this.logger.log(`RateLimit redis enabled=${this.enabled}`);
     }
 
-    private get client(): TcpRedisClient {
+    private get client(): Redis {
         if (!this.enabled) {
             throw new Error('Rate limiter REDIS_URL is not configured');
         }
         if (!RedisRateLimitStore.sharedClient) {
-            RedisRateLimitStore.sharedClient = new TcpRedisClient(rateLimitConfig.redis.url);
+            RedisRateLimitStore.sharedClient = new Redis(process.env.REDIS_URL);
         }
         return RedisRateLimitStore.sharedClient;
     }

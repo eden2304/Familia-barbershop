@@ -67,7 +67,7 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
     }
 
     private async cmd(...command: (string | number)[]): Promise<any> {
-        const args = command.map((item) => String(item));
+        const args = command.map((item) => String(item)) as [string, ...string[]];
         const client = this.client;
         await this.ensureRedisPing();
         return client.call(...args);

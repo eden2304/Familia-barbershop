@@ -36,6 +36,19 @@ interface OtpMeta {
     lockedUntil?: number;
 }
 
+interface AdminUpdateEvent {
+    type: 'login' | 'visit_no_booking' | 'booking';
+    message: string;
+    color: 'neutral' | 'red' | 'green';
+    clientName: string;
+    clientId?: number;
+    createdAt: string;
+    appointment?: {
+        startsAt?: string;
+        serviceName?: string;
+    };
+}
+
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
@@ -288,11 +301,14 @@ export class AuthService {
         return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
-    private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string): Promise<AuthTokens> {
+    private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string, logUpdates = true): Promise<AuthTokens> {
         const payload = this.buildClientPayload(client);
         const roles = await this.resolveRolesForPhone(payload.phone);
         const isAdmin = roles.includes('admin');
         const payloadWithRole = { ...payload, isAdmin, is_admin: isAdmin } as any;
+        if (logUpdates) {
+            await this.logClientLoginUpdates(client);
+        }
         const access = this.issueAccessToken(payloadWithRole, roles);
         const remember = rememberMe ?? this.defaultRemember;
         let refreshToken: string | undefined;
@@ -311,6 +327,50 @@ export class AuthService {
             refreshToken,
             refreshExpiresAt: refreshExpiresAt?.toISOString(),
         };
+    }
+
+    private async logClientLoginUpdates(client: Client) {
+        const firstName = ((client as any)?.firstName ?? client.first_name ?? '').toString().trim();
+        const lastName = ((client as any)?.lastName ?? client.last_name ?? '').toString().trim();
+        const clientName = `${firstName} ${lastName}`.trim() || client.phone;
+
+        await this.appendAdminUpdate({
+            type: 'login',
+            message: `${clientName} נכנס למערכת`,
+            color: 'neutral',
+            clientName,
+            clientId: Number(client.id),
+            createdAt: new Date().toISOString(),
+        });
+
+        const apptCountRows = await this.settingRepo.query(
+            `select count(*)::int as cnt from appointments where client_id = $1`,
+            [client.id],
+        );
+        const appointmentCount = Number(apptCountRows?.[0]?.cnt ?? 0);
+        if (appointmentCount === 0) {
+            await this.appendAdminUpdate({
+                type: 'visit_no_booking',
+                message: `${clientName} ביקר במערכת אבל לא קבע תור`,
+                color: 'red',
+                clientName,
+                clientId: Number(client.id),
+                createdAt: new Date().toISOString(),
+            });
+        }
+    }
+
+    private async appendAdminUpdate(event: AdminUpdateEvent) {
+        const key = 'admin.updates.feed';
+        const existing = await this.settingRepo.findOne({ where: { key } });
+        const current = Array.isArray(existing?.value) ? existing.value : [];
+        const next = [event, ...current].slice(0, 300);
+        if (existing) {
+            existing.value = next;
+            await this.settingRepo.save(existing);
+            return;
+        }
+        await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
     }
 
     private buildClientPayload(client: Client) {
@@ -392,7 +452,7 @@ export class AuthService {
             throw new UnauthorizedException('INVALID_REFRESH');
         }
         await this.refreshRepo.update({ id: record.id }, { revokedAt: new Date() });
-        const auth = await this.buildAuthResult(record.client, true, record.userAgent);
+        const auth = await this.buildAuthResult(record.client, true, record.userAgent, false);
         return auth;
     }
 

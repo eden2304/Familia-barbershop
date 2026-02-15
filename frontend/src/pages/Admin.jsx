@@ -66,6 +66,7 @@ import {
   GripVertical,
   Crown,
   FileSpreadsheet,
+  Bell,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -113,6 +114,7 @@ const navItems = [
   { id: 'appointments', label: 'תורים', icon: Calendar },
   //{ id: 'statistics', label: 'סטטיסטיקות', icon: BarChart3 },
   { id: 'clients', label: 'לקוחות', icon: Users },
+  { id: 'updates', label: 'עדכונים', icon: Bell },
   { id: 'business-hours', label: 'שעות פעילות', icon: Clock },
   { id: 'member-settings', label: 'חברי מועדון', icon: Crown },
   { id: 'services', label: 'שירותים', icon: Settings },
@@ -266,6 +268,7 @@ export default function Admin() { // Removed props
 
 
   const [appointments, setAppointments] = useState([]);
+  const [adminUpdates, setAdminUpdates] = useState([]);
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
@@ -679,7 +682,7 @@ export default function Admin() { // Removed props
       const [
         allAppointmentsData, servicesData, testimonialsData,
         galleryData, hoursData, clientsData, backgroundVideosData,
-        productsData, bookingRulesSetting
+        productsData, bookingRulesSetting, adminUpdatesSetting
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAdminPreferred(Service, "order_index").catch(() => []),
@@ -690,6 +693,7 @@ export default function Admin() { // Removed props
         listAdminPreferred(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
         listAdminPreferred(Product, "order_index").catch(() => []),
         Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
+        Setting?.get ? Setting.get('admin.updates.feed').catch(() => null) : Promise.resolve(null),
       ]);
 
       const normalizedTestimonials = (testimonialsData || []).map((row) => {
@@ -713,6 +717,7 @@ export default function Admin() { // Removed props
       setAllClients(clientsData || []);
       setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
+      setAdminUpdates(Array.isArray(adminUpdatesSetting?.value) ? adminUpdatesSetting.value : []);
 
       const normalizedBookingRules = normalizeBookingRules(bookingRulesSetting?.value);
       setMemberSettings(normalizedBookingRules);
@@ -2596,6 +2601,38 @@ const extractRecurringSchedules = (client) => {
                           <Plus className="w-6 h-6" />
                         </Button>
                       </div>
+                    </div>
+                )}
+
+
+                {activeTab === 'updates' && (
+                    <div className="space-y-6"> 
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader>
+                          <CardTitle>עדכוני לקוחות</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {adminUpdates.length === 0 ? (
+                              <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
+                          ) : (
+                              <div className="space-y-2">
+                                {adminUpdates.map((item, idx) => {
+                                  const colorClass = item?.color === 'green'
+                                      ? 'text-green-700'
+                                      : item?.color === 'red'
+                                        ? 'text-red-700'
+                                        : 'text-gray-800';
+                                  return (
+                                      <div key={`${item?.createdAt || 'update'}-${idx}`} className="border border-gray-200 rounded-xl px-3 py-2">
+                                        <p className={`font-medium ${colorClass}`}>{item?.message || 'עדכון'}</p>
+                                        <p className="text-xs text-gray-500 mt-1">{item?.createdAt ? format(new Date(item.createdAt), 'dd/MM/yyyy HH:mm') : ''}</p>
+                                      </div>
+                                  );
+                                })}
+                              </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     </div>
                 )}
 

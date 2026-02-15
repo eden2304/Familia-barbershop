@@ -50,6 +50,20 @@ interface MemberWindow {
     end: string;
 }
 
+
+interface AdminUpdateEvent {
+    type: 'login' | 'visit_no_booking' | 'booking';
+    message: string;
+    color: 'neutral' | 'red' | 'green';
+    clientName: string;
+    clientId?: number;
+    createdAt: string;
+    appointment?: {
+        startsAt?: string;
+        serviceName?: string;
+    };
+}
+
 const DEFAULT_BOOKING_RULES: BookingRules = {
     publicMaxAdvanceDays: 7,
     memberMaxAdvanceDays: 14,
@@ -456,6 +470,8 @@ export class AppointmentsService {
             throw error;
         }
 
+        await this.appendBookingAdminUpdate(saved);
+
         try {
             await this.whatsappService.sendAppointmentConfirmed(saved);
         } catch (error) {
@@ -463,6 +479,42 @@ export class AppointmentsService {
             console.warn('WhatsApp send failed (appointment_approved).');
         }
         return saved;
+    }
+
+
+    private async appendBookingAdminUpdate(appointment: Appointment) {
+        const key = 'admin.updates.feed';
+        const apptClient: any = appointment.client as any;
+        const firstName = String(apptClient?.firstName ?? apptClient?.first_name ?? '').trim();
+        const lastName = String(apptClient?.lastName ?? apptClient?.last_name ?? '').trim();
+        const clientName = `${firstName} ${lastName}`.trim() || String(apptClient?.phone || 'לקוח לא ידוע');
+        const serviceName = String((appointment.service as any)?.name ?? 'שירות');
+        const startsAtIso = appointment.startsAt instanceof Date
+            ? appointment.startsAt.toISOString()
+            : new Date(appointment.startsAt as any).toISOString();
+
+        const event: AdminUpdateEvent = {
+            type: 'booking',
+            message: `${clientName} קבע תור (${serviceName} · ${startsAtIso})`,
+            color: 'green',
+            clientName,
+            clientId: Number(apptClient?.id),
+            createdAt: new Date().toISOString(),
+            appointment: {
+                startsAt: startsAtIso,
+                serviceName,
+            },
+        };
+
+        const existing = await this.settingsRepo.findOne({ where: { key } });
+        const current = Array.isArray(existing?.value) ? existing.value : [];
+        const next = [event, ...current].slice(0, 300);
+        if (existing) {
+            existing.value = next;
+            await this.settingsRepo.save(existing);
+            return;
+        }
+        await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
     }
 
     private israelOffsetForDate(dateStr: string): string {

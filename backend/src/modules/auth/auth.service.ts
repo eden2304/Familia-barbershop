@@ -344,19 +344,23 @@ export class AuthService {
         const firstName = ((client as any)?.firstName ?? client.first_name ?? '').toString().trim();
         const lastName = ((client as any)?.lastName ?? client.last_name ?? '').toString().trim();
         const clientName = `${firstName} ${lastName}`.trim() || client.phone;
+        const clientId = Number(client.id);
+        if (await this.wasRecentlyLogged(clientId)) {
+            return;
+        }
 
         await this.appendAdminUpdate({
             type: 'login',
             message: `${clientName} נכנס למערכת`,
             color: 'neutral',
             clientName,
-            clientId: Number(client.id),
+            clientId,
             createdAt: new Date().toISOString(),
         });
 
         const now = Date.now();
         await this.enqueuePendingNoBooking({
-            clientId: Number(client.id),
+            clientId,
             clientName,
             loginAt: new Date(now).toISOString(),
             dueAt: new Date(now + this.noBookingDelayMs).toISOString(),
@@ -375,6 +379,26 @@ export class AuthService {
             return;
         }
         await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
+    }
+
+
+    private async wasRecentlyLogged(clientId: number, withinMs = 2 * 60 * 1000): Promise<boolean> {
+        const existing = await this.settingRepo.findOne({ where: { key: this.adminUpdatesFeedKey } });
+        const events = Array.isArray(existing?.value) ? existing.value : [];
+        const now = Date.now();
+        return events.some((event: any) => (
+            String(event?.type) === 'login' &&
+            Number(event?.clientId) === Number(clientId) &&
+            (now - new Date(event?.createdAt || 0).getTime()) <= withinMs
+        ));
+    }
+
+    async trackClientVisit(payload: AuthTokenPayload | undefined) {
+        if (!payload?.sub) return { ok: true, tracked: false };
+        const client = await this.clientRepo.findOne({ where: { id: Number(payload.sub) } });
+        if (!client) return { ok: true, tracked: false };
+        await this.logClientLoginUpdates(client);
+        return { ok: true, tracked: true };
     }
 
     private async getPendingNoBookingEvents(): Promise<PendingNoBookingEvent[]> {

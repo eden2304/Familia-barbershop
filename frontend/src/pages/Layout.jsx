@@ -7,6 +7,7 @@ import { AnimatePresence } from "framer-motion";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import api from '@/api/base44Client';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -42,6 +43,7 @@ function MainLayout({ children, currentPageName }) {
     } else {
       setClient(null);
       setIsAdmin(false);
+      sessionStorage.removeItem('visitTrackedInSession');
       if (!token) clearStoredAuth();
     }
   }, []);
@@ -56,6 +58,16 @@ function MainLayout({ children, currentPageName }) {
     };
   }, [checkLoginState]);
 
+
+
+  useEffect(() => {
+    const token = getStoredAuthToken();
+    const trackedFlag = sessionStorage.getItem('visitTrackedInSession');
+    if (!client || !token || trackedFlag === '1') return;
+    api.post('/auth/track-visit', {}).catch(() => undefined).finally(() => {
+      sessionStorage.setItem('visitTrackedInSession', '1');
+    });
+  }, [client]);
   const handleCallClick = (e) => {
     e.preventDefault();
     window.location.href = "tel:+972523767851";

@@ -5,6 +5,7 @@ import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
 import {Public} from "./public.decorator";
 import { RateLimitPolicy } from '../../common/rate-limit/rate-limit.decorator';
+import { AuthTokenPayload } from './auth.types';
 
 function parseCookies(req: Request): Record<string, string> {
     const header = req.headers['cookie'] || '';
@@ -119,6 +120,13 @@ export class AuthController {
         }
         res.cookie('refreshToken', '', { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 0, path: '/' });
         return { ok: true };
+    }
+
+
+    @Post('auth/track-visit')
+    @HttpCode(200)
+    async trackVisit(@Req() req: Request & { user?: AuthTokenPayload }) {
+        return this.svc.trackClientVisit(req.user);
     }
 
     @Public()

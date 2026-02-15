@@ -271,6 +271,7 @@ export default function Admin() { // Removed props
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
+  const [isClearingUpdates, setIsClearingUpdates] = useState(false);
   const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
@@ -708,6 +709,28 @@ export default function Admin() { // Removed props
       }
       setUpdatesPullDistance(0);
       updatesDidTriggerRef.current = false;
+    }
+  };
+
+
+  const handleClearAdminUpdates = async () => {
+    if (isClearingUpdates || isRefreshingUpdates) return;
+    const ok = window.confirm('למחוק את כל העדכונים?');
+    if (!ok) return;
+    setIsClearingUpdates(true);
+    try {
+      await Setting.set('admin.updates.feed', []);
+      setAdminUpdates([]);
+      toast({ title: 'העדכונים נמחקו בהצלחה' });
+    } catch (error) {
+      console.error('Failed clearing admin updates feed', error);
+      toast({
+        title: 'שגיאה במחיקת העדכונים',
+        description: 'נסה שוב בעוד רגע.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsClearingUpdates(false);
     }
   };
 
@@ -2692,10 +2715,20 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>עדכוני לקוחות</CardTitle>
-                          <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates} className="gap-1.5"> 
-                            {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
-                            {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearAdminUpdates}
+                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
+                            >
+                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
+                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
+                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                            </Button>
+                          </div>
                         </CardHeader>
                         <CardContent>
                           <div

@@ -109,6 +109,22 @@ export class WhatsAppService {
         });
     }
 
+    async sendFixedAppointment(toPhone: string, clientName: string, frequency: string, dayOfWeek: string, time: string) {
+        return this.sendTemplateMessage({
+            templateName: 'fixed_appointment',
+            toPhone,
+            params: [clientName, frequency, dayOfWeek, time],
+        });
+    }
+
+    async sendDeleteFixedAppointment(toPhone: string, clientName: string, frequency: string, dayOfWeek: string, time: string) {
+        return this.sendTemplateMessage({
+            templateName: 'delete_fixed',
+            toPhone,
+            params: [clientName, frequency, dayOfWeek, time],
+        });
+    }
+
     private async sendAppointmentTemplate(
         templateName: 'appointment_approved' | 'appointment_reminder_same_day' | 'appointment_canceled',
         appointment: Appointment,

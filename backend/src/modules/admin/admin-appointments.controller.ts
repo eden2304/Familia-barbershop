@@ -64,6 +64,18 @@ function dayRangeUtc(yyyyMmDd: string) {
     return { start, end };
 }
 
+function recurringFrequencyLabel(intervalWeeks: number | null, intervalMonths: number | null): string {
+    if (Number(intervalMonths) > 0) return 'כל חודש';
+    if (Number(intervalWeeks) === 2) return 'כל שבועיים';
+    if (Number(intervalWeeks) === 3) return 'כל שלושה שבועות';
+    return 'כל שבוע';
+}
+
+function hebrewWeekdayLabel(weekday: number): string {
+    const labels = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return labels[Number(weekday)] || '';
+}
+
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -316,10 +328,13 @@ export class AdminAppointmentsController {
         const scheduleTime = localStart.toFormat('HH:mm');
 
         const clientRows = await this.ds.query(
-            'select coalesce(is_member,false) as is_member from clients where id = $1 limit 1',
+            `select coalesce(is_member,false) as is_member, first_name, last_name, phone
+             from clients where id = $1 limit 1`,
             [clientId],
         );
         const clientIsMember = Boolean(clientRows?.[0]?.is_member);
+        const clientName = [clientRows?.[0]?.first_name, clientRows?.[0]?.last_name].filter(Boolean).join(' ').trim();
+        const clientPhone = clientRows?.[0]?.phone || '';
 
         const recurrenceEndDate = localStart.plus({ months: 6 });
         const occurrences: Array<{ start: Date; end: Date }> = [];
@@ -466,6 +481,20 @@ export class AdminAppointmentsController {
             }
         }
 
+        if (clientPhone) {
+            try {
+                await this.whatsappService.sendFixedAppointment(
+                    clientPhone,
+                    clientName,
+                    recurringFrequencyLabel(useMonths ? null : intervalWeeks, useMonths ? intervalMonths : null),
+                    hebrewWeekdayLabel(scheduleWeekday),
+                    scheduleTime,
+                );
+            } catch (error) {
+                console.warn('WhatsApp send failed (fixed_appointment).');
+            }
+        }
+
         return {
             createdCount: createdIds.length,
             createdAppointmentIds: createdIds,
@@ -489,7 +518,7 @@ export class AdminAppointmentsController {
         await ensureRecurringSchema(this.ds);
 
         const scheduleRows = await this.ds.query(
-            `select id, client_id, service_id, weekday, start_time, interval_months, day_of_month
+            `select id, client_id, service_id, weekday, start_time, interval_weeks, interval_months, day_of_month
              from recurring_appointments where id = $1 limit 1`,
             [id],
         );
@@ -520,6 +549,26 @@ export class AdminAppointmentsController {
 
         if (idsToCancel.length > 0) {
             await this.ds.query(`delete from appointments where id = any($1::uuid[])`, [idsToCancel]);
+        }
+
+        const clientRows = await this.ds.query(
+            'select first_name, last_name, phone from clients where id = $1 limit 1',
+            [schedule.client_id],
+        );
+        const clientName = [clientRows?.[0]?.first_name, clientRows?.[0]?.last_name].filter(Boolean).join(' ').trim();
+        const clientPhone = clientRows?.[0]?.phone || '';
+        if (clientPhone) {
+            try {
+                await this.whatsappService.sendDeleteFixedAppointment(
+                    clientPhone,
+                    clientName,
+                    recurringFrequencyLabel(usesMonthly ? null : Number(schedule.interval_weeks), usesMonthly ? Number(schedule.interval_months) : null),
+                    hebrewWeekdayLabel(Number(schedule.weekday)),
+                    scheduleTime,
+                );
+            } catch (error) {
+                console.warn('WhatsApp send failed (delete_fixed).');
+            }
         }
 
         return { ok: true, canceledCount: idsToCancel.length };

@@ -36,6 +36,27 @@ interface OtpMeta {
     lockedUntil?: number;
 }
 
+interface AdminUpdateEvent {
+    type: 'login' | 'visit_no_booking' | 'booking';
+    message: string;
+    color: 'neutral' | 'red' | 'green';
+    clientName: string;
+    clientId?: number;
+    createdAt: string;
+    appointment?: {
+        startsAt?: string;
+        serviceName?: string;
+    };
+}
+
+
+interface PendingNoBookingEvent {
+    clientId: number;
+    clientName: string;
+    loginAt: string;
+    dueAt: string;
+}
+
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
@@ -50,6 +71,10 @@ export class AuthService {
     private readonly otpLockMs = 10 * 60 * 1000;
     private readonly defaultRemember = false;
     private readonly otpSecret: string;
+    private readonly noBookingDelayMs = 5 * 60 * 1000;
+    private readonly adminUpdatesFeedKey = 'admin.updates.feed';
+    private readonly pendingNoBookingKey = 'admin.updates.pending_no_booking';
+    private readonly pendingSweepMs = 60 * 1000;
 
     constructor(
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
@@ -71,6 +96,15 @@ export class AuthService {
         this.refreshTokenMs = this.parseDurationToMs(configuredRefresh, 30 * 24 * 60 * 60 * 1000);
         this.otpSecret =
             this.configService.get<string>('OTP_SECRET') || this.jwtSecret;
+
+        this.reconcileDuePendingNoBooking().catch((error) => {
+            this.logger.warn(`Initial no-booking reconcile failed: ${String(error?.message || error)}`);
+        });
+        setInterval(() => {
+            this.reconcileDuePendingNoBooking().catch((error) => {
+                this.logger.warn(`Scheduled no-booking reconcile failed: ${String(error?.message || error)}`);
+            });
+        }, this.pendingSweepMs);
     }
 
     private parseDurationToMs(input: string | undefined, fallback: number): number {
@@ -288,11 +322,14 @@ export class AuthService {
         return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
-    private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string): Promise<AuthTokens> {
+    private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string, logUpdates = true): Promise<AuthTokens> {
         const payload = this.buildClientPayload(client);
         const roles = await this.resolveRolesForPhone(payload.phone);
         const isAdmin = roles.includes('admin');
         const payloadWithRole = { ...payload, isAdmin, is_admin: isAdmin } as any;
+        if (logUpdates) {
+            await this.logClientLoginUpdates(client);
+        }
         const access = this.issueAccessToken(payloadWithRole, roles);
         const remember = rememberMe ?? this.defaultRemember;
         let refreshToken: string | undefined;
@@ -311,6 +348,127 @@ export class AuthService {
             refreshToken,
             refreshExpiresAt: refreshExpiresAt?.toISOString(),
         };
+    }
+
+    private async logClientLoginUpdates(client: Client) {
+        const firstName = ((client as any)?.firstName ?? client.first_name ?? '').toString().trim();
+        const lastName = ((client as any)?.lastName ?? client.last_name ?? '').toString().trim();
+        const clientName = `${firstName} ${lastName}`.trim() || client.phone;
+        const clientId = Number(client.id);
+        if (await this.wasRecentlyLogged(clientId)) {
+            return;
+        }
+
+        await this.appendAdminUpdate({
+            type: 'login',
+            message: `${clientName} נכנס למערכת`,
+            color: 'neutral',
+            clientName,
+            clientId,
+            createdAt: new Date().toISOString(),
+        });
+
+        const now = Date.now();
+        await this.enqueuePendingNoBooking({
+            clientId,
+            clientName,
+            loginAt: new Date(now).toISOString(),
+            dueAt: new Date(now + this.noBookingDelayMs).toISOString(),
+        });
+        await this.reconcileDuePendingNoBooking();
+    }
+
+    private async appendAdminUpdate(event: AdminUpdateEvent) {
+        const key = this.adminUpdatesFeedKey;
+        const existing = await this.settingRepo.findOne({ where: { key } });
+        const current = Array.isArray(existing?.value) ? existing.value : [];
+        const next = [event, ...current].slice(0, 300);
+        if (existing) {
+            existing.value = next;
+            await this.settingRepo.save(existing);
+            return;
+        }
+        await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
+    }
+
+
+    private async wasRecentlyLogged(clientId: number, withinMs = 2 * 60 * 1000): Promise<boolean> {
+        const existing = await this.settingRepo.findOne({ where: { key: this.adminUpdatesFeedKey } });
+        const events = Array.isArray(existing?.value) ? existing.value : [];
+        const now = Date.now();
+        return events.some((event: any) => (
+            String(event?.type) === 'login' &&
+            Number(event?.clientId) === Number(clientId) &&
+            (now - new Date(event?.createdAt || 0).getTime()) <= withinMs
+        ));
+    }
+
+    async trackClientVisit(payload: AuthTokenPayload | undefined) {
+        if (!payload?.sub) return { ok: true, tracked: false };
+        const client = await this.clientRepo.findOne({ where: { id: Number(payload.sub) } });
+        if (!client) return { ok: true, tracked: false };
+        await this.logClientLoginUpdates(client);
+        return { ok: true, tracked: true };
+    }
+
+    private async getPendingNoBookingEvents(): Promise<PendingNoBookingEvent[]> {
+        const row = await this.settingRepo.findOne({ where: { key: this.pendingNoBookingKey } });
+        const raw = Array.isArray(row?.value) ? row?.value : [];
+        return raw
+            .map((item: any) => ({
+                clientId: Number(item?.clientId),
+                clientName: String(item?.clientName ?? ''),
+                loginAt: String(item?.loginAt ?? ''),
+                dueAt: String(item?.dueAt ?? ''),
+            }))
+            .filter((item: PendingNoBookingEvent) => Number.isFinite(item.clientId) && Boolean(item.clientName) && Boolean(item.dueAt));
+    }
+
+    private async savePendingNoBookingEvents(events: PendingNoBookingEvent[]) {
+        const existing = await this.settingRepo.findOne({ where: { key: this.pendingNoBookingKey } });
+        if (existing) {
+            existing.value = events;
+            await this.settingRepo.save(existing);
+            return;
+        }
+        await this.settingRepo.save(this.settingRepo.create({ key: this.pendingNoBookingKey, value: events }));
+    }
+
+    private async enqueuePendingNoBooking(entry: PendingNoBookingEvent) {
+        const current = await this.getPendingNoBookingEvents();
+        const next = [entry, ...current.filter((item) => Number(item.clientId) !== Number(entry.clientId))].slice(0, 300);
+        await this.savePendingNoBookingEvents(next);
+        this.schedulePendingNoBookingCheck(entry);
+    }
+
+    private schedulePendingNoBookingCheck(entry: PendingNoBookingEvent) {
+        const delay = Math.max(0, new Date(entry.dueAt).getTime() - Date.now());
+        setTimeout(() => {
+            this.reconcileDuePendingNoBooking().catch((error) => {
+                this.logger.warn(`Failed to reconcile no-booking updates: ${String(error?.message || error)}`);
+            });
+        }, delay);
+    }
+
+    private async reconcileDuePendingNoBooking() {
+        const all = await this.getPendingNoBookingEvents();
+        if (!all.length) return;
+        const now = Date.now();
+        const due = all.filter((entry) => new Date(entry.dueAt).getTime() <= now);
+        const future = all.filter((entry) => new Date(entry.dueAt).getTime() > now);
+
+        for (const entry of due) {
+            await this.appendAdminUpdate({
+                type: 'visit_no_booking',
+                message: `${entry.clientName} ביקר במערכת אבל לא קבע תור`,
+                color: 'red',
+                clientName: entry.clientName,
+                clientId: Number(entry.clientId),
+                createdAt: new Date().toISOString(),
+            });
+        }
+
+        await this.savePendingNoBookingEvents(future);
     }
 
     private buildClientPayload(client: Client) {
@@ -392,7 +550,7 @@ export class AuthService {
             throw new UnauthorizedException('INVALID_REFRESH');
         }
         await this.refreshRepo.update({ id: record.id }, { revokedAt: new Date() });
-        const auth = await this.buildAuthResult(record.client, true, record.userAgent);
+        const auth = await this.buildAuthResult(record.client, true, record.userAgent, false);
         return auth;
     }
 

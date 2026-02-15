@@ -66,6 +66,8 @@ import {
   GripVertical,
   Crown,
   FileSpreadsheet,
+  Bell,
+  Loader2,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -113,6 +115,7 @@ const navItems = [
   { id: 'appointments', label: 'תורים', icon: Calendar },
   //{ id: 'statistics', label: 'סטטיסטיקות', icon: BarChart3 },
   { id: 'clients', label: 'לקוחות', icon: Users },
+  { id: 'updates', label: 'עדכונים', icon: Bell },
   { id: 'business-hours', label: 'שעות פעילות', icon: Clock },
   { id: 'member-settings', label: 'חברי מועדון', icon: Crown },
   { id: 'services', label: 'שירותים', icon: Settings },
@@ -266,6 +269,10 @@ export default function Admin() { // Removed props
 
 
   const [appointments, setAppointments] = useState([]);
+  const [adminUpdates, setAdminUpdates] = useState([]);
+  const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
+  const [isClearingUpdates, setIsClearingUpdates] = useState(false);
+  const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
@@ -537,6 +544,9 @@ export default function Admin() { // Removed props
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
+  const updatesListRef = React.useRef(null);
+  const updatesTouchStartYRef = React.useRef(0);
+  const updatesDidTriggerRef = React.useRef(false);
 
   const scrollSelected = React.useCallback((align = 'center', behavior = 'auto') => {
     const idx = daysForPicker.findIndex(d => isSameDay(d, selectedDate));
@@ -672,6 +682,58 @@ export default function Admin() { // Removed props
     }
   };
 
+  const normalizeAdminUpdates = (raw) => {
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr
+      .map((item) => ({ ...item }))
+      .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
+  };
+
+  const loadAdminUpdates = async ({ withSpinner = false } = {}) => {
+    if (withSpinner) setIsRefreshingUpdates(true);
+    const startedAt = Date.now();
+    try {
+      const res = Setting?.get ? await Setting.get('admin.updates.feed').catch(() => null) : null;
+      setAdminUpdates(normalizeAdminUpdates(res?.value));
+    } catch (error) {
+      console.error('Failed loading admin updates feed', error);
+      setAdminUpdates([]);
+    } finally {
+      if (withSpinner) {
+        const elapsed = Date.now() - startedAt;
+        const waitMs = Math.max(0, 450 - elapsed);
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        setIsRefreshingUpdates(false);
+      }
+      setUpdatesPullDistance(0);
+      updatesDidTriggerRef.current = false;
+    }
+  };
+
+
+  const handleClearAdminUpdates = async () => {
+    if (isClearingUpdates || isRefreshingUpdates) return;
+    const ok = window.confirm('למחוק את כל העדכונים?');
+    if (!ok) return;
+    setIsClearingUpdates(true);
+    try {
+      await Setting.set('admin.updates.feed', []);
+      setAdminUpdates([]);
+      toast({ title: 'העדכונים נמחקו בהצלחה' });
+    } catch (error) {
+      console.error('Failed clearing admin updates feed', error);
+      toast({
+        title: 'שגיאה במחיקת העדכונים',
+        description: 'נסה שוב בעוד רגע.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsClearingUpdates(false);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -718,6 +780,7 @@ export default function Admin() { // Removed props
       setMemberSettings(normalizedBookingRules);
       setMemberSettingsDirty(false);
       setMemberSettingsFeedback(null);
+      await loadAdminUpdates();
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -734,6 +797,15 @@ export default function Admin() { // Removed props
     if (!isAuthenticated) return;
     loadWaitingListForDate(selectedDate);
   }, [isAuthenticated, selectedDate]);
+
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    const intervalId = setInterval(() => {
+      loadAdminUpdates().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, activeTab]);
 
   const sanitizeTimeInput = (value) => {
     if (!value) return "";
@@ -1952,6 +2024,53 @@ const extractRecurringSchedules = (client) => {
 
 
   // אם אין עדיין אישור אדמין מהguard, אפשר להחזיר null/ספינר קצר
+  const handleUpdatesTouchStart = (event) => {
+    updatesTouchStartYRef.current = event.touches?.[0]?.clientY ?? 0;
+    updatesDidTriggerRef.current = false;
+  };
+
+  const handleUpdatesTouchMove = (event) => {
+    const container = updatesListRef.current;
+    if (!container) return;
+    const currentY = event.touches?.[0]?.clientY ?? 0;
+    const delta = currentY - updatesTouchStartYRef.current;
+    if (container.scrollTop <= 0 && delta > 0 && !isRefreshingUpdates) {
+      setUpdatesPullDistance(Math.min(delta, 90));
+    }
+  };
+
+  const handleUpdatesTouchEnd = async () => {
+    if (updatesPullDistance >= 70 && !isRefreshingUpdates && !updatesDidTriggerRef.current) {
+      updatesDidTriggerRef.current = true;
+      await loadAdminUpdates({ withSpinner: true });
+      return;
+    }
+    setUpdatesPullDistance(0);
+  };
+
+  const getBookingSummary = (item) => {
+    if (item?.type !== 'booking') return null;
+    const startsAtRaw = item?.appointment?.startsAt || item?.startsAt;
+    const startsAtDate = startsAtRaw ? new Date(startsAtRaw) : null;
+    const hasDate = startsAtDate && !Number.isNaN(startsAtDate.getTime());
+    const serviceName = item?.appointment?.serviceName || item?.serviceName || 'לא צוין';
+    return {
+      serviceName,
+      dayLabel: hasDate ? format(startsAtDate, 'EEEE dd/MM/yyyy', { locale: he }) : 'לא צוין',
+      timeLabel: hasDate ? format(startsAtDate, 'HH:mm') : 'לא צוין',
+    };
+  };
+
+  const getUpdateHeadline = (item) => {
+    if (item?.type === 'booking') {
+      const explicitName = String(item?.clientName || '').trim();
+      if (explicitName) return `${explicitName} קבע תור`;
+      const fromMsg = String(item?.message || '').replace(/\s*\(.*\)\s*$/, '').trim();
+      return fromMsg || 'לקוח קבע תור';
+    }
+    return item?.message || 'עדכון';
+  };
+
   if (!canAccessAdmin) {
     return null; // או ספינר קל אם תרצה
   }
@@ -2596,6 +2715,73 @@ const extractRecurringSchedules = (client) => {
                           <Plus className="w-6 h-6" />
                         </Button>
                       </div>
+                    </div>
+                )}
+
+
+                {activeTab === 'updates' && (
+                    <div className="space-y-6">
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader className="flex flex-row items-center justify-between">
+                          <CardTitle>עדכוני לקוחות</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearAdminUpdates}
+                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
+                            >
+                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
+                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
+                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div
+                            ref={updatesListRef}
+                            className="max-h-[65vh] overflow-y-auto space-y-2 pr-1"
+                            onTouchStart={handleUpdatesTouchStart}
+                            onTouchMove={handleUpdatesTouchMove}
+                            onTouchEnd={handleUpdatesTouchEnd}
+                          >
+                            <div className="text-center text-xs text-gray-400 py-1">{isRefreshingUpdates ? 'טוען עדכונים…' : (updatesPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון')}</div>
+                            {isRefreshingUpdates && (
+                              <div className="flex items-center justify-center gap-2 text-xs text-gray-500 pb-1"> 
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>מתבצע רענון</span>
+                              </div>
+                            )}
+                            {adminUpdates.length === 0 ? (
+                                <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
+                            ) : (
+                                adminUpdates.map((item, idx) => {
+                                  const colorClass = item?.color === 'green'
+                                      ? 'text-green-700'
+                                      : item?.color === 'red'
+                                        ? 'text-red-700'
+                                        : 'text-gray-800';
+                                  const booking = getBookingSummary(item);
+                                  const eventDate = item?.createdAt ? new Date(item.createdAt) : null;
+                                  const eventTimeLabel = eventDate && !Number.isNaN(eventDate.getTime())
+                                    ? format(eventDate, 'HH:mm dd/MM/yyyy')
+                                    : '';
+                                  return (
+                                      <div key={`${item?.createdAt || 'update'}-${idx}`} className="border border-gray-200 rounded-xl px-3 py-2">
+                                        <p className={`font-medium ${colorClass}`}>{getUpdateHeadline(item)}</p>
+                                        {booking && (
+                                          <p className="text-xs text-gray-500 mt-1">{booking.serviceName} · {booking.dayLabel} · {booking.timeLabel}</p>
+                                        )}
+                                        <p className="text-xs text-gray-400 mt-1">{eventTimeLabel}</p>
+                                      </div>
+                                  );
+                                })
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
                     </div>
                 )}
 

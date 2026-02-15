@@ -269,6 +269,8 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
+  const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
@@ -540,6 +542,9 @@ export default function Admin() { // Removed props
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
+  const updatesListRef = React.useRef(null);
+  const updatesTouchStartYRef = React.useRef(0);
+  const updatesDidTriggerRef = React.useRef(false);
 
   const scrollSelected = React.useCallback((align = 'center', behavior = 'auto') => {
     const idx = daysForPicker.findIndex(d => isSameDay(d, selectedDate));
@@ -675,6 +680,28 @@ export default function Admin() { // Removed props
     }
   };
 
+  const normalizeAdminUpdates = (raw) => {
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr
+      .map((item) => ({ ...item }))
+      .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
+  };
+
+  const loadAdminUpdates = async ({ withSpinner = false } = {}) => {
+    if (withSpinner) setIsRefreshingUpdates(true);
+    try {
+      const res = Setting?.get ? await Setting.get('admin.updates.feed').catch(() => null) : null;
+      setAdminUpdates(normalizeAdminUpdates(res?.value));
+    } catch (error) {
+      console.error('Failed loading admin updates feed', error);
+      setAdminUpdates([]);
+    } finally {
+      if (withSpinner) setIsRefreshingUpdates(false);
+      setUpdatesPullDistance(0);
+      updatesDidTriggerRef.current = false;
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -682,7 +709,7 @@ export default function Admin() { // Removed props
       const [
         allAppointmentsData, servicesData, testimonialsData,
         galleryData, hoursData, clientsData, backgroundVideosData,
-        productsData, bookingRulesSetting, adminUpdatesSetting
+        productsData, bookingRulesSetting
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAdminPreferred(Service, "order_index").catch(() => []),
@@ -693,7 +720,6 @@ export default function Admin() { // Removed props
         listAdminPreferred(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
         listAdminPreferred(Product, "order_index").catch(() => []),
         Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
-        Setting?.get ? Setting.get('admin.updates.feed').catch(() => null) : Promise.resolve(null),
       ]);
 
       const normalizedTestimonials = (testimonialsData || []).map((row) => {
@@ -717,12 +743,12 @@ export default function Admin() { // Removed props
       setAllClients(clientsData || []);
       setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
-      setAdminUpdates(Array.isArray(adminUpdatesSetting?.value) ? adminUpdatesSetting.value : []);
 
       const normalizedBookingRules = normalizeBookingRules(bookingRulesSetting?.value);
       setMemberSettings(normalizedBookingRules);
       setMemberSettingsDirty(false);
       setMemberSettingsFeedback(null);
+      await loadAdminUpdates();
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -1957,6 +1983,53 @@ const extractRecurringSchedules = (client) => {
 
 
   // אם אין עדיין אישור אדמין מהguard, אפשר להחזיר null/ספינר קצר
+  const handleUpdatesTouchStart = (event) => {
+    updatesTouchStartYRef.current = event.touches?.[0]?.clientY ?? 0;
+    updatesDidTriggerRef.current = false;
+  };
+
+  const handleUpdatesTouchMove = (event) => {
+    const container = updatesListRef.current;
+    if (!container) return;
+    const currentY = event.touches?.[0]?.clientY ?? 0;
+    const delta = currentY - updatesTouchStartYRef.current;
+    if (container.scrollTop <= 0 && delta > 0 && !isRefreshingUpdates) {
+      setUpdatesPullDistance(Math.min(delta, 90));
+    }
+  };
+
+  const handleUpdatesTouchEnd = async () => {
+    if (updatesPullDistance >= 70 && !isRefreshingUpdates && !updatesDidTriggerRef.current) {
+      updatesDidTriggerRef.current = true;
+      await loadAdminUpdates({ withSpinner: true });
+      return;
+    }
+    setUpdatesPullDistance(0);
+  };
+
+  const getBookingSummary = (item) => {
+    if (item?.type !== 'booking') return null;
+    const startsAtRaw = item?.appointment?.startsAt || item?.startsAt;
+    const startsAtDate = startsAtRaw ? new Date(startsAtRaw) : null;
+    const hasDate = startsAtDate && !Number.isNaN(startsAtDate.getTime());
+    const serviceName = item?.appointment?.serviceName || item?.serviceName || 'לא צוין';
+    return {
+      serviceName,
+      dayLabel: hasDate ? format(startsAtDate, 'EEEE dd/MM/yyyy', { locale: he }) : 'לא צוין',
+      timeLabel: hasDate ? format(startsAtDate, 'HH:mm') : 'לא צוין',
+    };
+  };
+
+  const getUpdateHeadline = (item) => {
+    if (item?.type === 'booking') {
+      const explicitName = String(item?.clientName || '').trim();
+      if (explicitName) return `${explicitName} קבע תור`;
+      const fromMsg = String(item?.message || '').replace(/\s*\(.*\)\s*$/, '').trim();
+      return fromMsg || 'לקוח קבע תור';
+    }
+    return item?.message || 'עדכון';
+  };
+
   if (!canAccessAdmin) {
     return null; // או ספינר קל אם תרצה
   }
@@ -2606,31 +2679,49 @@ const extractRecurringSchedules = (client) => {
 
 
                 {activeTab === 'updates' && (
-                    <div className="space-y-6"> 
+                    <div className="space-y-6">
                       <Card className="bg-white rounded-2xl shadow-sm">
-                        <CardHeader>
+                        <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>עדכוני לקוחות</CardTitle>
+                          <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates}>
+                            {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                          </Button>
                         </CardHeader>
                         <CardContent>
-                          {adminUpdates.length === 0 ? (
-                              <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
-                          ) : (
-                              <div className="space-y-2">
-                                {adminUpdates.map((item, idx) => {
+                          <div
+                            ref={updatesListRef}
+                            className="max-h-[65vh] overflow-y-auto space-y-2 pr-1"
+                            onTouchStart={handleUpdatesTouchStart}
+                            onTouchMove={handleUpdatesTouchMove}
+                            onTouchEnd={handleUpdatesTouchEnd}
+                          >
+                            <div className="text-center text-xs text-gray-400 py-1">{updatesPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון'}</div>
+                            {adminUpdates.length === 0 ? (
+                                <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
+                            ) : (
+                                adminUpdates.map((item, idx) => {
                                   const colorClass = item?.color === 'green'
                                       ? 'text-green-700'
                                       : item?.color === 'red'
                                         ? 'text-red-700'
                                         : 'text-gray-800';
+                                  const booking = getBookingSummary(item);
+                                  const eventDate = item?.createdAt ? new Date(item.createdAt) : null;
+                                  const eventTimeLabel = eventDate && !Number.isNaN(eventDate.getTime())
+                                    ? format(eventDate, 'HH:mm dd/MM/yyyy')
+                                    : '';
                                   return (
                                       <div key={`${item?.createdAt || 'update'}-${idx}`} className="border border-gray-200 rounded-xl px-3 py-2">
-                                        <p className={`font-medium ${colorClass}`}>{item?.message || 'עדכון'}</p>
-                                        <p className="text-xs text-gray-500 mt-1">{item?.createdAt ? format(new Date(item.createdAt), 'dd/MM/yyyy HH:mm') : ''}</p>
+                                        <p className={`font-medium ${colorClass}`}>{getUpdateHeadline(item)}</p>
+                                        {booking && (
+                                          <p className="text-xs text-gray-500 mt-1">שירות: {booking.serviceName} · יום: {booking.dayLabel} · שעה: {booking.timeLabel}</p>
+                                        )}
+                                        <p className="text-xs text-gray-400 mt-1">{eventTimeLabel}</p>
                                       </div>
                                   );
-                                })}
-                              </div>
-                          )}
+                                })
+                            )}
+                          </div>
                         </CardContent>
                       </Card>
                     </div>

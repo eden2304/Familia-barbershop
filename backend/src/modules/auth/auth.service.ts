@@ -458,21 +458,14 @@ export class AuthService {
         const future = all.filter((entry) => new Date(entry.dueAt).getTime() > now);
 
         for (const entry of due) {
-            const apptCountRows = await this.settingRepo.query(
-                `select count(*)::int as cnt from appointments where client_id = $1`,
-                [entry.clientId],
-            );
-            const appointmentCount = Number(apptCountRows?.[0]?.cnt ?? 0);
-            if (appointmentCount === 0) {
-                await this.appendAdminUpdate({
-                    type: 'visit_no_booking',
-                    message: `${entry.clientName} ביקר במערכת אבל לא קבע תור`,
-                    color: 'red',
-                    clientName: entry.clientName,
-                    clientId: Number(entry.clientId),
-                    createdAt: new Date().toISOString(),
-                });
-            }
+            await this.appendAdminUpdate({
+                type: 'visit_no_booking',
+                message: `${entry.clientName} ביקר במערכת אבל לא קבע תור`,
+                color: 'red',
+                clientName: entry.clientName,
+                clientId: Number(entry.clientId),
+                createdAt: new Date().toISOString(),
+            });
         }
 
         await this.savePendingNoBookingEvents(future);

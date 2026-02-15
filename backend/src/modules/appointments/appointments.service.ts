@@ -470,6 +470,7 @@ export class AppointmentsService {
             throw error;
         }
 
+        await this.clearPendingNoBookingForClient((saved.client as any)?.id);
         await this.appendBookingAdminUpdate(saved);
 
         try {
@@ -481,6 +482,18 @@ export class AppointmentsService {
         return saved;
     }
 
+
+    private async clearPendingNoBookingForClient(clientId: number | string | undefined) {
+        const id = Number(clientId);
+        if (!Number.isFinite(id) || id <= 0) return;
+        const key = 'admin.updates.pending_no_booking';
+        const row = await this.settingsRepo.findOne({ where: { key } });
+        if (!row || !Array.isArray(row.value)) return;
+        const next = row.value.filter((item: any) => Number(item?.clientId) !== id);
+        if (next.length === row.value.length) return;
+        row.value = next;
+        await this.settingsRepo.save(row);
+    }
 
     private async appendBookingAdminUpdate(appointment: Appointment) {
         const key = 'admin.updates.feed';

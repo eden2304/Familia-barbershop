@@ -798,6 +798,15 @@ export default function Admin() { // Removed props
     loadWaitingListForDate(selectedDate);
   }, [isAuthenticated, selectedDate]);
 
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    const intervalId = setInterval(() => {
+      loadAdminUpdates().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, activeTab]);
+
   const sanitizeTimeInput = (value) => {
     if (!value) return "";
     const match = String(value).match(/^(\d{1,2}):(\d{2})/);

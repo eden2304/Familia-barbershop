@@ -74,6 +74,7 @@ export class AuthService {
     private readonly noBookingDelayMs = 5 * 60 * 1000;
     private readonly adminUpdatesFeedKey = 'admin.updates.feed';
     private readonly pendingNoBookingKey = 'admin.updates.pending_no_booking';
+    private readonly pendingSweepMs = 60 * 1000;
 
     constructor(
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
@@ -95,6 +96,15 @@ export class AuthService {
         this.refreshTokenMs = this.parseDurationToMs(configuredRefresh, 30 * 24 * 60 * 60 * 1000);
         this.otpSecret =
             this.configService.get<string>('OTP_SECRET') || this.jwtSecret;
+
+        this.reconcileDuePendingNoBooking().catch((error) => {
+            this.logger.warn(`Initial no-booking reconcile failed: ${String(error?.message || error)}`);
+        });
+        setInterval(() => {
+            this.reconcileDuePendingNoBooking().catch((error) => {
+                this.logger.warn(`Scheduled no-booking reconcile failed: ${String(error?.message || error)}`);
+            });
+        }, this.pendingSweepMs);
     }
 
     private parseDurationToMs(input: string | undefined, fallback: number): number {

@@ -67,6 +67,7 @@ import {
   Crown,
   FileSpreadsheet,
   Bell,
+  Loader2,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -689,6 +690,7 @@ export default function Admin() { // Removed props
 
   const loadAdminUpdates = async ({ withSpinner = false } = {}) => {
     if (withSpinner) setIsRefreshingUpdates(true);
+    const startedAt = Date.now();
     try {
       const res = Setting?.get ? await Setting.get('admin.updates.feed').catch(() => null) : null;
       setAdminUpdates(normalizeAdminUpdates(res?.value));
@@ -696,7 +698,14 @@ export default function Admin() { // Removed props
       console.error('Failed loading admin updates feed', error);
       setAdminUpdates([]);
     } finally {
-      if (withSpinner) setIsRefreshingUpdates(false);
+      if (withSpinner) {
+        const elapsed = Date.now() - startedAt;
+        const waitMs = Math.max(0, 450 - elapsed);
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        setIsRefreshingUpdates(false);
+      }
       setUpdatesPullDistance(0);
       updatesDidTriggerRef.current = false;
     }
@@ -2683,7 +2692,8 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>עדכוני לקוחות</CardTitle>
-                          <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates}>
+                          <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates} className="gap-1.5"> 
+                            {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
                             {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
                           </Button>
                         </CardHeader>
@@ -2695,7 +2705,13 @@ const extractRecurringSchedules = (client) => {
                             onTouchMove={handleUpdatesTouchMove}
                             onTouchEnd={handleUpdatesTouchEnd}
                           >
-                            <div className="text-center text-xs text-gray-400 py-1">{updatesPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון'}</div>
+                            <div className="text-center text-xs text-gray-400 py-1">{isRefreshingUpdates ? 'טוען עדכונים…' : (updatesPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון')}</div>
+                            {isRefreshingUpdates && (
+                              <div className="flex items-center justify-center gap-2 text-xs text-gray-500 pb-1"> 
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>מתבצע רענון</span>
+                              </div>
+                            )}
                             {adminUpdates.length === 0 ? (
                                 <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
                             ) : (
@@ -2714,7 +2730,7 @@ const extractRecurringSchedules = (client) => {
                                       <div key={`${item?.createdAt || 'update'}-${idx}`} className="border border-gray-200 rounded-xl px-3 py-2">
                                         <p className={`font-medium ${colorClass}`}>{getUpdateHeadline(item)}</p>
                                         {booking && (
-                                          <p className="text-xs text-gray-500 mt-1">שירות: {booking.serviceName} · יום: {booking.dayLabel} · שעה: {booking.timeLabel}</p>
+                                          <p className="text-xs text-gray-500 mt-1">{booking.serviceName} · {booking.dayLabel} · {booking.timeLabel}</p>
                                         )}
                                         <p className="text-xs text-gray-400 mt-1">{eventTimeLabel}</p>
                                       </div>

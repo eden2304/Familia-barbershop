@@ -27,6 +27,14 @@ export const WHATSAPP_TEMPLATES = {
         name: 'admin_appointment_message',
         params: ['clientName', 'date', 'time', 'messageText'] as const,
     },
+    fixed_appointment: {
+        name: 'fixed_appointment',
+        params: ['clientName', 'frequency', 'dayOfWeek', 'time'] as const,
+    },
+    delete_fixed: {
+        name: 'delete_fixed',
+        params: ['clientName', 'frequency', 'dayOfWeek', 'time'] as const,
+    },
 } as const;
 
 export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;

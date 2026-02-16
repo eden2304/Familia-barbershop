@@ -1222,6 +1222,20 @@ const extractRecurringSchedules = (client) => {
     });
   };
 
+
+  const handleCalendarTouchDrop = React.useCallback((touchPoint) => {
+    if (!draggedAppointmentId || !touchPoint) return;
+    const target = document.elementFromPoint(touchPoint.clientX, touchPoint.clientY);
+    const cell = target?.closest?.('[data-calendar-cell="1"]');
+    if (!cell) return;
+    const dateValue = cell.getAttribute('data-day-date');
+    const slotValue = Number(cell.getAttribute('data-slot-minute'));
+    if (!dateValue || !Number.isFinite(slotValue)) return;
+    const dayDate = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(dayDate.getTime())) return;
+    handleCalendarDrop(draggedAppointmentId, dayDate, slotValue);
+  }, [draggedAppointmentId, handleCalendarDrop]);
+
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
     try {
@@ -2690,6 +2704,9 @@ const extractRecurringSchedules = (client) => {
                                     return (
                                       <div
                                         key={`${dayKey}-${slotMinute}`}
+                                        data-calendar-cell="1"
+                                        data-day-date={dayKey}
+                                        data-slot-minute={slotMinute}
                                         className={`border-b border-l min-h-12 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
                                         onDragOver={(e) => {
                                           if (!draggedAppointmentId) return;
@@ -2713,6 +2730,22 @@ const extractRecurringSchedules = (client) => {
                                               setDraggedAppointmentId(apt.id);
                                             }}
                                             onDragEnd={() => setDraggedAppointmentId(null)}
+                                            onTouchStart={(event) => {
+                                              if (!isDraggableApt) return;
+                                              setDraggedAppointmentId(apt.id);
+                                            }}
+                                            onTouchMove={(event) => {
+                                              if (!isDraggableApt || !draggedAppointmentId) return;
+                                              event.preventDefault();
+                                            }}
+                                            onTouchEnd={(event) => {
+                                              if (!isDraggableApt || !draggedAppointmentId) return;
+                                              const touchPoint = event.changedTouches?.[0];
+                                              if (touchPoint) {
+                                                handleCalendarTouchDrop(touchPoint);
+                                              }
+                                              setDraggedAppointmentId(null);
+                                            }}
                                             onClick={() => setSelectedAppointment({
                                               ...apt,
                                               client_name: displayInfo?.name || apt.client_name,
@@ -2720,7 +2753,7 @@ const extractRecurringSchedules = (client) => {
                                               client_phone: displayInfo?.phone || apt.client_phone,
                                               client: displayInfo?.client || apt.client,
                                             })}
-                                            className={`w-full rounded-md text-right px-1.5 py-1 text-xs leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                            className={`w-full rounded-md text-right px-1.5 py-1 text-xs leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move touch-none' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                             <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>

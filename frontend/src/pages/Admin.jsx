@@ -385,6 +385,7 @@ export default function Admin() { // Removed props
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
+  const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
 
@@ -1235,6 +1236,27 @@ const extractRecurringSchedules = (client) => {
     if (Number.isNaN(dayDate.getTime())) return;
     handleCalendarDrop(draggedAppointmentId, dayDate, slotValue);
   }, [draggedAppointmentId, handleCalendarDrop]);
+
+  const startCalendarDragPreview = React.useCallback((appointment, point) => {
+    if (!appointment || !point) return;
+    const title = getAppointmentDisplayInfo(appointment).name || 'לקוח';
+    const time = format(new Date(appointment.starts_at), 'HH:mm');
+    setDragPreview({
+      title,
+      time,
+      x: point.clientX,
+      y: point.clientY,
+    });
+  }, [getAppointmentDisplayInfo]);
+
+  const moveCalendarDragPreview = React.useCallback((point) => {
+    if (!point) return;
+    setDragPreview((prev) => prev ? ({ ...prev, x: point.clientX, y: point.clientY }) : prev);
+  }, []);
+
+  const endCalendarDragPreview = React.useCallback(() => {
+    setDragPreview(null);
+  }, []);
 
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
@@ -2728,14 +2750,30 @@ const extractRecurringSchedules = (client) => {
                                                 return;
                                               }
                                               setDraggedAppointmentId(apt.id);
+                                              startCalendarDragPreview(apt, event);
                                             }}
-                                            onDragEnd={() => setDraggedAppointmentId(null)}
+                                            onDrag={(event) => {
+                                              if (!isDraggableApt || event.clientX <= 0 || event.clientY <= 0) return;
+                                              moveCalendarDragPreview(event);
+                                            }}
+                                            onDragEnd={() => {
+                                              setDraggedAppointmentId(null);
+                                              endCalendarDragPreview();
+                                            }}
                                             onTouchStart={(event) => {
                                               if (!isDraggableApt) return;
                                               setDraggedAppointmentId(apt.id);
+                                              const touchPoint = event.touches?.[0];
+                                              if (touchPoint) {
+                                                startCalendarDragPreview(apt, touchPoint);
+                                              }
                                             }}
                                             onTouchMove={(event) => {
                                               if (!isDraggableApt || !draggedAppointmentId) return;
+                                              const touchPoint = event.touches?.[0];
+                                              if (touchPoint) {
+                                                moveCalendarDragPreview(touchPoint);
+                                              }
                                               event.preventDefault();
                                             }}
                                             onTouchEnd={(event) => {
@@ -2745,6 +2783,7 @@ const extractRecurringSchedules = (client) => {
                                                 handleCalendarTouchDrop(touchPoint);
                                               }
                                               setDraggedAppointmentId(null);
+                                              endCalendarDragPreview();
                                             }}
                                             onClick={() => setSelectedAppointment({
                                               ...apt,
@@ -4152,23 +4191,39 @@ const extractRecurringSchedules = (client) => {
         <Dialog open={Boolean(pendingCalendarMove)} onOpenChange={(open) => {
           if (!open && !isSavingCalendarMove) setPendingCalendarMove(null);
         }}>
-          <DialogContent className="max-w-md" aria-describedby={undefined}>
+          <DialogContent className="max-w-[320px] rounded-2xl" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle>אישור שינוי תור</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-base">אישור שינוי תור</DialogTitle>
+              <DialogDescription className="text-xs leading-relaxed">
                 התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button size="sm" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
                 ביטול
               </Button>
-              <Button onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+              <Button size="sm" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
                 {isSavingCalendarMove ? 'שומר…' : 'אישור'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {dragPreview && (
+            <div
+                className="fixed z-[250] pointer-events-none"
+                style={{
+                  left: dragPreview.x,
+                  top: dragPreview.y,
+                  transform: 'translate(-50%, -120%)',
+                }}
+            >
+              <div className="rounded-lg bg-black/90 text-white px-2 py-1 shadow-xl min-w-[84px] text-right">
+                <div className="text-xs font-semibold truncate">{dragPreview.title}</div>
+                <div className="text-[10px] opacity-80">{dragPreview.time}</div>
+              </div>
+            </div>
+        )}
 
 
         {selectedAppointment && (

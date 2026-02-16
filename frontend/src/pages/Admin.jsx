@@ -383,6 +383,7 @@ export default function Admin() { // Removed props
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
@@ -677,6 +678,24 @@ export default function Admin() { // Removed props
     setAppointments(normalizeAppointmentsForDay(data));
   };
 
+  const loadAppointmentsForWeek = async (date) => {
+    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+    const days = Array.from({ length: 6 }, (_, idx) => addDays(weekStart, idx)); // ראשון-שישי
+    try {
+      const responses = await Promise.all(
+          days.map((day) => AdminApi.appointmentsByDate(day).catch(() => []))
+      );
+      const merged = responses.flat();
+      const deduped = Array.from(
+          new Map((merged || []).map((apt) => [String(apt?.id ?? `${apt?.starts_at}-${apt?.client_id ?? ''}`), apt])).values()
+      );
+      setWeeklyAppointmentsData(normalizeAppointmentsForDay(deduped));
+    } catch (error) {
+      console.error('Error loading weekly appointments:', error);
+      setWeeklyAppointmentsData([]);
+    }
+  };
+
   const loadWaitingListForDate = async (date) => {
     try {
       const ymd = format(startOfDay(date), "yyyy-MM-dd");
@@ -803,6 +822,11 @@ export default function Admin() { // Removed props
     if (!isAuthenticated) return;
     loadWaitingListForDate(selectedDate);
   }, [isAuthenticated, selectedDate]);
+
+  useEffect(() => {
+    if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
+    loadAppointmentsForWeek(selectedDate);
+  }, [isAuthenticated, selectedDate, appointmentsViewMode]);
 
 
   useEffect(() => {
@@ -1123,21 +1147,21 @@ const extractRecurringSchedules = (client) => {
   );
 
   const weeklyCalendarDays = useMemo(
-      () => Array.from({ length: 7 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
+      () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
   );
 
   const weeklyAppointments = useMemo(() => {
     const weekStart = startOfDay(weeklyCalendarStart);
-    const weekEnd = addDays(weekStart, 7);
-    return (appointments || [])
+    const weekEnd = addDays(weekStart, 6);
+    return (weeklyAppointmentsData || [])
         .filter((apt) => {
           if (apt.status === 'canceled' || apt.status === 'blocked') return false;
           const start = new Date(apt.starts_at);
           return start >= weekStart && start < weekEnd;
         })
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
-  }, [appointments, weeklyCalendarStart]);
+  }, [weeklyAppointmentsData, weeklyCalendarStart]);
 
   const calendarBounds = useMemo(() => {
     const fallbackStart = 8 * 60;
@@ -1214,7 +1238,7 @@ const extractRecurringSchedules = (client) => {
       }
       toast({ title: 'התור עודכן בהצלחה' });
       setPendingCalendarMove(null);
-      await loadData();
+      await Promise.all([loadData(), loadAppointmentsForWeek(pendingCalendarMove.newStart)]);
     } catch (error) {
       console.error('Failed to move appointment from weekly calendar', error);
       toast({ title: 'העברת התור נכשלה', description: 'נסה שוב בעוד רגע.', variant: 'destructive' });
@@ -2632,19 +2656,19 @@ const extractRecurringSchedules = (client) => {
                           )}
                         </>
                       ) : (
-                        <div className="rounded-2xl bg-white border shadow-sm">
-                          <div className="grid w-full" style={{ gridTemplateColumns: '44px repeat(7, minmax(0, 1fr))' }}>
-                            <div className="border-b border-l px-1 py-1 bg-gray-50 text-[10px] text-gray-500">שעה</div>
+                        <div className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
+                          <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
+                            <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
                             {weeklyCalendarDays.map((day) => (
-                              <div key={day.toISOString()} className={`border-b border-l px-0.5 py-1 text-center text-[10px] font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                              <div key={day.toISOString()} className={`border-b border-l px-1 py-1.5 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
                                 <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
-                                <span className="block leading-none">{format(day, 'd/M')}</span>
+                                <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
                               </div>
                             ))}
 
                               {calendarTimeSlots.map((slotMinute) => (
                                 <React.Fragment key={slotMinute}>
-                                  <div className="border-b border-l px-1 py-0.5 text-[10px] text-gray-500 bg-gray-50">
+                                  <div className="border-b border-l px-1.5 py-1 text-xs text-gray-500 bg-gray-50">
                                     {toTimeString(slotMinute)}
                                   </div>
                                   {weeklyCalendarDays.map((day) => {
@@ -2657,7 +2681,7 @@ const extractRecurringSchedules = (client) => {
                                     return (
                                       <div
                                         key={`${dayKey}-${slotMinute}`}
-                                        className={`border-b border-l min-h-9 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        className={`border-b border-l min-h-12 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
                                         onDragOver={(e) => e.preventDefault()}
                                         onDrop={() => {
                                           if (!draggedAppointmentId) return;
@@ -2678,10 +2702,10 @@ const extractRecurringSchedules = (client) => {
                                               client_phone: displayInfo?.phone || apt.client_phone,
                                               client: displayInfo?.client || apt.client,
                                             })}
-                                            className="w-full rounded-md bg-black text-white text-right px-1 py-0.5 text-[10px] leading-tight shadow-sm hover:bg-gray-800 transition"
+                                            className="w-full rounded-md bg-black text-white text-right px-1.5 py-1 text-xs leading-tight shadow-sm hover:bg-gray-800 transition"
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
-                                            <div className="opacity-80 truncate">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                            <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                           </button>
                                         ) : null}
                                       </div>

@@ -48,6 +48,19 @@ export const rateLimitConfig = {
         failedLockThreshold: toInt(process.env.RATE_LIMIT_ADMIN_VERIFY_FAILED_THRESHOLD, 10),
         failedLockSec: toInt(process.env.RATE_LIMIT_ADMIN_VERIFY_FAILED_LOCK_SEC, 300),
     },
+    pushSubscribe: {
+        ipLimit: toInt(process.env.RATE_LIMIT_PUSH_SUBSCRIBE_IP_LIMIT, 20),
+        ipWindowSec: toInt(process.env.RATE_LIMIT_PUSH_SUBSCRIBE_IP_WINDOW_SEC, 300),
+        phoneLimit: toInt(process.env.RATE_LIMIT_PUSH_SUBSCRIBE_PHONE_LIMIT, 10),
+        phoneWindowSec: toInt(process.env.RATE_LIMIT_PUSH_SUBSCRIBE_PHONE_WINDOW_SEC, 300),
+    },
+    pushUnsubscribe: {
+        ipLimit: toInt(process.env.RATE_LIMIT_PUSH_UNSUBSCRIBE_IP_LIMIT, 20),
+        ipWindowSec: toInt(process.env.RATE_LIMIT_PUSH_UNSUBSCRIBE_IP_WINDOW_SEC, 300),
+        phoneLimit: toInt(process.env.RATE_LIMIT_PUSH_UNSUBSCRIBE_PHONE_LIMIT, 10),
+        phoneWindowSec: toInt(process.env.RATE_LIMIT_PUSH_UNSUBSCRIBE_PHONE_WINDOW_SEC, 300),
+    },
+
 };
 
 export const normalizePhoneKey = (input: unknown): string => normalizePhone(String(input ?? '')) || '';

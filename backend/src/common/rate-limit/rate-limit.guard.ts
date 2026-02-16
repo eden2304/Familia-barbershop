@@ -134,6 +134,20 @@ export class RateLimitGuard implements CanActivate {
             ];
         }
 
+        if (policy === 'push-subscribe') {
+            return [
+                { key: `push-subscribe:ip:${ip}`, limit: rateLimitConfig.pushSubscribe.ipLimit, windowSec: rateLimitConfig.pushSubscribe.ipWindowSec, maskedPhone, maskedIp },
+                ...(phone ? [{ key: `push-subscribe:phone:${phone}`, limit: rateLimitConfig.pushSubscribe.phoneLimit, windowSec: rateLimitConfig.pushSubscribe.phoneWindowSec, maskedPhone, maskedIp }] : []),
+            ];
+        }
+
+        if (policy === 'push-unsubscribe') {
+            return [
+                { key: `push-unsubscribe:ip:${ip}`, limit: rateLimitConfig.pushUnsubscribe.ipLimit, windowSec: rateLimitConfig.pushUnsubscribe.ipWindowSec, maskedPhone, maskedIp },
+                ...(phone ? [{ key: `push-unsubscribe:phone:${phone}`, limit: rateLimitConfig.pushUnsubscribe.phoneLimit, windowSec: rateLimitConfig.pushUnsubscribe.phoneWindowSec, maskedPhone, maskedIp }] : []),
+            ];
+        }
+
         return [{ key: `global:ip:${ip}`, limit: rateLimitConfig.global.limit, windowSec: rateLimitConfig.global.windowSec, maskedPhone, maskedIp }];
     }
 }

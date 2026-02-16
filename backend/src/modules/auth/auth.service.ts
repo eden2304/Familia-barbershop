@@ -22,6 +22,7 @@ import {
 } from '../../common/security.utils';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { AdminUpdatesService, AdminUpdateEvent } from '../push/admin-updates.service';
 
 
 interface OtpRecord {
@@ -36,18 +37,7 @@ interface OtpMeta {
     lockedUntil?: number;
 }
 
-interface AdminUpdateEvent {
-    type: 'login' | 'visit_no_booking' | 'booking';
-    message: string;
-    color: 'neutral' | 'red' | 'green';
-    clientName: string;
-    clientId?: number;
-    createdAt: string;
-    appointment?: {
-        startsAt?: string;
-        serviceName?: string;
-    };
-}
+
 
 
 interface PendingNoBookingEvent {
@@ -84,6 +74,7 @@ export class AuthService {
         private readonly configService: ConfigService,
         private readonly jwt: JwtService,
         private readonly whatsAppService: WhatsAppService,
+        private readonly adminUpdatesService: AdminUpdatesService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
@@ -379,16 +370,7 @@ export class AuthService {
     }
 
     private async appendAdminUpdate(event: AdminUpdateEvent) {
-        const key = this.adminUpdatesFeedKey;
-        const existing = await this.settingRepo.findOne({ where: { key } });
-        const current = Array.isArray(existing?.value) ? existing.value : [];
-        const next = [event, ...current].slice(0, 300);
-        if (existing) {
-            existing.value = next;
-            await this.settingRepo.save(existing);
-            return;
-        }
-        await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
+        await this.adminUpdatesService.append(event);
     }
 
 

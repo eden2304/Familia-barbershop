@@ -23,6 +23,7 @@ import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { Setting } from '../../entities/setting.entity';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { AdminUpdatesService, AdminUpdateEvent } from '../push/admin-updates.service';
 
 import { DateTime } from 'luxon';
 const TZ = 'Asia/Jerusalem';
@@ -51,18 +52,7 @@ interface MemberWindow {
 }
 
 
-interface AdminUpdateEvent {
-    type: 'login' | 'visit_no_booking' | 'booking';
-    message: string;
-    color: 'neutral' | 'red' | 'green';
-    clientName: string;
-    clientId?: number;
-    createdAt: string;
-    appointment?: {
-        startsAt?: string;
-        serviceName?: string;
-    };
-}
+
 
 const DEFAULT_BOOKING_RULES: BookingRules = {
     publicMaxAdvanceDays: 7,
@@ -83,6 +73,7 @@ export class AppointmentsService {
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
         private readonly whatsappService: WhatsAppService,
+        private readonly adminUpdatesService: AdminUpdatesService,
     ) {}
 
     private clampAdvanceDays(value: any, fallback: number): number {
@@ -496,7 +487,6 @@ export class AppointmentsService {
     }
 
     private async appendBookingAdminUpdate(appointment: Appointment) {
-        const key = 'admin.updates.feed';
         const apptClient: any = appointment.client as any;
         const firstName = String(apptClient?.firstName ?? apptClient?.first_name ?? '').trim();
         const lastName = String(apptClient?.lastName ?? apptClient?.last_name ?? '').trim();
@@ -519,15 +509,7 @@ export class AppointmentsService {
             },
         };
 
-        const existing = await this.settingsRepo.findOne({ where: { key } });
-        const current = Array.isArray(existing?.value) ? existing.value : [];
-        const next = [event, ...current].slice(0, 300);
-        if (existing) {
-            existing.value = next;
-            await this.settingsRepo.save(existing);
-            return;
-        }
-        await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
+        await this.adminUpdatesService.append(event);
     }
 
     private israelOffsetForDate(dateStr: string): string {

@@ -273,6 +273,10 @@ export default function Admin() { // Removed props
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
   const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushHint, setPushHint] = useState('');
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
@@ -396,6 +400,11 @@ export default function Admin() { // Removed props
       setIsCodeVerified(true);
       setIsAuthenticated(true);
       loadData();
+    }
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab && navItems.some((item) => item.id === tab)) {
+      setActiveTab(tab);
     }
   }, []);
 
@@ -689,6 +698,93 @@ export default function Admin() { // Removed props
       .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
   };
 
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i += 1) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const refreshPushStatus = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushSupported(false);
+      setPushEnabled(false);
+      setPushHint('הדפדפן לא תומך בהתראות Web Push.');
+      return;
+    }
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (!isStandalone) {
+      setPushSupported(false);
+      setPushEnabled(false);
+      setPushHint('באייפון יש להוסיף למסך הבית לפני הפעלת התראות.');
+      return;
+    }
+
+    setPushSupported(true);
+    setPushHint('');
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager.getSubscription();
+    setPushEnabled(Boolean(subscription));
+  };
+
+  const handleEnablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast({ title: 'נדרשת הרשאה להתראות', variant: 'destructive' });
+        return;
+      }
+
+      const vapidRes = await api.get('/push/vapid-public-key');
+      const vapidPublicKey = String(vapidRes?.publicKey || '');
+      if (!vapidPublicKey) {
+        throw new Error('Missing VAPID public key');
+      }
+
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+
+      await api.post('/admin/push/subscribe', { subscription });
+      setPushEnabled(true);
+      toast({ title: 'התראות הופעלו בהצלחה' });
+    } catch (error) {
+      console.error('Failed to enable push notifications', error);
+      toast({ title: 'הפעלת התראות נכשלה', description: 'נסה שוב בעוד רגע.', variant: 'destructive' });
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleDisablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription) {
+        await api.post('/admin/push/unsubscribe', { endpoint: subscription.endpoint });
+        await subscription.unsubscribe();
+      }
+      setPushEnabled(false);
+      toast({ title: 'התראות כובו' });
+    } catch (error) {
+      console.error('Failed to disable push notifications', error);
+      toast({ title: 'כיבוי התראות נכשל', variant: 'destructive' });
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   const loadAdminUpdates = async ({ withSpinner = false } = {}) => {
     if (withSpinner) setIsRefreshingUpdates(true);
     const startedAt = Date.now();
@@ -805,6 +901,12 @@ export default function Admin() { // Removed props
       loadAdminUpdates().catch(() => undefined);
     }, 30_000);
     return () => clearInterval(intervalId);
+  }, [isAuthenticated, activeTab]);
+
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    refreshPushStatus().catch(() => undefined);
   }, [isAuthenticated, activeTab]);
 
   const sanitizeTimeInput = (value) => {
@@ -2740,6 +2842,23 @@ const extractRecurringSchedules = (client) => {
                           </div>
                         </CardHeader>
                         <CardContent>
+                          <div className="mb-3 rounded-xl border border-gray-200 p-3 bg-gray-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">התראות מנהל (PWA)</p>
+                                <p className="text-xs text-gray-500">התראות נשלחות רק בעת יצירת עדכון חדש במסך זה.</p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={pushBusy || !pushSupported}
+                                onClick={pushEnabled ? handleDisablePush : handleEnablePush}
+                              >
+                                {pushBusy ? 'מעדכן…' : (pushEnabled ? 'Disable notifications' : 'Enable notifications')}
+                              </Button>
+                            </div>
+                            {pushHint && <p className="text-xs text-amber-700 mt-2">{pushHint}</p>}
+                          </div>
                           <div
                             ref={updatesListRef}
                             className="max-h-[65vh] overflow-y-auto space-y-2 pr-1"

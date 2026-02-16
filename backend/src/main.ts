@@ -23,6 +23,8 @@ function securityHeaders(req: Request, res: Response, next: NextFunction) {
     next();
 }
 
+
+
 async function resolveBlockedTimesPruneSql(ds: DataSource): Promise<string> {
     const rows = await ds.query(
         "SELECT column_name FROM information_schema.columns WHERE table_name = 'blocked_times' ORDER BY ordinal_position",
@@ -102,6 +104,21 @@ async function bootstrap() {
     });
 
     app.use(securityHeaders);
+    app.use('/uploads/Familia.png', (req, res, next) => {
+        const candidates = [
+            path.resolve(process.cwd(), '../server/uploads/Familia.png'),
+            path.resolve(process.cwd(), 'server/uploads/Familia.png'),
+            path.resolve(process.cwd(), 'src/images/Familia.png'),
+            path.resolve(process.cwd(), 'uploads/Familia.png'),
+        ];
+        const familiaIconPath = candidates.find((candidate) => fs.existsSync(candidate));
+        if (!familiaIconPath) {
+            return next();
+        }
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.sendFile(familiaIconPath);
+    });
     app.useStaticAssets(uploadDir, {
         prefix: '/uploads',
         setHeaders: (res, filePath) => {

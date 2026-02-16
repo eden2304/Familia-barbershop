@@ -25,6 +25,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { WaitingListModule } from './modules/waiting-list/waiting-list.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
     imports: [
@@ -58,6 +59,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
         ClientsModule,
         WaitingListModule,
         RateLimitModule,
+        PushModule,
     ],
 })
 export class AppModule {}

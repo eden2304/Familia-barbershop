@@ -1193,9 +1193,17 @@ const extractRecurringSchedules = (client) => {
     return slots;
   }, [calendarBounds]);
 
+  const canDragAppointmentInCalendar = React.useCallback((appointment) => {
+    if (!appointment) return false;
+    if (appointment.status === 'canceled' || appointment.status === 'blocked' || appointment.status === 'completed') return false;
+    const endAt = new Date(appointment.ends_at ?? appointment.endsAt);
+    if (Number.isNaN(endAt.getTime())) return false;
+    return isAfter(endAt, new Date());
+  }, []);
+
   const handleCalendarDrop = (appointmentId, dayDate, slotMinute) => {
-    const appointment = appointments.find((apt) => String(apt.id) === String(appointmentId));
-    if (!appointment) return;
+    const appointment = (weeklyAppointmentsData || []).find((apt) => String(apt.id) === String(appointmentId));
+    if (!appointment || !canDragAppointmentInCalendar(appointment)) return;
     const currentStart = new Date(appointment.starts_at);
     const durationMinutes = Math.max(
         30,
@@ -2678,11 +2686,15 @@ const extractRecurringSchedules = (client) => {
                                         new Date(item.starts_at).getHours() * 60 + new Date(item.starts_at).getMinutes() === slotMinute
                                     ));
                                     const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
+                                    const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
                                     return (
                                       <div
                                         key={`${dayKey}-${slotMinute}`}
                                         className={`border-b border-l min-h-12 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
-                                        onDragOver={(e) => e.preventDefault()}
+                                        onDragOver={(e) => {
+                                          if (!draggedAppointmentId) return;
+                                          e.preventDefault();
+                                        }}
                                         onDrop={() => {
                                           if (!draggedAppointmentId) return;
                                           handleCalendarDrop(draggedAppointmentId, day, slotMinute);
@@ -2692,8 +2704,14 @@ const extractRecurringSchedules = (client) => {
                                         {apt ? (
                                           <button
                                             type="button"
-                                            draggable
-                                            onDragStart={() => setDraggedAppointmentId(apt.id)}
+                                            draggable={isDraggableApt}
+                                            onDragStart={(event) => {
+                                              if (!isDraggableApt) {
+                                                event.preventDefault();
+                                                return;
+                                              }
+                                              setDraggedAppointmentId(apt.id);
+                                            }}
                                             onDragEnd={() => setDraggedAppointmentId(null)}
                                             onClick={() => setSelectedAppointment({
                                               ...apt,
@@ -2702,10 +2720,13 @@ const extractRecurringSchedules = (client) => {
                                               client_phone: displayInfo?.phone || apt.client_phone,
                                               client: displayInfo?.client || apt.client,
                                             })}
-                                            className="w-full rounded-md bg-black text-white text-right px-1.5 py-1 text-xs leading-tight shadow-sm hover:bg-gray-800 transition"
+                                            className={`w-full rounded-md text-right px-1.5 py-1 text-xs leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                             <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                            {!isDraggableApt && (
+                                              <div className="opacity-75 truncate text-[10px]">לא ניתן לגרור תור שעבר</div>
+                                            )}
                                           </button>
                                         ) : null}
                                       </div>

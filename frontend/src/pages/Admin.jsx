@@ -2479,36 +2479,38 @@ const extractRecurringSchedules = (client) => {
                         </div>
                       </div>
 
-                      <div className="mb-4">
-                        <h3 className="text-lg font-bold text-gray-800 mb-3 px-1">בחר יום</h3>
-                        <div ref={dayStripRef2} dir="rtl"
-                             className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
+                      {appointmentsViewMode === 'list' && (
+                        <div className="mb-4">
+                          <h3 className="text-lg font-bold text-gray-800 mb-3 px-1">בחר יום</h3>
+                          <div ref={dayStripRef2} dir="rtl"
+                               className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
 
-                          {daysForPicker.map((day, index) => {
-                            const isSelected = isSameDay(day, selectedDate);
-                            const isSaturday = day.getDay() === 6;
-                            return (
-                                <div key={index} data-day-index={index} className="flex-shrink-0 snap-center">
-                                  <button
-                                      onClick={() => !isSaturday && setSelectedDate(day)}
-                                      disabled={isSaturday}
-                                      aria-disabled={isSaturday}
-                                      title={isSaturday ? "שבת - אין תורים" : ""}
-                                      className={`flex flex-col items-center justify-center w-14 h-16 rounded-2xl transition-all duration-200 ${
-                                          isSaturday
-                                              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                              : (isSelected ? 'bg-black text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-50')
-                                      }`}
-                                  >
+                            {daysForPicker.map((day, index) => {
+                              const isSelected = isSameDay(day, selectedDate);
+                              const isSaturday = day.getDay() === 6;
+                              return (
+                                  <div key={index} data-day-index={index} className="flex-shrink-0 snap-center">
+                                    <button
+                                        onClick={() => !isSaturday && setSelectedDate(day)}
+                                        disabled={isSaturday}
+                                        aria-disabled={isSaturday}
+                                        title={isSaturday ? "שבת - אין תורים" : ""}
+                                        className={`flex flex-col items-center justify-center w-14 h-16 rounded-2xl transition-all duration-200 ${
+                                            isSaturday
+                                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                                : (isSelected ? 'bg-black text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-50')
+                                        }`}
+                                    >
 
-                                    <span className="text-xs font-medium">{format(day, 'E', {locale: he})}</span>
-                                    <span className="text-lg font-bold">{format(day, 'd')}</span>
-                                  </button>
-                                </div>
-                            );
-                          })}
+                                      <span className="text-xs font-medium">{format(day, 'E', {locale: he})}</span>
+                                      <span className="text-lg font-bold">{format(day, 'd')}</span>
+                                    </button>
+                                  </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {appointmentsViewMode === 'list' ? (
                         <>
@@ -2630,19 +2632,19 @@ const extractRecurringSchedules = (client) => {
                           )}
                         </>
                       ) : (
-                        <div className="rounded-2xl bg-white border shadow-sm overflow-auto">
-                          <div className="min-w-[980px]">
-                            <div className="grid" style={{ gridTemplateColumns: '70px repeat(7, minmax(0, 1fr))' }}>
-                              <div className="border-b border-l p-2 bg-gray-50 text-xs text-gray-500">שעה</div>
-                              {weeklyCalendarDays.map((day) => (
-                                <div key={day.toISOString()} className={`border-b border-l p-2 text-center text-sm font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
-                                  <button type="button" className="hover:underline" onClick={() => setSelectedDate(day)}>{format(day, 'EEE d/M', { locale: he })}</button>
-                                </div>
-                              ))}
+                        <div className="rounded-2xl bg-white border shadow-sm">
+                          <div className="grid w-full" style={{ gridTemplateColumns: '44px repeat(7, minmax(0, 1fr))' }}>
+                            <div className="border-b border-l px-1 py-1 bg-gray-50 text-[10px] text-gray-500">שעה</div>
+                            {weeklyCalendarDays.map((day) => (
+                              <div key={day.toISOString()} className={`border-b border-l px-0.5 py-1 text-center text-[10px] font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                                <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
+                                <span className="block leading-none">{format(day, 'd/M')}</span>
+                              </div>
+                            ))}
 
                               {calendarTimeSlots.map((slotMinute) => (
                                 <React.Fragment key={slotMinute}>
-                                  <div className="border-b border-l p-2 text-xs text-gray-500 bg-gray-50">
+                                  <div className="border-b border-l px-1 py-0.5 text-[10px] text-gray-500 bg-gray-50">
                                     {toTimeString(slotMinute)}
                                   </div>
                                   {weeklyCalendarDays.map((day) => {
@@ -2655,7 +2657,7 @@ const extractRecurringSchedules = (client) => {
                                     return (
                                       <div
                                         key={`${dayKey}-${slotMinute}`}
-                                        className={`border-b border-l min-h-14 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        className={`border-b border-l min-h-9 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
                                         onDragOver={(e) => e.preventDefault()}
                                         onDrop={() => {
                                           if (!draggedAppointmentId) return;
@@ -2676,10 +2678,10 @@ const extractRecurringSchedules = (client) => {
                                               client_phone: displayInfo?.phone || apt.client_phone,
                                               client: displayInfo?.client || apt.client,
                                             })}
-                                            className="w-full rounded-lg bg-black text-white text-right px-2 py-1 text-xs shadow hover:bg-gray-800 transition"
+                                            className="w-full rounded-md bg-black text-white text-right px-1 py-0.5 text-[10px] leading-tight shadow-sm hover:bg-gray-800 transition"
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
-                                            <div className="opacity-80 truncate">{format(new Date(apt.starts_at), 'HH:mm')} - {format(new Date(apt.ends_at), 'HH:mm')}</div>
+                                            <div className="opacity-80 truncate">{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                           </button>
                                         ) : null}
                                       </div>
@@ -2688,9 +2690,8 @@ const extractRecurringSchedules = (client) => {
                                 </React.Fragment>
                               ))}
                             </div>
-                          </div>
-                          <div className="p-3 text-xs text-gray-500 border-t">
-                            גרור תור לקובייה אחרת ולאחר מכן אשר את השינוי בחלונית האישור.
+                          <div className="p-2 text-[11px] text-gray-500 border-t">
+                            גרור תור לקובייה אחרת ואז לחץ אישור כדי לעדכן את השעה/היום.
                           </div>
                         </div>
                       )}

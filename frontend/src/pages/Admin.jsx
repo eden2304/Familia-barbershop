@@ -68,6 +68,8 @@ import {
   FileSpreadsheet,
   Bell,
   Loader2,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -380,6 +382,10 @@ export default function Admin() { // Removed props
   const [showMembersOnlyClients, setShowMembersOnlyClients] = useState(false);
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
+  const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
+  const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
+  const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -1109,6 +1115,112 @@ const extractRecurringSchedules = (client) => {
             isSameDay(new Date(apt.starts_at), date)
         )
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+  };
+
+  const weeklyCalendarStart = useMemo(
+      () => startOfWeek(selectedDate, { weekStartsOn: 0 }),
+      [selectedDate]
+  );
+
+  const weeklyCalendarDays = useMemo(
+      () => Array.from({ length: 7 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
+      [weeklyCalendarStart]
+  );
+
+  const weeklyAppointments = useMemo(() => {
+    const weekStart = startOfDay(weeklyCalendarStart);
+    const weekEnd = addDays(weekStart, 7);
+    return (appointments || [])
+        .filter((apt) => {
+          if (apt.status === 'canceled' || apt.status === 'blocked') return false;
+          const start = new Date(apt.starts_at);
+          return start >= weekStart && start < weekEnd;
+        })
+        .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+  }, [appointments, weeklyCalendarStart]);
+
+  const calendarBounds = useMemo(() => {
+    const fallbackStart = 8 * 60;
+    const fallbackEnd = 21 * 60;
+    const opens = (businessHours || [])
+        .map((row) => toMinutes(row?.open || row?.opens_at || row?.open_time))
+        .filter((val) => Number.isFinite(val));
+    const closes = (businessHours || [])
+        .map((row) => toMinutes(row?.close || row?.closes_at || row?.close_time))
+        .filter((val) => Number.isFinite(val));
+
+    const minOpen = opens.length ? Math.min(...opens) : fallbackStart;
+    const maxClose = closes.length ? Math.max(...closes) : fallbackEnd;
+
+    const startMinutes = Math.max(0, Math.floor(minOpen / 30) * 30);
+    const endMinutes = Math.min(24 * 60, Math.ceil(maxClose / 30) * 30 + 30);
+    return {
+      startMinutes,
+      endMinutes: endMinutes > startMinutes ? endMinutes : startMinutes + 30,
+      slotMinutes: 30,
+    };
+  }, [businessHours]);
+
+  const calendarTimeSlots = useMemo(() => {
+    const slots = [];
+    for (let minute = calendarBounds.startMinutes; minute < calendarBounds.endMinutes; minute += calendarBounds.slotMinutes) {
+      slots.push(minute);
+    }
+    return slots;
+  }, [calendarBounds]);
+
+  const handleCalendarDrop = (appointmentId, dayDate, slotMinute) => {
+    const appointment = appointments.find((apt) => String(apt.id) === String(appointmentId));
+    if (!appointment) return;
+    const currentStart = new Date(appointment.starts_at);
+    const durationMinutes = Math.max(
+        30,
+        Math.round((new Date(appointment.ends_at).getTime() - currentStart.getTime()) / 60000) ||
+        Number(appointment?.duration_minutes ?? appointment?.service_duration_minutes ?? appointment?.duration ?? 30)
+    );
+    const nextStart = setMinutes(setHours(startOfDay(dayDate), Math.floor(slotMinute / 60)), slotMinute % 60);
+    const nextEnd = addMinutes(nextStart, durationMinutes);
+    setPendingCalendarMove({
+      appointmentId: appointment.id,
+      clientName: getAppointmentDisplayInfo(appointment).name,
+      fromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
+      toLabel: format(nextStart, 'EEE dd/MM HH:mm', { locale: he }),
+      newStart: nextStart,
+      newEnd: nextEnd,
+    });
+  };
+
+  const submitCalendarMove = async () => {
+    if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
+    try {
+      setIsSavingCalendarMove(true);
+      if (AdminApi?.reschedule) {
+        await AdminApi.reschedule(
+            pendingCalendarMove.appointmentId,
+            pendingCalendarMove.newStart.toISOString(),
+            pendingCalendarMove.newEnd.toISOString()
+        );
+      } else if (AdminApi?.appointments?.reschedule) {
+        await AdminApi.appointments.reschedule(
+            pendingCalendarMove.appointmentId,
+            pendingCalendarMove.newStart.toISOString(),
+            pendingCalendarMove.newEnd.toISOString()
+        );
+      } else {
+        await Appointment.update(pendingCalendarMove.appointmentId, {
+          starts_at: pendingCalendarMove.newStart.toISOString(),
+          ends_at: pendingCalendarMove.newEnd.toISOString(),
+        });
+      }
+      toast({ title: 'התור עודכן בהצלחה' });
+      setPendingCalendarMove(null);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to move appointment from weekly calendar', error);
+      toast({ title: 'העברת התור נכשלה', description: 'נסה שוב בעוד רגע.', variant: 'destructive' });
+    } finally {
+      setIsSavingCalendarMove(false);
+    }
   };
 
   const getWaitingListForDay = (date) => {
@@ -2341,8 +2453,30 @@ const extractRecurringSchedules = (client) => {
 
                 {!showWaitingListView && activeTab === 'appointments' && (
                     <div className="space-y-6 relative">
-                      <div className="flex items-center gap-3 mb-4">
+                      <div className="flex items-center justify-between gap-3 mb-4">
                         <h2 className="text-2xl font-bold text-gray-800">ניהול תורים</h2>
+                        <div className="inline-flex items-center rounded-xl bg-gray-100 p-1">
+                          <Button
+                              type="button"
+                              size="sm"
+                              variant={appointmentsViewMode === 'list' ? 'default' : 'ghost'}
+                              className="gap-1.5"
+                              onClick={() => setAppointmentsViewMode('list')}
+                          >
+                            <List className="w-4 h-4" />
+                            רשימה
+                          </Button>
+                          <Button
+                              type="button"
+                              size="sm"
+                              variant={appointmentsViewMode === 'calendar' ? 'default' : 'ghost'}
+                              className="gap-1.5"
+                              onClick={() => setAppointmentsViewMode('calendar')}
+                          >
+                            <LayoutGrid className="w-4 h-4" />
+                            יומן שבועי
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="mb-4">
@@ -2376,122 +2510,189 @@ const extractRecurringSchedules = (client) => {
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        {getAppointmentsForDay(selectedDate).length > 0 ? (
-                            getAppointmentsForDay(selectedDate).map(apt => {
-                              const service = serviceById(apt.service_id)
-                              const isCompleted = apt.status === 'completed';
-                              const isBlocked = apt.status === 'blocked';
-                              const passed = isAfter(new Date(), new Date(apt.ends_at));
-                              const displayInfo = getAppointmentDisplayInfo(apt);
-                              const displayName = isBlocked ? 'חסום' : displayInfo.name;
-                              const selectedData = {
-                                ...apt,
-                                client_name: displayName,
-                                clientName: displayName, // לשכבות/קומפוננטות שמחפשות camelCase
-                                client_phone: isBlocked ? '' : displayInfo.phone,
-                                client: displayInfo.client || apt.client,
-                              };
-                              return (
-                                  <motion.div
-                                      key={apt.id}
-                                      initial={{ opacity: 0, y: 20 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      exit={{ opacity: 0 }}
-                                      onClick={() =>
-                                          setSelectedAppointment(selectedData)
-                                      }
-                                      className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
-                                  >
-                                    <div className="text-center w-20">
-                                      <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {format(new Date(apt.starts_at), 'HH:mm')}
-                                      </p>
-                                      <p className="text-xs text-gray-500">עד</p>
-                                      <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {format(new Date(apt.ends_at), 'HH:mm')}
-                                      </p>
-                                    </div>
-                                    <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
-                                    <div className="flex-1">
-                                      <h4 className={`font-bold text-gray-900 ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {displayName}
-                                      </h4>
-                                      <p className="text-sm text-gray-600">{serviceName({...apt, service})}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectedAppointment(selectedData);
-                                            }}>
-                                      <MoreVertical className="w-5 h-5" />
-                                    </Button>
-                                  </motion.div>
-                              );
-                            })
-                        ) : (
-                            <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-                              <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                              <h4 className="text-lg font-semibold text-gray-700">אין תורים להיום</h4>
-                              <p className="text-gray-500 text-sm">אפשר לקחת יום חופש :)</p>
-                            </div>
-                        )}
-                      </div>
-
-                      {/* חסימות פעילות ליום הנבחר בלבד */}
-                      {blocksForSelectedDay.length > 0 && (
-                          <div className="mt-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-sm font-semibold text-gray-800">חסימות פעילות</h4>
-                              <Button variant="outline" size="sm" onClick={reloadBlocks}>רענון</Button>
-                            </div>
-
-                            <div className="space-y-2">
-                              {blocksForSelectedDay.map((blk) => {
-                                const s = new Date(blk.start_at || blk.startAt || blk.startsAt);
-                                const e = new Date(blk.end_at || blk.endAt || blk.endsAt);
-                                const reason = blk.reason || "";
-                                return (
-                                    <div
-                                        key={blk.id}
-                                        className="flex items-center justify-between bg-white rounded-2xl px-3 py-2 shadow-sm border"
-                                    >
-                                      <div className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100">
-                <Ban className="w-3.5 h-3.5 text-red-600" />
-              </span>
-                                        <div className="text-xs">
-                                          <div className="font-semibold text-gray-900">
-                                            {format(s, "HH:mm")} – {format(e, "HH:mm")}
-                                          </div>
-                                          {reason ? (
-                                              <div className="text-gray-500">{reason}</div>
-                                          ) : null}
-                                        </div>
-                                      </div>
-
-                                      <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                          onClick={async () => {
-                                            if (!confirm("לבטל את החסימה הזו?")) return;
-                                            try {
-                                              await AdminApi.blocks.remove(blk.id);
-                                              await reloadBlocks();
-                                            } catch (err) {
-                                              console.error("failed to remove block", err);
-                                              alert("שגיאה בביטול החסימה");
-                                            }
-                                          }}
+                      {appointmentsViewMode === 'list' ? (
+                        <>
+                          <div className="space-y-3">
+                            {getAppointmentsForDay(selectedDate).length > 0 ? (
+                                getAppointmentsForDay(selectedDate).map(apt => {
+                                  const service = serviceById(apt.service_id)
+                                  const isCompleted = apt.status === 'completed';
+                                  const isBlocked = apt.status === 'blocked';
+                                  const passed = isAfter(new Date(), new Date(apt.ends_at));
+                                  const displayInfo = getAppointmentDisplayInfo(apt);
+                                  const displayName = isBlocked ? 'חסום' : displayInfo.name;
+                                  const selectedData = {
+                                    ...apt,
+                                    client_name: displayName,
+                                    clientName: displayName,
+                                    client_phone: isBlocked ? '' : displayInfo.phone,
+                                    client: displayInfo.client || apt.client,
+                                  };
+                                  return (
+                                      <motion.div
+                                          key={apt.id}
+                                          initial={{ opacity: 0, y: 20 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          exit={{ opacity: 0 }}
+                                          onClick={() =>
+                                              setSelectedAppointment(selectedData)
+                                          }
+                                          className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
                                       >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                );
-                              })}
+                                        <div className="text-center w-20">
+                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {format(new Date(apt.starts_at), 'HH:mm')}
+                                          </p>
+                                          <p className="text-xs text-gray-500">עד</p>
+                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {format(new Date(apt.ends_at), 'HH:mm')}
+                                          </p>
+                                        </div>
+                                        <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
+                                        <div className="flex-1">
+                                          <h4 className={`font-bold text-gray-900 ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {displayName}
+                                          </h4>
+                                          <p className="text-sm text-gray-600">{serviceName({...apt, service})}</p>
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedAppointment(selectedData);
+                                                }}>
+                                          <MoreVertical className="w-5 h-5" />
+                                        </Button>
+                                      </motion.div>
+                                  );
+                                })
+                            ) : (
+                                <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+                                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                  <h4 className="text-lg font-semibold text-gray-700">אין תורים להיום</h4>
+                                  <p className="text-gray-500 text-sm">אפשר לקחת יום חופש :)</p>
+                                </div>
+                            )}
+                          </div>
+
+                          {blocksForSelectedDay.length > 0 && (
+                              <div className="mt-4">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="text-sm font-semibold text-gray-800">חסימות פעילות</h4>
+                                  <Button variant="outline" size="sm" onClick={reloadBlocks}>רענון</Button>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {blocksForSelectedDay.map((blk) => {
+                                    const s = new Date(blk.start_at || blk.startAt || blk.startsAt);
+                                    const e = new Date(blk.end_at || blk.endAt || blk.endsAt);
+                                    const reason = blk.reason || "";
+                                    return (
+                                        <div
+                                            key={blk.id}
+                                            className="flex items-center justify-between bg-white rounded-2xl px-3 py-2 shadow-sm border"
+                                        >
+                                          <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100">
+                    <Ban className="w-3.5 h-3.5 text-red-600" />
+                  </span>
+                                            <div className="text-xs">
+                                              <div className="font-semibold text-gray-900">
+                                                {format(s, "HH:mm")} – {format(e, "HH:mm")}
+                                              </div>
+                                              {reason ? (
+                                                  <div className="text-gray-500">{reason}</div>
+                                              ) : null}
+                                            </div>
+                                          </div>
+
+                                          <Button
+                                              variant="outline"
+                                              size="icon"
+                                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                              onClick={async () => {
+                                                if (!confirm("לבטל את החסימה הזו?")) return;
+                                                try {
+                                                  await AdminApi.blocks.remove(blk.id);
+                                                  await reloadBlocks();
+                                                } catch (err) {
+                                                  console.error("failed to remove block", err);
+                                                  alert("שגיאה בביטול החסימה");
+                                                }
+                                              }}
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="rounded-2xl bg-white border shadow-sm overflow-auto">
+                          <div className="min-w-[980px]">
+                            <div className="grid" style={{ gridTemplateColumns: '70px repeat(7, minmax(0, 1fr))' }}>
+                              <div className="border-b border-l p-2 bg-gray-50 text-xs text-gray-500">שעה</div>
+                              {weeklyCalendarDays.map((day) => (
+                                <div key={day.toISOString()} className={`border-b border-l p-2 text-center text-sm font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                                  <button type="button" className="hover:underline" onClick={() => setSelectedDate(day)}>{format(day, 'EEE d/M', { locale: he })}</button>
+                                </div>
+                              ))}
+
+                              {calendarTimeSlots.map((slotMinute) => (
+                                <React.Fragment key={slotMinute}>
+                                  <div className="border-b border-l p-2 text-xs text-gray-500 bg-gray-50">
+                                    {toTimeString(slotMinute)}
+                                  </div>
+                                  {weeklyCalendarDays.map((day) => {
+                                    const dayKey = format(day, 'yyyy-MM-dd');
+                                    const apt = weeklyAppointments.find((item) => (
+                                        format(new Date(item.starts_at), 'yyyy-MM-dd') === dayKey &&
+                                        new Date(item.starts_at).getHours() * 60 + new Date(item.starts_at).getMinutes() === slotMinute
+                                    ));
+                                    const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
+                                    return (
+                                      <div
+                                        key={`${dayKey}-${slotMinute}`}
+                                        className={`border-b border-l min-h-14 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={() => {
+                                          if (!draggedAppointmentId) return;
+                                          handleCalendarDrop(draggedAppointmentId, day, slotMinute);
+                                          setDraggedAppointmentId(null);
+                                        }}
+                                      >
+                                        {apt ? (
+                                          <button
+                                            type="button"
+                                            draggable
+                                            onDragStart={() => setDraggedAppointmentId(apt.id)}
+                                            onDragEnd={() => setDraggedAppointmentId(null)}
+                                            onClick={() => setSelectedAppointment({
+                                              ...apt,
+                                              client_name: displayInfo?.name || apt.client_name,
+                                              clientName: displayInfo?.name || apt.client_name,
+                                              client_phone: displayInfo?.phone || apt.client_phone,
+                                              client: displayInfo?.client || apt.client,
+                                            })}
+                                            className="w-full rounded-lg bg-black text-white text-right px-2 py-1 text-xs shadow hover:bg-gray-800 transition"
+                                          >
+                                            <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
+                                            <div className="opacity-80 truncate">{format(new Date(apt.starts_at), 'HH:mm')} - {format(new Date(apt.ends_at), 'HH:mm')}</div>
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              ))}
                             </div>
                           </div>
+                          <div className="p-3 text-xs text-gray-500 border-t">
+                            גרור תור לקובייה אחרת ולאחר מכן אשר את השינוי בחלונית האישור.
+                          </div>
+                        </div>
                       )}
 
                       <div className="fixed bottom-24 right-6 z-30">
@@ -3868,6 +4069,28 @@ const extractRecurringSchedules = (client) => {
             }}
             appointments={appointments}
         />
+
+        <Dialog open={Boolean(pendingCalendarMove)} onOpenChange={(open) => {
+          if (!open && !isSavingCalendarMove) setPendingCalendarMove(null);
+        }}>
+          <DialogContent className="max-w-md" aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>אישור שינוי תור</DialogTitle>
+              <DialogDescription>
+                התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+                ביטול
+              </Button>
+              <Button onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+                {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
 
         {selectedAppointment && (
             <AppointmentActionsModal

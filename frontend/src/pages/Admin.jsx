@@ -2746,8 +2746,7 @@ const extractRecurringSchedules = (client) => {
                                             draggable={isDraggableApt}
                                             onDragStart={(event) => {
                                               if (!isDraggableApt) {
-                                                event.preventDefault();
-                                                return;
+                                                  return;
                                               }
                                               setDraggedAppointmentId(apt.id);
                                               startCalendarDragPreview(apt, event);
@@ -2774,7 +2773,6 @@ const extractRecurringSchedules = (client) => {
                                               if (touchPoint) {
                                                 moveCalendarDragPreview(touchPoint);
                                               }
-                                              event.preventDefault();
                                             }}
                                             onTouchEnd={(event) => {
                                               if (!isDraggableApt || !draggedAppointmentId) return;
@@ -2782,6 +2780,10 @@ const extractRecurringSchedules = (client) => {
                                               if (touchPoint) {
                                                 handleCalendarTouchDrop(touchPoint);
                                               }
+                                              setDraggedAppointmentId(null);
+                                              endCalendarDragPreview();
+                                            }}
+                                            onTouchCancel={() => {
                                               setDraggedAppointmentId(null);
                                               endCalendarDragPreview();
                                             }}

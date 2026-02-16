@@ -104,7 +104,7 @@ async function bootstrap() {
     });
 
     app.use(securityHeaders);
-    app.use('/uploads/Familia.png', (req, res, next) => {
+    app.use('../server/uploads/Familia.png', (req, res, next) => {
         const candidates = [
             path.resolve(process.cwd(), '../server/uploads/Familia.png'),
             path.resolve(process.cwd(), 'server/uploads/Familia.png'),

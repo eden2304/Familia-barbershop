@@ -11,12 +11,14 @@ import { ClientsController } from './clients.controller';
 import { Setting } from '../../entities/setting.entity';
 import { AuthModule } from '../auth/auth.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour, Setting]),
         AuthModule,
         WhatsAppModule,
+        PushModule,
     ],
     providers: [AppointmentsService],
     controllers: [AppointmentsController, ClientsController],

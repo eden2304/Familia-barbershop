@@ -8,6 +8,8 @@ export type RateLimitPolicyName =
   | 'booking-available'
   | 'booking-create'
   | 'admin-verify'
+  | 'push-subscribe'
+  | 'push-unsubscribe'
   | 'global';
 
 export const RateLimitPolicy = (policy: RateLimitPolicyName) => SetMetadata(RATE_LIMIT_POLICY_KEY, policy);

@@ -2798,9 +2798,6 @@ const extractRecurringSchedules = (client) => {
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                             <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
-                                            {!isDraggableApt && (
-                                              <div className="opacity-75 truncate text-[10px]">לא ניתן לגרור תור שעבר</div>
-                                            )}
                                           </button>
                                         ) : null}
                                       </div>

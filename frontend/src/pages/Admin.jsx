@@ -4200,11 +4200,11 @@ const extractRecurringSchedules = (client) => {
                 התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="gap-2 sm:gap-2">
-              <Button size="sm" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+            <DialogFooter className="gap-2 items-center sm:items-end">
+              <Button size="sm" className="w-auto min-w-24" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
                 ביטול
               </Button>
-              <Button size="sm" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+              <Button size="sm" className="w-auto min-w-24" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
                 {isSavingCalendarMove ? 'שומר…' : 'אישור'}
               </Button>
             </DialogFooter>

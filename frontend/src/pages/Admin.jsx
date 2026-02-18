@@ -1213,6 +1213,9 @@ const extractRecurringSchedules = (client) => {
     );
     const nextStart = setMinutes(setHours(startOfDay(dayDate), Math.floor(slotMinute / 60)), slotMinute % 60);
     const nextEnd = addMinutes(nextStart, durationMinutes);
+    if (currentStart.getTime() === nextStart.getTime()) {
+      return;
+    }
     setPendingCalendarMove({
       appointmentId: appointment.id,
       clientName: getAppointmentDisplayInfo(appointment).name,

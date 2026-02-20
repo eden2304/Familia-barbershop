@@ -1334,20 +1334,33 @@ const extractRecurringSchedules = (client) => {
     }
 
     let dy = 0;
-    const scrollContainer = mainContentRef.current;
+    const viewportTopEdge = 96; // גובה הנאבבר העליון + מרווח ביטחון
     const viewportBottomEdge = window.innerHeight - 110; // אזור הנאבבר התחתון במובייל
-    const topNavEdge = 92; // גובה הנאבבר העליון + מרווח ביטחון
-    if (point.clientY < rect.top + edge || point.clientY <= topNavEdge) {
-      dy = -12;
-    } else if (point.clientY > rect.bottom - edge || point.clientY > viewportBottomEdge) {
-      dy = 14;
+
+    if (point.clientY <= viewportTopEdge) {
+      dy = -16;
+    } else if (point.clientY >= viewportBottomEdge) {
+      dy = 16;
+    } else if (point.clientY < rect.top + edge) {
+      dy = -10;
+    } else if (point.clientY > rect.bottom - edge) {
+      dy = 12;
     }
+
     if (dy !== 0) {
-      if (scrollContainer) {
-        scrollContainer.scrollBy({ top: dy, behavior: 'auto' });
-      } else {
-        window.scrollBy({ top: dy, behavior: 'auto' });
-      }
+      const scrollTargets = [
+        mainContentRef.current,
+        container.closest('main'),
+        document.scrollingElement,
+      ].filter((target, index, list) => target && list.indexOf(target) === index);
+
+      scrollTargets.forEach((target) => {
+        if (target === document.scrollingElement) {
+          window.scrollBy({ top: dy, behavior: 'auto' });
+        } else {
+          target.scrollBy({ top: dy, behavior: 'auto' });
+        }
+      });
     }
   }, [draggedAppointmentId]);
 

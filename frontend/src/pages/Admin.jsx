@@ -831,25 +831,6 @@ export default function Admin() { // Removed props
   }, [isAuthenticated, selectedDate, appointmentsViewMode]);
 
   useEffect(() => {
-    if (appointmentsViewMode !== 'calendar') return;
-    const container = weeklyCalendarRef.current;
-    if (!container) return;
-
-    const isCurrentWeek = weeklyCalendarStart.getTime() === currentWeekStart.getTime();
-    const focusDate = isCurrentWeek ? new Date() : selectedDate;
-    const focusDayIndex = Math.min(Math.max(focusDate.getDay(), 0), 5); // ראשון-שישי
-
-    const raf = requestAnimationFrame(() => {
-      const target = container.querySelector(`[data-week-day-index="${focusDayIndex}"]`);
-      if (!target || typeof target.scrollIntoView !== 'function') return;
-      target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
-    });
-
-    return () => cancelAnimationFrame(raf);
-  }, [appointmentsViewMode, weeklyCalendarStart, currentWeekStart, selectedDate]);
-
-
-  useEffect(() => {
     if (!isAuthenticated || activeTab !== 'updates') return;
     const intervalId = setInterval(() => {
       loadAdminUpdates().catch(() => undefined);
@@ -1189,6 +1170,24 @@ const extractRecurringSchedules = (client) => {
       () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
   );
+
+  useEffect(() => {
+    if (appointmentsViewMode !== 'calendar') return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+
+    const isCurrentWeek = weeklyCalendarStart.getTime() === currentWeekStart.getTime();
+    const focusDate = isCurrentWeek ? new Date() : selectedDate;
+    const focusDayIndex = Math.min(Math.max(focusDate.getDay(), 0), 5); // ראשון-שישי
+
+    const raf = requestAnimationFrame(() => {
+      const target = container.querySelector(`[data-week-day-index="${focusDayIndex}"]`);
+      if (!target || typeof target.scrollIntoView !== 'function') return;
+      target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [appointmentsViewMode, weeklyCalendarStart, currentWeekStart, selectedDate]);
 
   const weeklyAppointments = useMemo(() => {
     const weekStart = startOfDay(weeklyCalendarStart);

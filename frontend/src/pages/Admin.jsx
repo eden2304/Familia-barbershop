@@ -2729,7 +2729,7 @@ const extractRecurringSchedules = (client) => {
                             שבוע קודם
                           </Button>
                           <div className="text-xs font-semibold text-gray-600">
-                            {format(weeklyCalendarStart, 'dd/MM')} - {format(addDays(weeklyCalendarStart, 5), 'dd/MM')}
+                            {format(addDays(weeklyCalendarStart, 5), 'dd/MM')} - {format(weeklyCalendarStart, 'dd/MM')}
                           </div>
                           <Button type="button" size="sm" variant="outline" className="gap-1" onClick={goToNextWeek}>
                             שבוע הבא

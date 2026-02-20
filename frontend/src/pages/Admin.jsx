@@ -550,6 +550,7 @@ export default function Admin() { // Removed props
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
   const weeklyCalendarRef = React.useRef(null);
+  const mainContentRef = React.useRef(null);
   const touchDragStartRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
@@ -1333,14 +1334,20 @@ const extractRecurringSchedules = (client) => {
     }
 
     let dy = 0;
+    const scrollContainer = mainContentRef.current;
     const viewportBottomEdge = window.innerHeight - 110; // אזור הנאבבר התחתון במובייל
-    if (point.clientY < rect.top + edge) {
-      dy = -10;
+    const topNavEdge = 92; // גובה הנאבבר העליון + מרווח ביטחון
+    if (point.clientY < rect.top + edge || point.clientY <= topNavEdge) {
+      dy = -12;
     } else if (point.clientY > rect.bottom - edge || point.clientY > viewportBottomEdge) {
       dy = 14;
     }
     if (dy !== 0) {
-      window.scrollBy({ top: dy, behavior: 'auto' });
+      if (scrollContainer) {
+        scrollContainer.scrollBy({ top: dy, behavior: 'auto' });
+      } else {
+        window.scrollBy({ top: dy, behavior: 'auto' });
+      }
     }
   }, [draggedAppointmentId]);
 
@@ -2470,7 +2477,7 @@ const extractRecurringSchedules = (client) => {
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+          <main ref={mainContentRef} className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
             <AnimatePresence mode="wait">
               <motion.div
                   key={showWaitingListView ? 'waitingList' : activeTab}

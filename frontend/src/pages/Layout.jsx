@@ -11,6 +11,13 @@ import api from '@/api/base44Client';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
+  const pageHeadingMap = {
+    Home: "ברברשופ Familia",
+    Book: "קביעת תור",
+    MyAppointmentsPage: "התורים שלי",
+    Admin: "ניהול המערכת",
+    Accessibility: "הצהרת נגישות",
+  };
   const { setSidebarOpen } = useSidebar();
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -75,6 +82,7 @@ function MainLayout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900" dir="rtl">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:right-2 focus:bg-white focus:px-3 focus:py-2 focus:rounded">דלג לתוכן הראשי</a>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap');
         * {
@@ -101,7 +109,8 @@ function MainLayout({ children, currentPageName }) {
         {showWelcomeBanner && client && <ClientWelcomeBanner onClose={() => setShowWelcomeBanner(false)} />}
       </AnimatePresence>
 
-      <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none">
+      <header className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none" role="banner">
+      <nav aria-label="ניווט עליון">
         <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
             {isAdmin && currentPageName === 'Admin' ? (
@@ -137,33 +146,38 @@ function MainLayout({ children, currentPageName }) {
           <div className="w-10 h-10" /> 
         </div>
       </nav>
+      </header>
 
-      <main className="main-content">
+      <main id="main-content" className="main-content" role="main" tabIndex={-1}>
+        <h1 className="sr-only">{pageHeadingMap[currentPageName] || "Familia"}</h1>
         {children}
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 z-50">
+      <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 z-50" role="contentinfo">
+        <nav aria-label="ניווט תחתון">
         <div className="flex justify-around items-center py-4 px-4">
-          <Link to="/" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+          <Link to="/" aria-label="בית" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
             <HomeIcon className="w-6 h-6"/>
             <span className="text-xs font-medium">בית</span>
           </Link>
           
-          <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+          <Link to="/MyAppointmentsPage" aria-label="התורים שלי" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
             <History className="w-6 h-6"/>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>
           
-          <a href="https://waze.com/ul?q=הסתדרות%20201%20חולון" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
+          <a href="https://waze.com/ul?q=הסתדרות%20201%20חולון" aria-label="איך מגיעים" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
             <Navigation className="w-6 h-6"/>
             <span className="text-xs font-medium">איך מגיעים</span>
           </a>
           
-          <button onClick={handleCallClick} className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
+          <button onClick={handleCallClick} aria-label="צור קשר" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
             <Phone className="w-6 h-6"/>
             <span className="text-xs font-medium">צור קשר</span>
           </button>
         </div>
+          <Link to="/accessibility" className="sr-only focus:not-sr-only focus:absolute focus:bottom-20 focus:right-4 focus:bg-white focus:px-3 focus:py-2 focus:rounded" aria-label="הצהרת נגישות">הצהרת נגישות</Link>
+        </nav>
       </footer>
     </div>
   );

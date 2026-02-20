@@ -11,6 +11,7 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { useLiveRegion } from '@/components/LiveRegionProvider';
 
 /* ---------------- utils ---------------- */
 const normalizeClientObject = (raw) => {
@@ -102,7 +103,7 @@ const StatusChip = ({ apt }) => {
   const label = pill.label;
   const Icon = label === 'הושלם' ? Check : (label === 'בוטל' ? X : Clock);
   return (
-      <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${pill.className}`}>
+      <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${pill.className}`} role="status" aria-label={`סטטוס: ${label}`}>
         <Icon className="w-3 h-3" /> {label}
       </div>
   );
@@ -112,6 +113,7 @@ const StatusChip = ({ apt }) => {
 /* ---------------- page ---------------- */
 export default function MyAppointmentsPage() {
   const navigate = useNavigate();
+  const { announceAssertive } = useLiveRegion();
   const [client, setClient] = useState(null);
   const [items, setItems] = useState([]);
   const [waitingItems, setWaitingItems] = useState([]);
@@ -119,6 +121,8 @@ export default function MyAppointmentsPage() {
   const [err, setErr] = useState("");
   const [showVerification, setShowVerification] = useState(false);
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+
+  useEffect(() => { if (err) announceAssertive(err); }, [err, announceAssertive]);
 
   if (showPostLoginLoading) {
     return <LoadingScreen />;

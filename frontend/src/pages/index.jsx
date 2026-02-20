@@ -7,8 +7,10 @@ import Book from "./Book.jsx";
 import Admin from "./Admin.jsx";
 
 import MyAppointmentsPage from "./MyAppointmentsPage.jsx";
+import Accessibility from "./Accessibility.jsx";
 
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 
 const PAGES = {
     
@@ -19,6 +21,7 @@ const PAGES = {
     Admin: Admin,
     
     MyAppointmentsPage: MyAppointmentsPage,
+    Accessibility: Accessibility,
     
 }
 
@@ -40,6 +43,19 @@ function PagesContent() {
     const location = useLocation();
     const currentPage = _getCurrentPage(location.pathname);
     
+
+    useEffect(() => {
+        const titleMap = {
+            Home: 'בית',
+            Book: 'קביעת תור',
+            Admin: 'ניהול',
+            MyAppointmentsPage: 'התורים שלי',
+            Accessibility: 'הצהרת נגישות',
+        };
+        document.title = `${titleMap[currentPage] || 'Familia'} | Familia`;
+        document.documentElement.lang = 'he';
+        document.documentElement.dir = 'rtl';
+    }, [currentPage]);
     return (
         <Layout currentPageName={currentPage}>
             <Routes>
@@ -51,6 +67,7 @@ function PagesContent() {
                 <Route path="/Admin" element={<Admin />} />
                 
                 <Route path="/MyAppointmentsPage" element={<MyAppointmentsPage />} />
+                <Route path="/accessibility" element={<Accessibility />} />
                 
             </Routes>
         </Layout>

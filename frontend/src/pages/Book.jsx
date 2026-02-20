@@ -17,6 +17,7 @@ import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rule
 // ✅ API החדש
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { useLiveRegion } from '@/components/LiveRegionProvider';
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
 
@@ -181,6 +182,7 @@ function isFutureSlot(dateObj, hhmm) {
 /* ---------------- component ---------------- */
 export default function Book() {
   const navigate = useNavigate();
+  const { announcePolite, announceAssertive } = useLiveRegion();
 
   const [step, setStep] = useState(1);
   const [client, setClient] = useState(null);
@@ -230,6 +232,10 @@ export default function Book() {
   const [selectedWeek, setSelectedWeek] = useState(getInitialWeekOffset());
 
   const [aptsLoading, setAptsLoading] = useState(false);
+
+  useEffect(() => { if (error) announceAssertive(error); }, [error, announceAssertive]);
+  useEffect(() => { if (success) announcePolite("התור נקבע בהצלחה"); }, [success, announcePolite]);
+  useEffect(() => { if (loadingSlots) announcePolite("טוען זמינות תורים"); }, [loadingSlots, announcePolite]);
 
   const clientIsMember = Boolean(client?.isMember ?? client?.is_member);
   const maxAdvanceDays = clientIsMember

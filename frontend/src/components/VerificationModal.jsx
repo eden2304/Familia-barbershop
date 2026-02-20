@@ -6,6 +6,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, UserPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
+import useModalAccessibility from '@/hooks/useModalAccessibility';
+import { useLiveRegion } from '@/components/LiveRegionProvider';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -75,6 +77,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [error, setError] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
   const inputRefs = useRef([]);
+  const modalRef = useRef(null);
+  const { announcePolite, announceAssertive } = useLiveRegion();
+
+  useModalAccessibility({ isOpen: true, containerRef: modalRef, onClose: onCancel });
 
   const resetToHomeAfterOtpExceeded = () => {
     setCode(new Array(4).fill(""));
@@ -102,6 +108,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (view === "loginCode" || view === "registerCode") {
       inputRefs.current[0]?.focus();
       setResendTimer(30);
+      announcePolite("קוד חדש נשלח");
     }
   }, [view]);
 
@@ -121,6 +128,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
   }, [code, view]);
 
   // שליחת קוד מחדש (מכבד את ההקשר: התחברות/הרשמה)
+  useEffect(() => {
+    if (error) announceAssertive(error);
+  }, [error, announceAssertive]);
+
   const handleResendCode = async () => {
     if (resendTimer > 0 || loading) return;
     try {
@@ -150,6 +161,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         }
       }
       setResendTimer(30);
+      announcePolite("קוד חדש נשלח");
     } catch (e) {
       if (e?.status === 409) {
         setError("המספר לא רשום. יש להירשם קודם.");
@@ -395,10 +407,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
     switch (view) {
       case "loginPhone":
         return (
-            <form onSubmit={handlePhoneSubmit} className="text-center">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">התחברות</h3>
+            <form onSubmit={handlePhoneSubmit} className="text-center" aria-label="טופס התחברות">
+              <h3 id="verification-title" className="text-xl font-bold text-gray-900 mb-2">התחברות</h3>
               <p className="text-gray-600 mb-6">הזן את מספר הטלפון שלך</p>
               <Input
+                  id="login-phone"
+                  aria-label="מספר טלפון"
+                  required
                   type="tel"
                   placeholder="05X-XXXXXXX"
                   value={phone}
@@ -436,6 +451,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
                 {code.map((digit, index) => (
                     <Input
                         key={index}
+                        aria-label={`ספרת אימות ${index + 1}`}
                         ref={(el) => (inputRefs.current[index] = el)}
                         type="tel"
                         maxLength="1"
@@ -474,23 +490,29 @@ export default function VerificationModal({ onVerify, onCancel }) {
 
       case "registerForm":
         return (
-            <form onSubmit={handleRegisterSubmit} className="text-center">
+            <form onSubmit={handleRegisterSubmit} className="text-center" aria-label="טופס הרשמה">
               <UserPlus className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-xl font-bold text-gray-900 mb-4">הרשמה</h3>
               <div className="space-y-4 text-right">
                 <Input
+                    aria-label="שם פרטי"
+                    required
                     placeholder="שם פרטי"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
                     className="text-right"
                 />
                 <Input
+                    aria-label="שם משפחה"
+                    required
                     placeholder="שם משפחה"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
                     className="text-right"
                 />
                 <Input
+                    aria-label="מספר טלפון"
+                    required
                     type="tel"
                     placeholder="05X-XXXXXXX"
                     value={phone}
@@ -545,6 +567,9 @@ export default function VerificationModal({ onVerify, onCancel }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verification-title"
             onClick={onCancel}
         >
           <motion.div
@@ -553,6 +578,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
               exit={{ scale: 0.9, y: 50, opacity: 0 }}
               transition={{ duration: 0.3 }}
               onClick={(e) => e.stopPropagation()}
+              ref={modalRef}
+              tabIndex={-1}
               className="w-full max-w-sm bg-white rounded-3xl p-6"
           >
             <AnimatePresence mode="wait">
@@ -564,7 +591,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
                   transition={{ duration: 0.2 }}
               >
                 {error && (
-                    <Alert className="mb-4 border-red-200 bg-red-50 text-center">
+                    <Alert className="mb-4 border-red-200 bg-red-50 text-center" role="alert">
                       <AlertDescription className="text-red-700">
                         {error}
                       </AlertDescription>
@@ -580,6 +607,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
         {showTerms && (
             <div
                 className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100]"
+                role="button"
+                tabIndex={0}
+                aria-label="סגירת חלון התקנון"
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowTerms(false); } }}
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowTerms(false);
@@ -588,6 +619,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
               <div
                   className="bg-white rounded-2xl p-6 max-w-md max-h-[80vh] overflow-y-auto m-4"
                   onClick={(e) => e.stopPropagation()}
+              ref={modalRef}
+              tabIndex={-1}
               >
                 <div className="text-center mb-4">
                   <h3 className="text-xl font-bold text-gray-900">תקנון שימוש</h3>

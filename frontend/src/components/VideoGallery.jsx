@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import useModalAccessibility from "@/hooks/useModalAccessibility";
 import { GalleryImage } from "@/api/entities"; // ← זה ה-export אצלך
 import { X } from "lucide-react";
 
 export default function VideoGallery() {
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
-    const touchStartYRef = useRef(null);
-    const selectedVideoRef = useRef(null);
+  const touchStartYRef = useRef(null);
+  const selectedVideoRef = useRef(null);
+  const modalRef = useRef(null);
+
+  useModalAccessibility({ isOpen: Boolean(selectedVideo), containerRef: modalRef, onClose: () => setSelectedVideo(null) });
 
     useEffect(() => {
         if (!selectedVideo) {
@@ -104,7 +108,9 @@ export default function VideoGallery() {
           {videos.map((video, index) => {
             const src = video.image_url || video.imageUrl || video.video_url || video.videoUrl || video.url || "";
             return (
-                <motion.div
+                <motion.button
+                    type="button"
+                    aria-label={`פתח סרטון ${index + 1}`}
                     key={video.id || index}
                     className="relative flex-shrink-0 w-32 h-52 rounded-2xl overflow-hidden bg-gray-900 shadow-lg cursor-pointer"
                     initial={{ opacity: 0, scale: 0.8 }}
@@ -128,7 +134,7 @@ export default function VideoGallery() {
                         className="w-5 h-5 object-contain"
                     />
                   </div>
-                </motion.div>
+                </motion.button>
             );
           })}
         </div>
@@ -140,6 +146,9 @@ export default function VideoGallery() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="נגן וידאו"
                   onClick={() => setSelectedVideo(null)}
               >
                 <motion.div
@@ -148,6 +157,8 @@ export default function VideoGallery() {
                     exit={{ scale: 0.8, opacity: 0 }}
                     className="relative w-[70vw] max-w-xs max-h-[70vh] aspect-[9/16]"
                     onClick={(e) => e.stopPropagation()}
+                    ref={modalRef}
+                    tabIndex={-1}
                 >
                   <video
                       ref={selectedVideoRef}
@@ -168,6 +179,7 @@ export default function VideoGallery() {
                       playsInline
                   />
                   <button
+                      aria-label="סגירת הנגן"
                       onClick={() => setSelectedVideo(null)}
                       className="absolute top-3 right-3 text-white bg-black/60 hover:bg-black/80 rounded-full p-2"
                   >

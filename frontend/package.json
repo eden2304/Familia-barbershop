@@ -9,7 +9,8 @@
     "start": "vite preview --host 0.0.0.0 --port $PORT",
     "preview": "vite preview",
     "lint": "eslint ../../../Downloads/familia-barbershop-booking-efe0d6fd-2",
-    "api": "node ../server/src/index.js"
+    "api": "node ../server/src/index.js",
+    "a11y:check": "node scripts/a11y-check.js"
   },
   "dependencies": {
     "@base44/sdk": "^0.1.2",

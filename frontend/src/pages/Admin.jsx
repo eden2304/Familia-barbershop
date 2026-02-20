@@ -1147,6 +1147,25 @@ const extractRecurringSchedules = (client) => {
       [selectedDate]
   );
 
+  const currentWeekStart = useMemo(
+      () => startOfWeek(new Date(), { weekStartsOn: 0 }),
+      []
+  );
+
+  const canGoToPreviousWeek = useMemo(
+      () => weeklyCalendarStart.getTime() > currentWeekStart.getTime(),
+      [weeklyCalendarStart, currentWeekStart]
+  );
+
+  const goToPreviousWeek = React.useCallback(() => {
+    if (!canGoToPreviousWeek) return;
+    setSelectedDate((prev) => addDays(prev, -7));
+  }, [canGoToPreviousWeek]);
+
+  const goToNextWeek = React.useCallback(() => {
+    setSelectedDate((prev) => addDays(prev, 7));
+  }, []);
+
   const weeklyCalendarDays = useMemo(
       () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
@@ -2703,6 +2722,20 @@ const extractRecurringSchedules = (client) => {
                           )}
                         </>
                       ) : (
+                        <>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <Button type="button" size="sm" variant="outline" className="gap-1" onClick={goToPreviousWeek} disabled={!canGoToPreviousWeek}>
+                            <ChevronRight className="w-4 h-4" />
+                            שבוע קודם
+                          </Button>
+                          <div className="text-xs font-semibold text-gray-600">
+                            {format(weeklyCalendarStart, 'dd/MM')} - {format(addDays(weeklyCalendarStart, 5), 'dd/MM')}
+                          </div>
+                          <Button type="button" size="sm" variant="outline" className="gap-1" onClick={goToNextWeek}>
+                            שבוע הבא
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                        </div>
                         <div className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
                             <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
@@ -2813,6 +2846,7 @@ const extractRecurringSchedules = (client) => {
                             גרור תור לקובייה אחרת ואז לחץ אישור כדי לעדכן את השעה/היום.
                           </div>
                         </div>
+                        </>
                       )}
 
                       <div className="fixed bottom-24 right-6 z-30">
@@ -4200,7 +4234,7 @@ const extractRecurringSchedules = (client) => {
                 התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="gap-2 items-center sm:items-end">
+            <DialogFooter className="flex-row justify-center gap-2">
               <Button size="sm" className="w-auto min-w-24" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
                 ביטול
               </Button>

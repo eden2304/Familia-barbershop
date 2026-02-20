@@ -550,6 +550,7 @@ export default function Admin() { // Removed props
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
   const weeklyCalendarRef = React.useRef(null);
+  const touchDragStartRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
@@ -1297,6 +1298,12 @@ const extractRecurringSchedules = (client) => {
   const endCalendarDragPreview = React.useCallback(() => {
     setDragPreview(null);
   }, []);
+
+  const clearTouchDragState = React.useCallback(() => {
+    touchDragStartRef.current = null;
+    setDraggedAppointmentId(null);
+    endCalendarDragPreview();
+  }, [endCalendarDragPreview]);
 
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
@@ -2815,32 +2822,38 @@ const extractRecurringSchedules = (client) => {
                                             }}
                                             onTouchStart={(event) => {
                                               if (!isDraggableApt) return;
-                                              setDraggedAppointmentId(apt.id);
                                               const touchPoint = event.touches?.[0];
-                                              if (touchPoint) {
-                                                startCalendarDragPreview(apt, touchPoint);
-                                              }
+                                              if (!touchPoint) return;
+                                              touchDragStartRef.current = { x: touchPoint.clientX, y: touchPoint.clientY, aptId: apt.id };
+                                              setDraggedAppointmentId(apt.id);
                                             }}
                                             onTouchMove={(event) => {
                                               if (!isDraggableApt || !draggedAppointmentId) return;
                                               const touchPoint = event.touches?.[0];
-                                              if (touchPoint) {
+                                              if (!touchPoint) return;
+                                              const start = touchDragStartRef.current;
+                                              if (!start) return;
+                                              const moved = Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y);
+                                              if (moved < 10) return;
+                                              if (!dragPreview) {
+                                                startCalendarDragPreview(apt, touchPoint);
+                                              } else {
                                                 moveCalendarDragPreview(touchPoint);
                                               }
                                             }}
                                             onTouchEnd={(event) => {
                                               if (!isDraggableApt || !draggedAppointmentId) return;
                                               const touchPoint = event.changedTouches?.[0];
-                                              if (touchPoint) {
+                                              const start = touchDragStartRef.current;
+                                              const moved = (touchPoint && start)
+                                                ? Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y)
+                                                : 0;
+                                              if (touchPoint && moved >= 10) {
                                                 handleCalendarTouchDrop(touchPoint);
                                               }
-                                              setDraggedAppointmentId(null);
-                                              endCalendarDragPreview();
+                                              clearTouchDragState();
                                             }}
-                                            onTouchCancel={() => {
-                                              setDraggedAppointmentId(null);
-                                              endCalendarDragPreview();
-                                            }}
+                                            onTouchCancel={clearTouchDragState}
                                             onClick={() => setSelectedAppointment({
                                               ...apt,
                                               client_name: displayInfo?.name || apt.client_name,

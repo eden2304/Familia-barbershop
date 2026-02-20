@@ -549,6 +549,7 @@ export default function Admin() { // Removed props
 // שני פסי ימים (אם יש גם ברשימת המתנה וגם במסך הראשי)
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
+  const weeklyCalendarRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
@@ -828,6 +829,24 @@ export default function Admin() { // Removed props
     if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
     loadAppointmentsForWeek(selectedDate);
   }, [isAuthenticated, selectedDate, appointmentsViewMode]);
+
+  useEffect(() => {
+    if (appointmentsViewMode !== 'calendar') return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+
+    const isCurrentWeek = weeklyCalendarStart.getTime() === currentWeekStart.getTime();
+    const focusDate = isCurrentWeek ? new Date() : selectedDate;
+    const focusDayIndex = Math.min(Math.max(focusDate.getDay(), 0), 5); // ראשון-שישי
+
+    const raf = requestAnimationFrame(() => {
+      const target = container.querySelector(`[data-week-day-index="${focusDayIndex}"]`);
+      if (!target || typeof target.scrollIntoView !== 'function') return;
+      target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [appointmentsViewMode, weeklyCalendarStart, currentWeekStart, selectedDate]);
 
 
   useEffect(() => {
@@ -2736,11 +2755,11 @@ const extractRecurringSchedules = (client) => {
                             <ChevronLeft className="w-4 h-4" />
                           </Button>
                         </div>
-                        <div className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
+                        <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
                             <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
-                            {weeklyCalendarDays.map((day) => (
-                              <div key={day.toISOString()} className={`border-b border-l px-1 py-1.5 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                            {weeklyCalendarDays.map((day, dayIndex) => (
+                              <div key={day.toISOString()} data-week-day-index={dayIndex} className={`border-b border-l px-1 py-1.5 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
                                 <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
                                 <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
                               </div>

@@ -1288,6 +1288,33 @@ const extractRecurringSchedules = (client) => {
     endCalendarDragPreview();
   }, [endCalendarDragPreview]);
 
+  useEffect(() => {
+    if (!draggedAppointmentId) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlTouchAction = document.documentElement.style.touchAction;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.touchAction = 'none';
+
+    const blockNativeScrollWhileDragging = (event) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener('touchmove', blockNativeScrollWhileDragging, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchmove', blockNativeScrollWhileDragging);
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.touchAction = previousHtmlTouchAction;
+    };
+  }, [draggedAppointmentId]);
+
   const autoScrollWeeklyCalendarWhileDragging = React.useCallback((point) => {
     if (!point || !draggedAppointmentId) return;
     const container = weeklyCalendarRef.current;

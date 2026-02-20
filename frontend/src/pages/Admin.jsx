@@ -549,6 +549,7 @@ export default function Admin() { // Removed props
 // שני פסי ימים (אם יש גם ברשימת המתנה וגם במסך הראשי)
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
+  const weeklyCalendarRef = React.useRef(null);
   const touchDragStartRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
@@ -1286,6 +1287,34 @@ const extractRecurringSchedules = (client) => {
     setDraggedAppointmentId(null);
     endCalendarDragPreview();
   }, [endCalendarDragPreview]);
+
+  const autoScrollWeeklyCalendarWhileDragging = React.useCallback((point) => {
+    if (!point || !draggedAppointmentId) return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const edge = 48;
+
+    let dx = 0;
+    if (point.clientX < rect.left + edge) {
+      dx = -12;
+    } else if (point.clientX > rect.right - edge) {
+      dx = 12;
+    }
+    if (dx !== 0) {
+      container.scrollBy({ left: dx, behavior: 'auto' });
+    }
+
+    let dy = 0;
+    if (point.clientY < rect.top + edge) {
+      dy = -10;
+    } else if (point.clientY > rect.bottom - edge) {
+      dy = 10;
+    }
+    if (dy !== 0) {
+      window.scrollBy({ top: dy, behavior: 'auto' });
+    }
+  }, [draggedAppointmentId]);
 
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
@@ -2743,7 +2772,7 @@ const extractRecurringSchedules = (client) => {
                             <ChevronLeft className="w-4 h-4" />
                           </Button>
                         </div>
-                        <div className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
+                        <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
                             <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
                             {weeklyCalendarDays.map((day) => (
@@ -2797,6 +2826,7 @@ const extractRecurringSchedules = (client) => {
                                             onDrag={(event) => {
                                               if (!isDraggableApt || event.clientX <= 0 || event.clientY <= 0) return;
                                               moveCalendarDragPreview(event);
+                                              autoScrollWeeklyCalendarWhileDragging(event);
                                             }}
                                             onDragEnd={() => {
                                               setDraggedAppointmentId(null);
@@ -2822,6 +2852,7 @@ const extractRecurringSchedules = (client) => {
                                               } else {
                                                 moveCalendarDragPreview(touchPoint);
                                               }
+                                              autoScrollWeeklyCalendarWhileDragging(touchPoint);
                                             }}
                                             onTouchEnd={(event) => {
                                               if (!isDraggableApt || !draggedAppointmentId) return;

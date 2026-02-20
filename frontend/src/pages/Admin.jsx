@@ -68,6 +68,8 @@ import {
   FileSpreadsheet,
   Bell,
   Loader2,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
@@ -380,6 +382,12 @@ export default function Admin() { // Removed props
   const [showMembersOnlyClients, setShowMembersOnlyClients] = useState(false);
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
+  const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
+  const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
+  const [dragPreview, setDragPreview] = useState(null);
+  const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
+  const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -541,6 +549,9 @@ export default function Admin() { // Removed props
 // שני פסי ימים (אם יש גם ברשימת המתנה וגם במסך הראשי)
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
+  const weeklyCalendarRef = React.useRef(null);
+  const mainContentRef = React.useRef(null);
+  const touchDragStartRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
@@ -671,6 +682,24 @@ export default function Admin() { // Removed props
     setAppointments(normalizeAppointmentsForDay(data));
   };
 
+  const loadAppointmentsForWeek = async (date) => {
+    const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+    const days = Array.from({ length: 6 }, (_, idx) => addDays(weekStart, idx)); // ראשון-שישי
+    try {
+      const responses = await Promise.all(
+          days.map((day) => AdminApi.appointmentsByDate(day).catch(() => []))
+      );
+      const merged = responses.flat();
+      const deduped = Array.from(
+          new Map((merged || []).map((apt) => [String(apt?.id ?? `${apt?.starts_at}-${apt?.client_id ?? ''}`), apt])).values()
+      );
+      setWeeklyAppointmentsData(normalizeAppointmentsForDay(deduped));
+    } catch (error) {
+      console.error('Error loading weekly appointments:', error);
+      setWeeklyAppointmentsData([]);
+    }
+  };
+
   const loadWaitingListForDate = async (date) => {
     try {
       const ymd = format(startOfDay(date), "yyyy-MM-dd");
@@ -797,6 +826,11 @@ export default function Admin() { // Removed props
     if (!isAuthenticated) return;
     loadWaitingListForDate(selectedDate);
   }, [isAuthenticated, selectedDate]);
+
+  useEffect(() => {
+    if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
+    loadAppointmentsForWeek(selectedDate);
+  }, [isAuthenticated, selectedDate, appointmentsViewMode]);
 
 
   useEffect(() => {
@@ -1109,6 +1143,258 @@ const extractRecurringSchedules = (client) => {
             isSameDay(new Date(apt.starts_at), date)
         )
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+  };
+
+  const weeklyCalendarStart = useMemo(
+      () => startOfWeek(selectedDate, { weekStartsOn: 0 }),
+      [selectedDate]
+  );
+
+  const currentWeekStart = useMemo(
+      () => startOfWeek(new Date(), { weekStartsOn: 0 }),
+      []
+  );
+
+  const canGoToPreviousWeek = useMemo(
+      () => weeklyCalendarStart.getTime() > currentWeekStart.getTime(),
+      [weeklyCalendarStart, currentWeekStart]
+  );
+
+  const goToPreviousWeek = React.useCallback(() => {
+    if (!canGoToPreviousWeek) return;
+    setSelectedDate((prev) => addDays(prev, -7));
+  }, [canGoToPreviousWeek]);
+
+  const goToNextWeek = React.useCallback(() => {
+    setSelectedDate((prev) => addDays(prev, 7));
+  }, []);
+
+  const weeklyCalendarDays = useMemo(
+      () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
+      [weeklyCalendarStart]
+  );
+
+  const weeklyAppointments = useMemo(() => {
+    const weekStart = startOfDay(weeklyCalendarStart);
+    const weekEnd = addDays(weekStart, 6);
+    return (weeklyAppointmentsData || [])
+        .filter((apt) => {
+          if (apt.status === 'canceled' || apt.status === 'blocked') return false;
+          const start = new Date(apt.starts_at);
+          return start >= weekStart && start < weekEnd;
+        })
+        .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+  }, [weeklyAppointmentsData, weeklyCalendarStart]);
+
+  const calendarBounds = useMemo(() => {
+    const fallbackStart = 8 * 60;
+    const fallbackEnd = 21 * 60;
+    const opens = (businessHours || [])
+        .map((row) => toMinutes(row?.open || row?.opens_at || row?.open_time))
+        .filter((val) => Number.isFinite(val));
+    const closes = (businessHours || [])
+        .map((row) => toMinutes(row?.close || row?.closes_at || row?.close_time))
+        .filter((val) => Number.isFinite(val));
+
+    const minOpen = opens.length ? Math.min(...opens) : fallbackStart;
+    const maxClose = closes.length ? Math.max(...closes) : fallbackEnd;
+
+    const startMinutes = Math.max(0, Math.floor(minOpen / 30) * 30);
+    const endMinutes = Math.min(24 * 60, Math.ceil(maxClose / 30) * 30 + 30);
+    return {
+      startMinutes,
+      endMinutes: endMinutes > startMinutes ? endMinutes : startMinutes + 30,
+      slotMinutes: 30,
+    };
+  }, [businessHours]);
+
+  const calendarTimeSlots = useMemo(() => {
+    const slots = [];
+    for (let minute = calendarBounds.startMinutes; minute < calendarBounds.endMinutes; minute += calendarBounds.slotMinutes) {
+      slots.push(minute);
+    }
+    return slots;
+  }, [calendarBounds]);
+
+  const canDragAppointmentInCalendar = React.useCallback((appointment) => {
+    if (!appointment) return false;
+    if (appointment.status === 'canceled' || appointment.status === 'blocked' || appointment.status === 'completed') return false;
+    const endAt = new Date(appointment.ends_at ?? appointment.endsAt);
+    if (Number.isNaN(endAt.getTime())) return false;
+    return isAfter(endAt, new Date());
+  }, []);
+
+  const handleCalendarDrop = (appointmentId, dayDate, slotMinute) => {
+    const appointment = (weeklyAppointmentsData || []).find((apt) => String(apt.id) === String(appointmentId));
+    if (!appointment || !canDragAppointmentInCalendar(appointment)) return;
+    const currentStart = new Date(appointment.starts_at);
+    const durationMinutes = Math.max(
+        30,
+        Math.round((new Date(appointment.ends_at).getTime() - currentStart.getTime()) / 60000) ||
+        Number(appointment?.duration_minutes ?? appointment?.service_duration_minutes ?? appointment?.duration ?? 30)
+    );
+    const nextStart = setMinutes(setHours(startOfDay(dayDate), Math.floor(slotMinute / 60)), slotMinute % 60);
+    const nextEnd = addMinutes(nextStart, durationMinutes);
+    if (currentStart.getTime() === nextStart.getTime()) {
+      return;
+    }
+    setPendingCalendarMove({
+      appointmentId: appointment.id,
+      clientName: getAppointmentDisplayInfo(appointment).name,
+      fromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
+      toLabel: format(nextStart, 'EEE dd/MM HH:mm', { locale: he }),
+      newStart: nextStart,
+      newEnd: nextEnd,
+    });
+  };
+
+
+  const handleCalendarTouchDrop = React.useCallback((touchPoint) => {
+    if (!draggedAppointmentId || !touchPoint) return;
+    const target = document.elementFromPoint(touchPoint.clientX, touchPoint.clientY);
+    const cell = target?.closest?.('[data-calendar-cell="1"]');
+    if (!cell) return;
+    const dateValue = cell.getAttribute('data-day-date');
+    const slotValue = Number(cell.getAttribute('data-slot-minute'));
+    if (!dateValue || !Number.isFinite(slotValue)) return;
+    const dayDate = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(dayDate.getTime())) return;
+    handleCalendarDrop(draggedAppointmentId, dayDate, slotValue);
+  }, [draggedAppointmentId, handleCalendarDrop]);
+
+  const startCalendarDragPreview = React.useCallback((appointment, point) => {
+    if (!appointment || !point) return;
+    const title = getAppointmentDisplayInfo(appointment).name || 'לקוח';
+    const time = format(new Date(appointment.starts_at), 'HH:mm');
+    setDragPreview({
+      title,
+      time,
+      x: point.clientX,
+      y: point.clientY,
+    });
+  }, [getAppointmentDisplayInfo]);
+
+  const moveCalendarDragPreview = React.useCallback((point) => {
+    if (!point) return;
+    setDragPreview((prev) => prev ? ({ ...prev, x: point.clientX, y: point.clientY }) : prev);
+  }, []);
+
+  const endCalendarDragPreview = React.useCallback(() => {
+    setDragPreview(null);
+  }, []);
+
+  const clearTouchDragState = React.useCallback(() => {
+    touchDragStartRef.current = null;
+    setDraggedAppointmentId(null);
+    endCalendarDragPreview();
+  }, [endCalendarDragPreview]);
+
+  useEffect(() => {
+    if (!draggedAppointmentId) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlTouchAction = document.documentElement.style.touchAction;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.touchAction = 'none';
+
+    const blockNativeScrollWhileDragging = (event) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener('touchmove', blockNativeScrollWhileDragging, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchmove', blockNativeScrollWhileDragging);
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.touchAction = previousHtmlTouchAction;
+    };
+  }, [draggedAppointmentId]);
+
+  const autoScrollWeeklyCalendarWhileDragging = React.useCallback((point) => {
+    if (!point || !draggedAppointmentId) return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const edge = 48;
+
+    let dx = 0;
+    if (point.clientX < rect.left + edge) {
+      dx = -12;
+    } else if (point.clientX > rect.right - edge) {
+      dx = 12;
+    }
+    if (dx !== 0) {
+      container.scrollBy({ left: dx, behavior: 'auto' });
+    }
+
+    let dy = 0;
+    const viewportTopEdge = 96; // גובה הנאבבר העליון + מרווח ביטחון
+    const viewportBottomEdge = window.innerHeight - 110; // אזור הנאבבר התחתון במובייל
+
+    if (point.clientY <= viewportTopEdge) {
+      dy = -16;
+    } else if (point.clientY >= viewportBottomEdge) {
+      dy = 16;
+    } else if (point.clientY < rect.top + edge) {
+      dy = -10;
+    } else if (point.clientY > rect.bottom - edge) {
+      dy = 12;
+    }
+
+    if (dy !== 0) {
+      const scrollTargets = [
+        mainContentRef.current,
+        container.closest('main'),
+        document.scrollingElement,
+      ].filter((target, index, list) => target && list.indexOf(target) === index);
+
+      scrollTargets.forEach((target) => {
+        if (target === document.scrollingElement) {
+          window.scrollBy({ top: dy, behavior: 'auto' });
+        } else {
+          target.scrollBy({ top: dy, behavior: 'auto' });
+        }
+      });
+    }
+  }, [draggedAppointmentId]);
+
+  const submitCalendarMove = async () => {
+    if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
+    try {
+      setIsSavingCalendarMove(true);
+      if (AdminApi?.reschedule) {
+        await AdminApi.reschedule(
+            pendingCalendarMove.appointmentId,
+            pendingCalendarMove.newStart.toISOString(),
+            pendingCalendarMove.newEnd.toISOString()
+        );
+      } else if (AdminApi?.appointments?.reschedule) {
+        await AdminApi.appointments.reschedule(
+            pendingCalendarMove.appointmentId,
+            pendingCalendarMove.newStart.toISOString(),
+            pendingCalendarMove.newEnd.toISOString()
+        );
+      } else {
+        await Appointment.update(pendingCalendarMove.appointmentId, {
+          starts_at: pendingCalendarMove.newStart.toISOString(),
+          ends_at: pendingCalendarMove.newEnd.toISOString(),
+        });
+      }
+      toast({ title: 'התור עודכן בהצלחה' });
+      setPendingCalendarMove(null);
+      await Promise.all([loadData(), loadAppointmentsForWeek(pendingCalendarMove.newStart)]);
+    } catch (error) {
+      console.error('Failed to move appointment from weekly calendar', error);
+      toast({ title: 'העברת התור נכשלה', description: 'נסה שוב בעוד רגע.', variant: 'destructive' });
+    } finally {
+      setIsSavingCalendarMove(false);
+    }
   };
 
   const getWaitingListForDay = (date) => {
@@ -2204,7 +2490,7 @@ const extractRecurringSchedules = (client) => {
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+          <main ref={mainContentRef} className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
             <AnimatePresence mode="wait">
               <motion.div
                   key={showWaitingListView ? 'waitingList' : activeTab}
@@ -2341,157 +2627,318 @@ const extractRecurringSchedules = (client) => {
 
                 {!showWaitingListView && activeTab === 'appointments' && (
                     <div className="space-y-6 relative">
-                      <div className="flex items-center gap-3 mb-4">
+                      <div className="flex items-center justify-between gap-3 mb-4">
                         <h2 className="text-2xl font-bold text-gray-800">ניהול תורים</h2>
-                      </div>
-
-                      <div className="mb-4">
-                        <h3 className="text-lg font-bold text-gray-800 mb-3 px-1">בחר יום</h3>
-                        <div ref={dayStripRef2} dir="rtl"
-                             className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
-
-                          {daysForPicker.map((day, index) => {
-                            const isSelected = isSameDay(day, selectedDate);
-                            const isSaturday = day.getDay() === 6;
-                            return (
-                                <div key={index} data-day-index={index} className="flex-shrink-0 snap-center">
-                                  <button
-                                      onClick={() => !isSaturday && setSelectedDate(day)}
-                                      disabled={isSaturday}
-                                      aria-disabled={isSaturday}
-                                      title={isSaturday ? "שבת - אין תורים" : ""}
-                                      className={`flex flex-col items-center justify-center w-14 h-16 rounded-2xl transition-all duration-200 ${
-                                          isSaturday
-                                              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                              : (isSelected ? 'bg-black text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-50')
-                                      }`}
-                                  >
-
-                                    <span className="text-xs font-medium">{format(day, 'E', {locale: he})}</span>
-                                    <span className="text-lg font-bold">{format(day, 'd')}</span>
-                                  </button>
-                                </div>
-                            );
-                          })}
+                        <div className="inline-flex items-center rounded-xl bg-gray-100 p-1">
+                          <Button
+                              type="button"
+                              size="sm"
+                              variant={appointmentsViewMode === 'list' ? 'default' : 'ghost'}
+                              className="gap-1.5"
+                              onClick={() => setAppointmentsViewMode('list')}
+                          >
+                            <List className="w-4 h-4" />
+                            רשימה
+                          </Button>
+                          <Button
+                              type="button"
+                              size="sm"
+                              variant={appointmentsViewMode === 'calendar' ? 'default' : 'ghost'}
+                              className="gap-1.5"
+                              onClick={() => setAppointmentsViewMode('calendar')}
+                          >
+                            <LayoutGrid className="w-4 h-4" />
+                            יומן שבועי
+                          </Button>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        {getAppointmentsForDay(selectedDate).length > 0 ? (
-                            getAppointmentsForDay(selectedDate).map(apt => {
-                              const service = serviceById(apt.service_id)
-                              const isCompleted = apt.status === 'completed';
-                              const isBlocked = apt.status === 'blocked';
-                              const passed = isAfter(new Date(), new Date(apt.ends_at));
-                              const displayInfo = getAppointmentDisplayInfo(apt);
-                              const displayName = isBlocked ? 'חסום' : displayInfo.name;
-                              const selectedData = {
-                                ...apt,
-                                client_name: displayName,
-                                clientName: displayName, // לשכבות/קומפוננטות שמחפשות camelCase
-                                client_phone: isBlocked ? '' : displayInfo.phone,
-                                client: displayInfo.client || apt.client,
-                              };
+                      {appointmentsViewMode === 'list' && (
+                        <div className="mb-4">
+                          <h3 className="text-lg font-bold text-gray-800 mb-3 px-1">בחר יום</h3>
+                          <div ref={dayStripRef2} dir="rtl"
+                               className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
+
+                            {daysForPicker.map((day, index) => {
+                              const isSelected = isSameDay(day, selectedDate);
+                              const isSaturday = day.getDay() === 6;
                               return (
-                                  <motion.div
-                                      key={apt.id}
-                                      initial={{ opacity: 0, y: 20 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      exit={{ opacity: 0 }}
-                                      onClick={() =>
-                                          setSelectedAppointment(selectedData)
-                                      }
-                                      className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
-                                  >
-                                    <div className="text-center w-20">
-                                      <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {format(new Date(apt.starts_at), 'HH:mm')}
-                                      </p>
-                                      <p className="text-xs text-gray-500">עד</p>
-                                      <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {format(new Date(apt.ends_at), 'HH:mm')}
-                                      </p>
-                                    </div>
-                                    <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
-                                    <div className="flex-1">
-                                      <h4 className={`font-bold text-gray-900 ${isCompleted || isBlocked ? 'line-through' : ''}`}>
-                                        {displayName}
-                                      </h4>
-                                      <p className="text-sm text-gray-600">{serviceName({...apt, service})}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectedAppointment(selectedData);
-                                            }}>
-                                      <MoreVertical className="w-5 h-5" />
-                                    </Button>
-                                  </motion.div>
-                              );
-                            })
-                        ) : (
-                            <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-                              <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                              <h4 className="text-lg font-semibold text-gray-700">אין תורים להיום</h4>
-                              <p className="text-gray-500 text-sm">אפשר לקחת יום חופש :)</p>
-                            </div>
-                        )}
-                      </div>
-
-                      {/* חסימות פעילות ליום הנבחר בלבד */}
-                      {blocksForSelectedDay.length > 0 && (
-                          <div className="mt-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-sm font-semibold text-gray-800">חסימות פעילות</h4>
-                              <Button variant="outline" size="sm" onClick={reloadBlocks}>רענון</Button>
-                            </div>
-
-                            <div className="space-y-2">
-                              {blocksForSelectedDay.map((blk) => {
-                                const s = new Date(blk.start_at || blk.startAt || blk.startsAt);
-                                const e = new Date(blk.end_at || blk.endAt || blk.endsAt);
-                                const reason = blk.reason || "";
-                                return (
-                                    <div
-                                        key={blk.id}
-                                        className="flex items-center justify-between bg-white rounded-2xl px-3 py-2 shadow-sm border"
+                                  <div key={index} data-day-index={index} className="flex-shrink-0 snap-center">
+                                    <button
+                                        onClick={() => !isSaturday && setSelectedDate(day)}
+                                        disabled={isSaturday}
+                                        aria-disabled={isSaturday}
+                                        title={isSaturday ? "שבת - אין תורים" : ""}
+                                        className={`flex flex-col items-center justify-center w-14 h-16 rounded-2xl transition-all duration-200 ${
+                                            isSaturday
+                                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                                : (isSelected ? 'bg-black text-white shadow-md' : 'bg-white text-gray-700 hover:bg-gray-50')
+                                        }`}
                                     >
-                                      <div className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100">
-                <Ban className="w-3.5 h-3.5 text-red-600" />
-              </span>
-                                        <div className="text-xs">
-                                          <div className="font-semibold text-gray-900">
-                                            {format(s, "HH:mm")} – {format(e, "HH:mm")}
-                                          </div>
-                                          {reason ? (
-                                              <div className="text-gray-500">{reason}</div>
-                                          ) : null}
-                                        </div>
-                                      </div>
 
-                                      <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                          onClick={async () => {
-                                            if (!confirm("לבטל את החסימה הזו?")) return;
-                                            try {
-                                              await AdminApi.blocks.remove(blk.id);
-                                              await reloadBlocks();
-                                            } catch (err) {
-                                              console.error("failed to remove block", err);
-                                              alert("שגיאה בביטול החסימה");
-                                            }
-                                          }}
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                );
-                              })}
-                            </div>
+                                      <span className="text-xs font-medium">{format(day, 'E', {locale: he})}</span>
+                                      <span className="text-lg font-bold">{format(day, 'd')}</span>
+                                    </button>
+                                  </div>
+                              );
+                            })}
                           </div>
+                        </div>
+                      )}
+
+                      {appointmentsViewMode === 'list' ? (
+                        <>
+                          <div className="space-y-3">
+                            {getAppointmentsForDay(selectedDate).length > 0 ? (
+                                getAppointmentsForDay(selectedDate).map(apt => {
+                                  const service = serviceById(apt.service_id)
+                                  const isCompleted = apt.status === 'completed';
+                                  const isBlocked = apt.status === 'blocked';
+                                  const passed = isAfter(new Date(), new Date(apt.ends_at));
+                                  const displayInfo = getAppointmentDisplayInfo(apt);
+                                  const displayName = isBlocked ? 'חסום' : displayInfo.name;
+                                  const selectedData = {
+                                    ...apt,
+                                    client_name: displayName,
+                                    clientName: displayName,
+                                    client_phone: isBlocked ? '' : displayInfo.phone,
+                                    client: displayInfo.client || apt.client,
+                                  };
+                                  return (
+                                      <motion.div
+                                          key={apt.id}
+                                          initial={{ opacity: 0, y: 20 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          exit={{ opacity: 0 }}
+                                          onClick={() =>
+                                              setSelectedAppointment(selectedData)
+                                          }
+                                          className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
+                                      >
+                                        <div className="text-center w-20">
+                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {format(new Date(apt.starts_at), 'HH:mm')}
+                                          </p>
+                                          <p className="text-xs text-gray-500">עד</p>
+                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {format(new Date(apt.ends_at), 'HH:mm')}
+                                          </p>
+                                        </div>
+                                        <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
+                                        <div className="flex-1">
+                                          <h4 className={`font-bold text-gray-900 ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                            {displayName}
+                                          </h4>
+                                          <p className="text-sm text-gray-600">{serviceName({...apt, service})}</p>
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedAppointment(selectedData);
+                                                }}>
+                                          <MoreVertical className="w-5 h-5" />
+                                        </Button>
+                                      </motion.div>
+                                  );
+                                })
+                            ) : (
+                                <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+                                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                  <h4 className="text-lg font-semibold text-gray-700">אין תורים להיום</h4>
+                                  <p className="text-gray-500 text-sm">אפשר לקחת יום חופש :)</p>
+                                </div>
+                            )}
+                          </div>
+
+                          {blocksForSelectedDay.length > 0 && (
+                              <div className="mt-4">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="text-sm font-semibold text-gray-800">חסימות פעילות</h4>
+                                  <Button variant="outline" size="sm" onClick={reloadBlocks}>רענון</Button>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {blocksForSelectedDay.map((blk) => {
+                                    const s = new Date(blk.start_at || blk.startAt || blk.startsAt);
+                                    const e = new Date(blk.end_at || blk.endAt || blk.endsAt);
+                                    const reason = blk.reason || "";
+                                    return (
+                                        <div
+                                            key={blk.id}
+                                            className="flex items-center justify-between bg-white rounded-2xl px-3 py-2 shadow-sm border"
+                                        >
+                                          <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100">
+                    <Ban className="w-3.5 h-3.5 text-red-600" />
+                  </span>
+                                            <div className="text-xs">
+                                              <div className="font-semibold text-gray-900">
+                                                {format(s, "HH:mm")} – {format(e, "HH:mm")}
+                                              </div>
+                                              {reason ? (
+                                                  <div className="text-gray-500">{reason}</div>
+                                              ) : null}
+                                            </div>
+                                          </div>
+
+                                          <Button
+                                              variant="outline"
+                                              size="icon"
+                                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                              onClick={async () => {
+                                                if (!confirm("לבטל את החסימה הזו?")) return;
+                                                try {
+                                                  await AdminApi.blocks.remove(blk.id);
+                                                  await reloadBlocks();
+                                                } catch (err) {
+                                                  console.error("failed to remove block", err);
+                                                  alert("שגיאה בביטול החסימה");
+                                                }
+                                              }}
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <Button type="button" size="sm" variant="outline" className="gap-1" onClick={goToPreviousWeek} disabled={!canGoToPreviousWeek}>
+                            <ChevronRight className="w-4 h-4" />
+                            שבוע קודם
+                          </Button>
+                          <div className="text-xs font-semibold text-gray-600">
+                            {format(addDays(weeklyCalendarStart, 5), 'dd/MM')} - {format(weeklyCalendarStart, 'dd/MM')}
+                          </div>
+                          <Button type="button" size="sm" variant="outline" className="gap-1" onClick={goToNextWeek}>
+                            שבוע הבא
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
+                          <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
+                            <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
+                            {weeklyCalendarDays.map((day) => (
+                              <div key={day.toISOString()} className={`border-b border-l px-1 py-1.5 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                                <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
+                                <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
+                              </div>
+                            ))}
+
+                              {calendarTimeSlots.map((slotMinute) => (
+                                <React.Fragment key={slotMinute}>
+                                  <div className="border-b border-l px-1.5 py-1 text-xs text-gray-500 bg-gray-50">
+                                    {toTimeString(slotMinute)}
+                                  </div>
+                                  {weeklyCalendarDays.map((day) => {
+                                    const dayKey = format(day, 'yyyy-MM-dd');
+                                    const apt = weeklyAppointments.find((item) => (
+                                        format(new Date(item.starts_at), 'yyyy-MM-dd') === dayKey &&
+                                        new Date(item.starts_at).getHours() * 60 + new Date(item.starts_at).getMinutes() === slotMinute
+                                    ));
+                                    const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
+                                    const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
+                                    return (
+                                      <div
+                                        key={`${dayKey}-${slotMinute}`}
+                                        data-calendar-cell="1"
+                                        data-day-date={dayKey}
+                                        data-slot-minute={slotMinute}
+                                        className={`border-b border-l min-h-12 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        onDragOver={(e) => {
+                                          if (!draggedAppointmentId) return;
+                                          e.preventDefault();
+                                        }}
+                                        onDrop={() => {
+                                          if (!draggedAppointmentId) return;
+                                          handleCalendarDrop(draggedAppointmentId, day, slotMinute);
+                                          setDraggedAppointmentId(null);
+                                        }}
+                                      >
+                                        {apt ? (
+                                          <button
+                                            type="button"
+                                            draggable={isDraggableApt}
+                                            onDragStart={(event) => {
+                                              if (!isDraggableApt) {
+                                                  return;
+                                              }
+                                              setDraggedAppointmentId(apt.id);
+                                              startCalendarDragPreview(apt, event);
+                                            }}
+                                            onDrag={(event) => {
+                                              if (!isDraggableApt || event.clientX <= 0 || event.clientY <= 0) return;
+                                              moveCalendarDragPreview(event);
+                                              autoScrollWeeklyCalendarWhileDragging(event);
+                                            }}
+                                            onDragEnd={() => {
+                                              setDraggedAppointmentId(null);
+                                              endCalendarDragPreview();
+                                            }}
+                                            onTouchStart={(event) => {
+                                              if (!isDraggableApt) return;
+                                              const touchPoint = event.touches?.[0];
+                                              if (!touchPoint) return;
+                                              touchDragStartRef.current = { x: touchPoint.clientX, y: touchPoint.clientY, aptId: apt.id };
+                                              setDraggedAppointmentId(apt.id);
+                                            }}
+                                            onTouchMove={(event) => {
+                                              if (!isDraggableApt || !draggedAppointmentId) return;
+                                              const touchPoint = event.touches?.[0];
+                                              if (!touchPoint) return;
+                                              const start = touchDragStartRef.current;
+                                              if (!start) return;
+                                              const moved = Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y);
+                                              if (moved < 10) return;
+                                              if (!dragPreview) {
+                                                startCalendarDragPreview(apt, touchPoint);
+                                              } else {
+                                                moveCalendarDragPreview(touchPoint);
+                                              }
+                                              autoScrollWeeklyCalendarWhileDragging(touchPoint);
+                                            }}
+                                            onTouchEnd={(event) => {
+                                              if (!isDraggableApt || !draggedAppointmentId) return;
+                                              const touchPoint = event.changedTouches?.[0];
+                                              const start = touchDragStartRef.current;
+                                              const moved = (touchPoint && start)
+                                                ? Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y)
+                                                : 0;
+                                              if (touchPoint && moved >= 10) {
+                                                handleCalendarTouchDrop(touchPoint);
+                                              }
+                                              clearTouchDragState();
+                                            }}
+                                            onTouchCancel={clearTouchDragState}
+                                            onClick={() => setSelectedAppointment({
+                                              ...apt,
+                                              client_name: displayInfo?.name || apt.client_name,
+                                              clientName: displayInfo?.name || apt.client_name,
+                                              client_phone: displayInfo?.phone || apt.client_phone,
+                                              client: displayInfo?.client || apt.client,
+                                            })}
+                                            className={`w-full rounded-md text-right px-1.5 py-1 text-xs leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                          >
+                                            <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
+                                            <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          <div className="p-2 text-[11px] text-gray-500 border-t">
+                            גרור תור לקובייה אחרת ואז לחץ אישור כדי לעדכן את השעה/היום.
+                          </div>
+                        </div>
+                        </>
                       )}
 
                       <div className="fixed bottom-24 right-6 z-30">
@@ -3868,6 +4315,44 @@ const extractRecurringSchedules = (client) => {
             }}
             appointments={appointments}
         />
+
+        <Dialog open={Boolean(pendingCalendarMove)} onOpenChange={(open) => {
+          if (!open && !isSavingCalendarMove) setPendingCalendarMove(null);
+        }}>
+          <DialogContent className="max-w-[320px] rounded-2xl" aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle className="text-base">אישור שינוי תור</DialogTitle>
+              <DialogDescription className="text-xs leading-relaxed">
+                התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-row justify-center gap-2">
+              <Button size="sm" className="w-auto min-w-24" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+                ביטול
+              </Button>
+              <Button size="sm" className="w-auto min-w-24" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+                {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {dragPreview && (
+            <div
+                className="fixed z-[250] pointer-events-none"
+                style={{
+                  left: dragPreview.x,
+                  top: dragPreview.y,
+                  transform: 'translate(-50%, -120%)',
+                }}
+            >
+              <div className="rounded-lg bg-black/90 text-white px-2 py-1 shadow-xl min-w-[84px] text-right">
+                <div className="text-xs font-semibold truncate">{dragPreview.title}</div>
+                <div className="text-[10px] opacity-80">{dragPreview.time}</div>
+              </div>
+            </div>
+        )}
+
 
         {selectedAppointment && (
             <AppointmentActionsModal

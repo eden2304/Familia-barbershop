@@ -1306,10 +1306,11 @@ const extractRecurringSchedules = (client) => {
     }
 
     let dy = 0;
+    const viewportBottomEdge = window.innerHeight - 110; // אזור הנאבבר התחתון במובייל
     if (point.clientY < rect.top + edge) {
       dy = -10;
-    } else if (point.clientY > rect.bottom - edge) {
-      dy = 10;
+    } else if (point.clientY > rect.bottom - edge || point.clientY > viewportBottomEdge) {
+      dy = 14;
     }
     if (dy !== 0) {
       window.scrollBy({ top: dy, behavior: 'auto' });

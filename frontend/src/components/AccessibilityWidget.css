@@ -2,8 +2,8 @@
   position: fixed;
   bottom: 98px;
   inset-inline-end: 14px;
-  width: 62px;
-  height: 62px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   border: 0;
   background: transparent;
@@ -16,8 +16,8 @@
 }
 
 .a11y-widget__badge-icon {
-  width: 62px;
-  height: 62px;
+  width: 46px;
+  height: 46px;
 }
 
 .a11y-widget__overlay {
@@ -199,13 +199,13 @@
   .a11y-widget__launcher {
     bottom: 94px;
     inset-inline-end: 10px;
-    width: 58px;
-    height: 58px;
+    width: 42px;
+    height: 42px;
   }
 
   .a11y-widget__badge-icon {
-    width: 58px;
-    height: 58px;
+    width: 42px;
+    height: 42px;
   }
 
   .a11y-widget__overlay {

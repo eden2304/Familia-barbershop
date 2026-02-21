@@ -2,8 +2,8 @@
   position: fixed;
   bottom: 98px;
   inset-inline-end: 14px;
-  width: 72px;
-  height: 72px;
+  width: 62px;
+  height: 62px;
   border-radius: 999px;
   border: 0;
   background: transparent;
@@ -16,8 +16,8 @@
 }
 
 .a11y-widget__badge-icon {
-  width: 72px;
-  height: 72px;
+  width: 62px;
+  height: 62px;
 }
 
 .a11y-widget__overlay {
@@ -32,10 +32,10 @@
 }
 
 .a11y-widget__panel {
-  width: min(370px, calc(100vw - 28px));
+  width: min(390px, calc(100vw - 24px));
   max-height: min(78vh, 720px);
   overflow: auto;
-  border-radius: 26px;
+  border-radius: 30px;
   background: #f3f4f6;
   padding: 0 12px 16px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
@@ -46,8 +46,8 @@
   top: 0;
   background: #111827;
   color: #ffffff;
-  margin: 0 -12px 12px;
-  padding: 12px;
+  margin: 0 -12px 14px;
+  padding: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -56,18 +56,18 @@
 
 .a11y-widget__header h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.22rem;
   font-weight: 700;
 }
 
 .a11y-widget__header-actions {
   display: flex;
-  gap: 8px;
+  gap: 9px;
 }
 
 .a11y-widget__circle-btn {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   border: 1px solid #d1d5db;
   background: #ffffff;
@@ -86,12 +86,12 @@
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
-  min-height: 46px;
+  min-height: 50px;
   padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.92rem;
+  font-size: 1.04rem;
   font-weight: 600;
   margin-bottom: 14px;
 }
@@ -101,7 +101,7 @@
 }
 
 .a11y-widget__section h3 {
-  font-size: 1rem;
+  font-size: 1.08rem;
   margin: 0 0 8px;
   color: #1f2937;
   font-weight: 700;
@@ -110,13 +110,13 @@
 .a11y-widget__font-size {
   background: #ffffff;
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 10px;
+  border-radius: 20px;
+  padding: 12px;
   margin-bottom: 8px;
 }
 
 .a11y-widget__font-label {
-  font-size: 0.92rem;
+  font-size: 1.04rem;
   margin-bottom: 6px;
   font-weight: 700;
 }
@@ -128,19 +128,19 @@
 }
 
 .a11y-widget__font-controls strong {
-  font-size: 1.35rem;
+  font-size: 1.45rem;
 }
 
 .a11y-widget__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 9px;
 }
 
 .a11y-widget__tile {
-  min-height: 98px;
+  min-height: 108px;
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border-radius: 20px;
   background: #ffffff;
   padding: 8px;
   color: #111;
@@ -150,14 +150,14 @@
   justify-content: center;
   gap: 6px;
   text-align: center;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   line-height: 1.2;
 }
 
 .a11y-widget__tile-icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .a11y-widget__tile.is-active {
@@ -170,15 +170,15 @@
   width: 100%;
   border-radius: 999px;
   border: 0;
-  min-height: 46px;
+  min-height: 50px;
   margin-top: 6px;
   background: #111827;
   color: #ffffff;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 8px;
-  font-size: 0.98rem;
+  gap: 9px;
+  font-size: 1.04rem;
   font-weight: 700;
 }
 
@@ -199,24 +199,24 @@
   .a11y-widget__launcher {
     bottom: 94px;
     inset-inline-end: 10px;
-    width: 64px;
-    height: 64px;
+    width: 58px;
+    height: 58px;
   }
 
   .a11y-widget__badge-icon {
-    width: 64px;
-    height: 64px;
+    width: 58px;
+    height: 58px;
   }
 
   .a11y-widget__overlay {
     align-items: center;
-    padding: 10px;
+    padding: 12px;
   }
 
   .a11y-widget__panel {
-    width: min(380px, calc(100vw - 20px));
+    width: min(392px, calc(100vw - 16px));
     max-height: 82vh;
-    border-radius: 22px;
+    border-radius: 26px;
     padding-bottom: 14px;
   }
 }

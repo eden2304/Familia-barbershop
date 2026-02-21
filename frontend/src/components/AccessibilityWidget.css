@@ -2,8 +2,8 @@
   position: fixed;
   bottom: 98px;
   inset-inline-end: 14px;
-  width: 46px;
-  height: 46px;
+  width: 50px;
+  height: 50px;
   border-radius: 999px;
   border: 0;
   background: transparent;
@@ -16,8 +16,8 @@
 }
 
 .a11y-widget__badge-icon {
-  width: 46px;
-  height: 46px;
+  width: 50px;
+  height: 50px;
 }
 
 .a11y-widget__overlay {
@@ -32,7 +32,7 @@
 }
 
 .a11y-widget__panel {
-  width: min(390px, calc(100vw - 24px));
+  width: min(360px, calc(100vw - 28px));
   max-height: min(78vh, 720px);
   overflow: auto;
   border-radius: 30px;
@@ -199,13 +199,13 @@
   .a11y-widget__launcher {
     bottom: 94px;
     inset-inline-end: 10px;
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
   }
 
   .a11y-widget__badge-icon {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
   }
 
   .a11y-widget__overlay {
@@ -214,7 +214,7 @@
   }
 
   .a11y-widget__panel {
-    width: min(392px, calc(100vw - 16px));
+    width: min(352px, calc(100vw - 18px));
     max-height: 82vh;
     border-radius: 26px;
     padding-bottom: 14px;

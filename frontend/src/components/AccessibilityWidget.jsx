@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold,
   Contrast,
@@ -18,6 +18,7 @@ import {
   WholeWord,
   Languages,
   Focus,
+  FormInput,
 } from "lucide-react";
 import "@/components/AccessibilityWidget.css";
 import {
@@ -35,20 +36,20 @@ const FONT_STEP = 10;
 function AccessibilityBadgeIcon() {
   return (
     <svg viewBox="0 0 64 64" aria-hidden="true" className="a11y-widget__badge-icon">
-      <circle cx="32" cy="32" r="31" fill="#9A58BC" />
-      <circle cx="32" cy="32" r="24" fill="none" stroke="#fff" strokeWidth="5" />
-      <circle cx="32" cy="20" r="4.5" fill="#fff" />
+      <circle cx="32" cy="32" r="31" fill="#111111" />
+      <circle cx="32" cy="32" r="24" fill="none" stroke="#ffffff" strokeWidth="5" />
+      <circle cx="32" cy="20" r="4.5" fill="#ffffff" />
       <path
         d="M16 27c6 4 26 4 32 0"
         fill="none"
-        stroke="#fff"
+        stroke="#ffffff"
         strokeWidth="4"
         strokeLinecap="round"
       />
       <path
         d="M32 25v18M25 30v13M39 30v13M26 44h12"
         fill="none"
-        stroke="#fff"
+        stroke="#ffffff"
         strokeWidth="4"
         strokeLinecap="round"
       />
@@ -78,6 +79,10 @@ export default function AccessibilityWidget() {
   const panelRef = useRef(null);
   const lastFocusedRef = useRef(null);
 
+  const closePanel = useCallback(() => {
+    setOpen(false);
+  }, []);
+
   useEffect(() => {
     const loaded = loadA11ySettings();
     setSettings(loaded);
@@ -90,10 +95,16 @@ export default function AccessibilityWidget() {
   }, [settings]);
 
   useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
 
     lastFocusedRef.current = document.activeElement;
-    document.body.style.overflow = "hidden";
 
     const panel = panelRef.current;
     if (!panel) return;
@@ -109,7 +120,7 @@ export default function AccessibilityWidget() {
     const onKeyDown = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setOpen(false);
+        closePanel();
         return;
       }
 
@@ -127,14 +138,13 @@ export default function AccessibilityWidget() {
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
     };
-  }, [open]);
+  }, [open, closePanel]);
 
   useEffect(() => {
     if (open) return;
     const restoreTarget = lastFocusedRef.current;
-    if (restoreTarget instanceof HTMLElement) {
+    if (restoreTarget instanceof HTMLElement && restoreTarget.isConnected) {
       restoreTarget.focus();
       return;
     }
@@ -207,7 +217,8 @@ export default function AccessibilityWidget() {
       { key: "bigCursor", label: "סמן גדול", icon: MousePointer2 },
       { key: "reduceMotion", label: "עצירת אנימציות", icon: PauseCircle },
       { key: "readingGuide", label: "מדריך קריאה", icon: Eye },
-      { key: "focusVisible", label: "הדגשת פוקוס", icon: Eye },
+      { key: "focusVisible", label: "הדגשת פוקוס", icon: Focus },
+      { key: "highlightForms", label: "הדגש טפסים", icon: FormInput },
     ],
     []
   );
@@ -232,7 +243,7 @@ export default function AccessibilityWidget() {
       )}
 
       {open && (
-        <div className="a11y-widget__overlay" role="presentation" onClick={() => setOpen(false)}>
+        <div className="a11y-widget__overlay" role="presentation" onMouseDown={closePanel} onClick={closePanel}>
           <section
             id="a11y-widget-panel"
             className="a11y-widget__panel"
@@ -240,6 +251,7 @@ export default function AccessibilityWidget() {
             aria-modal="true"
             aria-labelledby="a11y-widget-title"
             ref={panelRef}
+            onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
             <header className="a11y-widget__header">
@@ -248,7 +260,7 @@ export default function AccessibilityWidget() {
                 <button type="button" className="a11y-widget__circle-btn" aria-label="איפוס מהיר" onClick={resetAll}>
                   <RefreshCcw aria-hidden="true" />
                 </button>
-                <button type="button" className="a11y-widget__circle-btn" aria-label="סגירה" onClick={() => setOpen(false)}>
+                <button type="button" className="a11y-widget__circle-btn" aria-label="סגירה" onClick={closePanel}>
                   <X aria-hidden="true" />
                 </button>
               </div>

@@ -16,6 +16,7 @@ export const defaultA11ySettings = {
   reduceMotion: false,
   bigCursor: false,
   focusVisible: false,
+  highlightForms: false,
 };
 
 const SCALE_CLASSES = [80, 90, 100, 110, 120, 130, 140, 150, 160].map((scale) => `a11y-font-scale-${scale}`);
@@ -34,6 +35,7 @@ const TOGGLE_CLASS_MAP = {
   reduceMotion: "a11y-reduce-motion",
   bigCursor: "a11y-big-cursor",
   focusVisible: "a11y-focus-visible",
+  highlightForms: "a11y-highlight-forms",
 };
 
 export function normalizeA11ySettings(value) {

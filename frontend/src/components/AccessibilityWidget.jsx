@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Accessibility,
   Bold,
   Contrast,
   Eraser,
@@ -32,6 +31,30 @@ import {
 const FONT_MIN = 80;
 const FONT_MAX = 160;
 const FONT_STEP = 10;
+
+function AccessibilityBadgeIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className="a11y-widget__badge-icon">
+      <circle cx="32" cy="32" r="31" fill="#9A58BC" />
+      <circle cx="32" cy="32" r="24" fill="none" stroke="#fff" strokeWidth="5" />
+      <circle cx="32" cy="20" r="4.5" fill="#fff" />
+      <path
+        d="M16 27c6 4 26 4 32 0"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M32 25v18M25 30v13M39 30v13M26 44h12"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 function TileButton({ icon: Icon, label, onClick, active, pressed }) {
   return (
@@ -183,7 +206,7 @@ export default function AccessibilityWidget() {
     () => [
       { key: "bigCursor", label: "סמן גדול", icon: MousePointer2 },
       { key: "reduceMotion", label: "עצירת אנימציות", icon: PauseCircle },
-      { key: "readingGuide", label: "מדריך קריאה", icon: Accessibility },
+      { key: "readingGuide", label: "מדריך קריאה", icon: Eye },
       { key: "focusVisible", label: "הדגשת פוקוס", icon: Eye },
     ],
     []
@@ -201,7 +224,7 @@ export default function AccessibilityWidget() {
         aria-expanded={open}
         aria-controls="a11y-widget-panel"
       >
-        <Accessibility aria-hidden="true" />
+        <AccessibilityBadgeIcon />
       </button>
 
       {settings.readingGuide && (
@@ -220,20 +243,20 @@ export default function AccessibilityWidget() {
             onClick={(event) => event.stopPropagation()}
           >
             <header className="a11y-widget__header">
+              <h2 id="a11y-widget-title">תפריט נגישות</h2>
               <div className="a11y-widget__header-actions">
-                <button type="button" className="a11y-widget__circle-btn" aria-label="סגירה" onClick={() => setOpen(false)}>
-                  <X aria-hidden="true" />
-                </button>
                 <button type="button" className="a11y-widget__circle-btn" aria-label="איפוס מהיר" onClick={resetAll}>
                   <RefreshCcw aria-hidden="true" />
                 </button>
+                <button type="button" className="a11y-widget__circle-btn" aria-label="סגירה" onClick={() => setOpen(false)}>
+                  <X aria-hidden="true" />
+                </button>
               </div>
-              <h2 id="a11y-widget-title">תפריט נגישות</h2>
             </header>
 
             <div className="a11y-widget__lang-row" role="group" aria-label="בחירת שפה">
-              <Languages aria-hidden="true" />
               <span>עברית (Hebrew)</span>
+              <Languages aria-hidden="true" />
             </div>
 
             <div className="a11y-widget__section">
@@ -300,7 +323,6 @@ export default function AccessibilityWidget() {
               <Eraser aria-hidden="true" />
               איפוס הגדרות
             </button>
-
           </section>
         </div>
       )}

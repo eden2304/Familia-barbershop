@@ -156,3 +156,83 @@ button:focus-visible {
     @apply bg-background text-foreground;
   }
 }
+
+:root {
+  --a11y-font-scale: 1;
+}
+
+html,
+body,
+#root {
+  font-size: calc(1rem * var(--a11y-font-scale));
+}
+
+html {
+  filter: var(--a11y-filter, none);
+}
+
+html.a11y-bold body,
+html.a11y-bold #root {
+  font-weight: 700;
+}
+
+html.a11y-line-height body,
+html.a11y-line-height #root {
+  line-height: 1.8;
+}
+
+html.a11y-letter-spacing body,
+html.a11y-letter-spacing #root {
+  letter-spacing: 0.08em;
+}
+
+html.a11y-highlight-links a {
+  text-decoration: underline !important;
+  text-decoration-thickness: 3px !important;
+  font-weight: 700;
+}
+
+html.a11y-highlight-headings h1,
+html.a11y-highlight-headings h2,
+html.a11y-highlight-headings h3,
+html.a11y-highlight-headings h4,
+html.a11y-highlight-headings h5,
+html.a11y-highlight-headings h6 {
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  background: rgba(255, 235, 59, 0.3);
+}
+
+html.a11y-dyslexic-font body,
+html.a11y-dyslexic-font #root {
+  font-family: "Arial", "Verdana", "Tahoma", sans-serif !important;
+}
+
+html.a11y-reduce-motion *,
+html.a11y-reduce-motion *::before,
+html.a11y-reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (pointer: fine) {
+  html.a11y-big-cursor,
+  html.a11y-big-cursor * {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M13 3L4 14h6l1 7l4-8h5z'/%3E%3C/svg%3E") 4 1, auto !important;
+  }
+}
+
+html.a11y-focus-visible *:focus-visible {
+  outline: 3px solid #1f59d4 !important;
+  outline-offset: 2px;
+}
+
+html.a11y-highlight-forms input,
+html.a11y-highlight-forms select,
+html.a11y-highlight-forms textarea,
+html.a11y-highlight-forms button,
+html.a11y-highlight-forms label {
+  outline: 2px solid #111827 !important;
+  outline-offset: 2px;
+}

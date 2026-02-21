@@ -8,6 +8,7 @@ import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
+import AccessibilityWidget from "@/components/AccessibilityWidget";
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -109,6 +110,7 @@ function MainLayout({ children, currentPageName }) {
                 variant="ghost"
                 size="icon"
                 onClick={() => setSidebarOpen(prev => !prev)}
+                aria-label="פתיחה או סגירה של תפריט ניהול"
                 className="text-white hover:text-gray-300 relative z-20 pointer-events-auto"
               >
                 <Menu className="w-6 h-6" />
@@ -142,6 +144,8 @@ function MainLayout({ children, currentPageName }) {
         {children}
       </main>
 
+      {currentPageName !== "Admin" && <AccessibilityWidget />}
+
       <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 z-50">
         <div className="flex justify-around items-center py-4 px-4">
           <Link to="/" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
@@ -159,7 +163,7 @@ function MainLayout({ children, currentPageName }) {
             <span className="text-xs font-medium">איך מגיעים</span>
           </a>
           
-          <button onClick={handleCallClick} className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
+          <button onClick={handleCallClick} aria-label="שיחה למספר העסק" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
             <Phone className="w-6 h-6"/>
             <span className="text-xs font-medium">צור קשר</span>
           </button>

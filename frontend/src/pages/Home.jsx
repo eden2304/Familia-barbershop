@@ -104,7 +104,10 @@ export default function Home() {
 
 
   const handleBookingClick = () => {
-    if (client && client.phone) navigate("/Book");
+    if (client && client.phone) {
+      sessionStorage.setItem("showBookingUpdates", "true");
+      navigate("/Book");
+    }
     else setShowVerification(true);
   };
 
@@ -130,7 +133,6 @@ export default function Home() {
         name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || "")
       };
       localStorage.setItem("familiaClient", JSON.stringify(payload));
-      sessionStorage.setItem("justLoggedIn", "true");
       setClient(payload);
       setShowVerification(false);
       setShowLoadingScreen(true);

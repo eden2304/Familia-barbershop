@@ -180,6 +180,12 @@ export default function MyAppointmentsPage() {
       [items]
   );
 
+  const handleBookNowClick = (event) => {
+    event?.preventDefault?.();
+    sessionStorage.setItem("showBookingUpdates", "true");
+    navigate("/Book");
+  };
+
   const handleLoginSuccess = (loggedInClient) => {
     // לתאימות לשני פורמטים
     const norm = normalizeClientObject(loggedInClient);
@@ -267,7 +273,7 @@ export default function MyAppointmentsPage() {
               <h3 className="font-bold text-gray-900 mb-1">אין לך תורים כרגע</h3>
               <p className="text-sm text-gray-600 mb-6">נשמח לראות אותך אצלנו במספרה.</p>
               <Button asChild className="bg-black text-white rounded-full px-6">
-                <Link to="/book">
+                <Link to="/book" onClick={handleBookNowClick}>
                   <PlusCircle className="w-4 h-4 ml-2" />
                   לקביעת תור חדש
                 </Link>
@@ -398,7 +404,7 @@ export default function MyAppointmentsPage() {
               {/* CTA */}
               <div className="mt-8">
                 <Button asChild variant="outline" className="w-full rounded-full">
-                  <Link to="/book">
+                  <Link to="/book" onClick={handleBookNowClick}>
                     <PlusCircle className="w-4 h-4 ml-2" />
                     קבע תור נוסף
                   </Link>

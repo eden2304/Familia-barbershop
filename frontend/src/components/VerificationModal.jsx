@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, UserPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
+import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -46,11 +47,12 @@ async function postJson(path, body) {
   const payload = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
-    const retryAfterHeader = Number.parseInt(res.headers.get("retry-after") || "", 10);
-    const retryAfterPayload = Number.parseInt(payload?.retryAfterSeconds, 10);
-    const retryAfterSeconds = Number.isFinite(retryAfterPayload)
-      ? retryAfterPayload
-      : (Number.isFinite(retryAfterHeader) ? retryAfterHeader : undefined);
+    const retryAfterSeconds = res.status === 429
+      ? pickRetryAfterSeconds({
+          retryAfterHeader: res.headers.get("retry-after"),
+          retryAfterPayload: payload?.retryAfterSeconds,
+        })
+      : 0;
     const msg =
         payload?.message ||
         payload?.error?.code ||
@@ -61,19 +63,13 @@ async function postJson(path, body) {
     err.payload = payload;
     if (typeof retryAfterSeconds === "number" && retryAfterSeconds > 0) {
       err.retryAfterSeconds = retryAfterSeconds;
+      notifyRateLimited(retryAfterSeconds);
     }
     throw err;
   }
   return payload;
 }
 
-const formatCountdown = (totalSeconds) => {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
-};
 
 export default function VerificationModal({ onVerify, onCancel }) {
   const [view, setView] = useState("loginPhone");
@@ -613,7 +609,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
                         {error}
                         {rateLimitTimer > 0 && (
                           <div className="mt-1 font-semibold" dir="ltr">
-                            {formatCountdown(rateLimitTimer)}
+                            {formatRateLimitCountdown(rateLimitTimer)}
                           </div>
                         )}
                       </AlertDescription>

@@ -1,6 +1,7 @@
 // src/api/base44Client.js
 
 import { setStoredAuthToken, getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 
 
 const ENV_BASE =
@@ -220,7 +221,7 @@ async function httpGet(path, options = {}) {
 
   if (!res.ok) {
     handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('GET', path, res.status, payload);
+    const err = buildHttpError('GET', path, res.status, payload, res.headers);
     console.error('[API GET ' + path + ']', err);
     throw err;
   }
@@ -246,7 +247,7 @@ async function httpPost(path, body) {
 
   if (!res.ok) {
     handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('POST', path, res.status, payload);
+    const err = buildHttpError('POST', path, res.status, payload, res.headers);
     console.error('[API POST ' + path + ']', err);
     throw err;
   }
@@ -267,7 +268,7 @@ async function httpPut(path, body) {
 
   if (!res.ok) {
     handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('PUT', path, res.status, payload);
+    const err = buildHttpError('PUT', path, res.status, payload, res.headers);
     console.error('[API PUT ' + path + ']', err);
     throw err;
   }
@@ -287,7 +288,7 @@ async function httpDelete(path) {
 
   if (!res.ok) {
     handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('DELETE', path, res.status, payload);
+    const err = buildHttpError('DELETE', path, res.status, payload, res.headers);
     console.error('[API DELETE ' + path + ']', err);
     throw err;
   }
@@ -308,7 +309,7 @@ async function httpPatch(path, body) {
 
   if (!res.ok) {
     handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('PATCH', path, res.status, payload);
+    const err = buildHttpError('PATCH', path, res.status, payload, res.headers);
     console.error('[API PATCH ' + path + ']', err);
     throw err;
   }
@@ -337,7 +338,7 @@ async function httpFormPost(path, data) {
 
   if (!res.ok) {
     handleUnauthorized(res.status);
-    const err = buildHttpError('POST', path, res.status, payload);
+    const err = buildHttpError('POST', path, res.status, payload, res.headers);
     console.error('[API POST FORM ' + path + ']', err);
     throw err;
   }
@@ -360,7 +361,7 @@ function pick(obj, key, alt, defVal) {
   return defVal;
 }
 
-function buildHttpError(method, path, status, payload) {
+function buildHttpError(method, path, status, payload, headers) {
   const codeFromPayload =
       (payload && (payload.code || (payload.error && payload.error.code))) ||
       (payload && typeof payload.message === 'string' ? payload.message : undefined);
@@ -368,6 +369,15 @@ function buildHttpError(method, path, status, payload) {
   const err = new Error(codeFromPayload || ('HTTP ' + String(status)));
   err.status = status;
   err.payload = payload || null;
+
+  if (status === 429) {
+    const retryAfterSeconds = pickRetryAfterSeconds({
+      retryAfterHeader: headers?.get?.('retry-after'),
+      retryAfterPayload: payload?.retryAfterSeconds,
+    });
+    err.retryAfterSeconds = retryAfterSeconds;
+    notifyRateLimited(retryAfterSeconds);
+  }
 
   if (status === 409 && (codeFromPayload === 'UNREGISTERED_CLIENT' || payload === 'UNREGISTERED_CLIENT' || (payload && payload.message === 'UNREGISTERED_CLIENT'))) {
     err.code = 'UNREGISTERED_CLIENT';

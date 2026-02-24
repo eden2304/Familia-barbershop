@@ -2821,10 +2821,10 @@ const extractRecurringSchedules = (client) => {
                           </Button>
                         </div>
                         <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
-                          <div className="grid min-w-[760px]" style={{ gridTemplateColumns: '58px repeat(6, minmax(110px, 1fr))' }}>
-                            <div className="border-b border-l px-1.5 py-1.5 bg-gray-50 text-xs text-gray-500">שעה</div>
+                          <div className="grid min-w-[700px]" style={{ gridTemplateColumns: '52px repeat(6, minmax(96px, 1fr))' }}>
+                            <div className="sticky top-0 z-20 border-b border-l px-1 py-1 bg-gray-100 text-[11px] text-gray-500">שעה</div>
                             {weeklyCalendarDays.map((day) => (
-                              <div key={day.toISOString()} className={`border-b border-l px-1 py-1.5 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                              <div key={day.toISOString()} className={`sticky top-0 z-20 border-b border-l px-1 py-1 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
                                 <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
                                 <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
                               </div>
@@ -2832,7 +2832,7 @@ const extractRecurringSchedules = (client) => {
 
                               {calendarTimeSlots.map((slotMinute) => (
                                 <React.Fragment key={slotMinute}>
-                                  <div className="border-b border-l px-1.5 py-1 text-xs text-gray-500 bg-gray-50">
+                                  <div className="border-b border-l px-1 py-0.5 text-[11px] text-gray-500 bg-gray-50">
                                     {toTimeString(slotMinute)}
                                   </div>
                                   {weeklyCalendarDays.map((day) => {
@@ -2849,7 +2849,7 @@ const extractRecurringSchedules = (client) => {
                                         data-calendar-cell="1"
                                         data-day-date={dayKey}
                                         data-slot-minute={slotMinute}
-                                        className={`border-b border-l min-h-12 p-1 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        className={`relative border-b border-l min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
                                         onDragOver={(e) => {
                                           if (!draggedAppointmentId) return;
                                           e.preventDefault();
@@ -2860,6 +2860,9 @@ const extractRecurringSchedules = (client) => {
                                           setDraggedAppointmentId(null);
                                         }}
                                       >
+                                        <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
+                                          {toTimeString(slotMinute)}
+                                        </div>
                                         {apt ? (
                                           <button
                                             type="button"
@@ -2922,7 +2925,7 @@ const extractRecurringSchedules = (client) => {
                                               client_phone: displayInfo?.phone || apt.client_phone,
                                               client: displayInfo?.client || apt.client,
                                             })}
-                                            className={`w-full rounded-md text-right px-1.5 py-1 text-xs leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                            className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
                                           >
                                             <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                             <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>

@@ -38,7 +38,7 @@ export const rateLimitConfig = {
         phoneBurstLimit: toInt(process.env.RATE_LIMIT_BOOKING_PHONE_BURST_LIMIT, 3),
         phoneBurstWindowSec: toInt(process.env.RATE_LIMIT_BOOKING_PHONE_BURST_WINDOW_SEC, 300),
         phoneDailyLimit: toInt(process.env.RATE_LIMIT_BOOKING_PHONE_DAILY_LIMIT, 5),
-        phoneDailyWindowSec: toInt(process.env.RATE_LIMIT_BOOKING_PHONE_DAILY_WINDOW_SEC, 86400),
+        phoneDailyWindowSec: toInt(process.env.RATE_LIMIT_BOOKING_PHONE_DAILY_WINDOW_SEC, 36000),
         ipDailyLimit: toInt(process.env.RATE_LIMIT_BOOKING_IP_DAILY_LIMIT, 20),
         ipDailyWindowSec: toInt(process.env.RATE_LIMIT_BOOKING_IP_DAILY_WINDOW_SEC, 86400),
     },

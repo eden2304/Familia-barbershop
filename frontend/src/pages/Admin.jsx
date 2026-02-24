@@ -4491,8 +4491,8 @@ const extractRecurringSchedules = (client) => {
         <Dialog open={dayHoursModalOpen} onOpenChange={setDayHoursModalOpen}>
           <DialogContent className="w-[92vw] max-w-md rounded-3xl p-4 sm:p-6" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle className="text-3xl sm:text-2xl">שעות פעילות ליום ספציפי</DialogTitle>
-              <DialogDescription className="text-lg sm:text-base">
+              <DialogTitle className="text-xl sm:text-lg">שעות פעילות ליום ספציפי</DialogTitle>
+              <DialogDescription className="text-base sm:text-sm">
                 {dayHoursDate ? `${format(dayHoursDate, 'EEEE', { locale: he })}, ${format(dayHoursDate, 'dd/MM/yyyy')}` : 'בחרת יום מהרשימה'}
               </DialogDescription>
             </DialogHeader>
@@ -4548,10 +4548,22 @@ const extractRecurringSchedules = (client) => {
                 )}
               </div>
             )}
-            <DialogFooter className="flex-row justify-end gap-2 pt-1">
-              <Button size="sm" className="px-3.5 sm:px-4 h-10" variant="outline" onClick={() => setDayHoursModalOpen(false)}>סגור</Button>
-              <Button size="sm" className="px-3.5 sm:px-4 h-10" onClick={saveDayHours} disabled={dayHoursLoading || dayHoursSaving}>
-                {dayHoursSaving ? 'שומר...' : 'שמור שעות ליום זה'}
+            <DialogFooter className="flex-row justify-center gap-2 pt-1">
+              <Button
+                size="sm"
+                className="w-32 h-10"
+                variant="outline"
+                onClick={() => setDayHoursModalOpen(false)}
+              >
+                סגור
+              </Button>
+              <Button
+                size="sm"
+                className="w-32 h-10"
+                onClick={saveDayHours}
+                disabled={dayHoursLoading || dayHoursSaving}
+              >
+                {dayHoursSaving ? 'שומר...' : 'שמור וסגור'}
               </Button>
             </DialogFooter>
           </DialogContent>

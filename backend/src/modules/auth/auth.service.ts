@@ -36,6 +36,12 @@ interface OtpMeta {
     lockedUntil?: number;
 }
 
+interface RateLimitPayload {
+    error: 'RATE_LIMITED';
+    message: string;
+    retryAfterSeconds: number;
+}
+
 interface AdminUpdateEvent {
     type: 'login' | 'visit_no_booking' | 'booking';
     message: string;
@@ -165,19 +171,27 @@ export class AuthService {
         const meta = await this.getOtpMeta(phone);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            await this.deleteOtp(phone);
-            await this.clearOtpMeta(phone);
+            const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
+            throw new HttpException(
+                { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
         }
         const recent = meta.requests.filter((ts) => now - ts < this.otpRequestWindowMs);
         if (recent.length >= this.otpRequestLimit) {
             await this.saveOtpMeta(phone, { ...meta, requests: recent, lockedUntil: meta.lockedUntil, failedAttempts: meta.failedAttempts });
-            throw new BadRequestException('Please wait before requesting another code');
+            const oldestInWindow = recent[0] || now;
+            const retryAfterSeconds = Math.max(1, Math.ceil((oldestInWindow + this.otpRequestWindowMs - now) / 1000));
+            throw new HttpException(
+                { error: 'RATE_LIMITED', message: 'OTP_REQUEST_LIMITED', retryAfterSeconds } satisfies RateLimitPayload,
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
         }
         recent.push(now);
         await this.saveOtpMeta(phone, { ...meta, requests: recent });
     }
 
-    private async recordFailedOtpAttempt(phone: string): Promise<void> {
+    private async recordFailedOtpAttempt(phone: string): Promise<number | null> {
         const meta = await this.getOtpMeta(phone);
         const failedAttempts = (meta.failedAttempts || 0) + 1;
         const lockedUntil = failedAttempts >= this.otpMaxAttempts ? Date.now() + this.otpLockMs : undefined;
@@ -187,6 +201,8 @@ export class AuthService {
         }
 
         await this.saveOtpMeta(phone, { ...meta, failedAttempts, lockedUntil });
+        if (!lockedUntil) return null;
+        return Math.max(1, Math.ceil((lockedUntil - Date.now()) / 1000));
     }
 
     private async storeOtp(phone: string, code: string) {
@@ -221,6 +237,8 @@ export class AuthService {
         if (!norm) throw new BadRequestException('Phone required');
         const code = this.generateOtpCode();
 
+        await this.assertOtpRequestAllowance(norm);
+
         await this.storeOtp(norm, code);
 
         const whatsappResult = await this.whatsAppService.sendAuthCode(norm, code);
@@ -244,7 +262,11 @@ export class AuthService {
         const meta = await this.getOtpMeta(norm);
         const now = Date.now();
         if (meta.lockedUntil && meta.lockedUntil > now) {
-            throw new BadRequestException('Invalid code');
+            const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
+            throw new HttpException(
+                { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
         }
         const record = await this.loadOtp(norm);
         if (!record) {
@@ -258,7 +280,13 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
+            if (retryAfterSeconds) {
+                throw new HttpException(
+                    { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                    HttpStatus.TOO_MANY_REQUESTS,
+                );
+            }
             throw new BadRequestException('Invalid code');
         }
 
@@ -276,8 +304,13 @@ export class AuthService {
         if (!norm) throw new BadRequestException('Phone required');
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
         const meta = await this.getOtpMeta(norm);
-        if (meta.lockedUntil && meta.lockedUntil > Date.now()) {
-            throw new BadRequestException('Invalid code');
+        const now = Date.now();
+        if (meta.lockedUntil && meta.lockedUntil > now) {
+            const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
+            throw new HttpException(
+                { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
         }
         const record = await this.loadOtp(norm);
         if (!record) throw new BadRequestException('Invalid code');
@@ -289,7 +322,13 @@ export class AuthService {
             ? verifyOtp(body.code, record.hashed, this.otpSecret)
             : false;
         if (!valid) {
-            await this.recordFailedOtpAttempt(norm);
+            const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
+            if (retryAfterSeconds) {
+                throw new HttpException(
+                    { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                    HttpStatus.TOO_MANY_REQUESTS,
+                );
+            }
             throw new BadRequestException('Invalid code');
         }
 

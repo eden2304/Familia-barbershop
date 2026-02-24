@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, UserPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
+import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -46,6 +47,12 @@ async function postJson(path, body) {
   const payload = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
+    const retryAfterSeconds = res.status === 429
+      ? pickRetryAfterSeconds({
+          retryAfterHeader: res.headers.get("retry-after"),
+          retryAfterPayload: payload?.retryAfterSeconds,
+        })
+      : 0;
     const msg =
         payload?.message ||
         payload?.error?.code ||
@@ -54,10 +61,15 @@ async function postJson(path, body) {
     const err = new Error(msg);
     err.status = res.status;
     err.payload = payload;
+    if (typeof retryAfterSeconds === "number" && retryAfterSeconds > 0) {
+      err.retryAfterSeconds = retryAfterSeconds;
+      notifyRateLimited(retryAfterSeconds);
+    }
     throw err;
   }
   return payload;
 }
+
 
 export default function VerificationModal({ onVerify, onCancel }) {
   const [view, setView] = useState("loginPhone");
@@ -74,6 +86,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
+  const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const inputRefs = useRef([]);
 
   const resetToHomeAfterOtpExceeded = () => {
@@ -112,6 +125,12 @@ export default function VerificationModal({ onVerify, onCancel }) {
     }
   }, [resendTimer]);
 
+  useEffect(() => {
+    if (rateLimitTimer <= 0) return;
+    const t = setTimeout(() => setRateLimitTimer((prev) => Math.max(0, prev - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [rateLimitTimer]);
+
   // שליחה אוטומטית כשמזינים 4 ספרות
   useEffect(() => {
     if (code.join("").length === 4) {
@@ -120,11 +139,28 @@ export default function VerificationModal({ onVerify, onCancel }) {
     }
   }, [code, view]);
 
+  const setRateLimitError = (retryAfterSeconds) => {
+    const nextTimer = Math.max(1, Number.parseInt(retryAfterSeconds, 10) || 0);
+    setRateLimitTimer(nextTimer);
+    setError("בוצעו יותר מדי בקשות. למען אבטחת המערכת ניתן לבצע בקשות שוב בעוד:");
+  };
+
+  const handleApiError = (e, fallbackMessage) => {
+    if (e?.status === 429) {
+      setRateLimitError(e?.retryAfterSeconds ?? e?.payload?.retryAfterSeconds);
+      return true;
+    }
+    setRateLimitTimer(0);
+    if (fallbackMessage) setError(fallbackMessage);
+    return false;
+  };
+
   // שליחת קוד מחדש (מכבד את ההקשר: התחברות/הרשמה)
   const handleResendCode = async () => {
     if (resendTimer > 0 || loading) return;
     try {
       setError("");
+      setRateLimitTimer(0);
       const p0 = normalizePhone(phone);
       const p972 = p0.startsWith("0") ? `972${p0.slice(1)}` : p0;
 
@@ -155,7 +191,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         setError("המספר לא רשום. יש להירשם קודם.");
         setView("registerForm");
       } else {
-        setError("שגיאה בשליחת קוד. נסה שוב.");
+        handleApiError(e, "שגיאה בשליחת קוד. נסה שוב.");
       }
     }
   };
@@ -170,6 +206,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     }
     setLoading(true);
     setError("");
+    setRateLimitTimer(0);
 
     const p0 = normalizePhone(phone);                           // 05XXXXXXXX
     const p972 = p0.startsWith("0") ? `972${p0.slice(1)}` : p0; // 9725XXXXXXXX
@@ -187,11 +224,11 @@ export default function VerificationModal({ onVerify, onCancel }) {
           if (err2?.status === 409) {
             setError("המספר לא רשום. יש להירשם קודם.");
           } else {
-            setError("שגיאה בבקשת קוד. נסה שוב.");
+            handleApiError(err2, "שגיאה בבקשת קוד. נסה שוב.");
           }
         }
       } else {
-        setError("שגיאה בבקשת קוד. נסה שוב.");
+        handleApiError(err1, "שגיאה בבקשת קוד. נסה שוב.");
       }
     } finally {
       setLoading(false);
@@ -202,6 +239,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (loading) return;
     setLoading(true);
     setError("");
+    setRateLimitTimer(0);
 
     const pin = code.join("");
     const p0 = normalizePhone(phone);                           // 05XXXXXXXX
@@ -246,7 +284,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           } else if (e2?.status === 400) {
             setError("קוד לא תקין.");
           } else {
-            setError("שגיאה באימות. נסה שוב.");
+            handleApiError(e2, "שגיאה באימות. נסה שוב.");
           }
         }
       } else if (isOtpAttemptsExceeded(e1)) {
@@ -254,7 +292,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       } else if (e1?.status === 400) {
         setError("קוד לא תקין.");
       } else {
-        setError("שגיאה באימות. נסה שוב.");
+        handleApiError(e1, "שגיאה באימות. נסה שוב.");
       }
     } finally {
       setLoading(false);
@@ -279,6 +317,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
 
     setLoading(true);
     setError("");
+    setRateLimitTimer(0);
 
     try {
       const normalizedPhone = normalizePhone(phone);
@@ -302,7 +341,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         setError("מספר זה כבר רשום. עבור למסך התחברות.");
         setView("loginPhone");
       } else {
-        setError("שגיאה בבקשת קוד. נסה שוב.");
+        handleApiError(e, "שגיאה בבקשת קוד. נסה שוב.");
       }
     } finally {
       setLoading(false);
@@ -315,6 +354,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (loading) return;
     setLoading(true);
     setError("");
+    setRateLimitTimer(0);
     try {
       const normalizedPhone = normalizePhone(phone);
       // ✅ רישום אמיתי בשרת
@@ -362,7 +402,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       } else if (e?.status === 400) {
         setError("קוד לא תקין.");
       } else {
-        setError("שגיאה ביצירת המשתמש. נסה שוב.");
+        handleApiError(e, "שגיאה ביצירת המשתמש. נסה שוב.");
       }
     } finally {
       setLoading(false);
@@ -567,6 +607,11 @@ export default function VerificationModal({ onVerify, onCancel }) {
                     <Alert className="mb-4 border-red-200 bg-red-50 text-center">
                       <AlertDescription className="text-red-700">
                         {error}
+                        {rateLimitTimer > 0 && (
+                          <div className="mt-1 font-semibold" dir="ltr">
+                            {formatRateLimitCountdown(rateLimitTimer)}
+                          </div>
+                        )}
                       </AlertDescription>
                     </Alert>
                 )}

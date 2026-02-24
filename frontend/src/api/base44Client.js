@@ -72,10 +72,27 @@ export function invalidateCacheByPathPrefix(prefix) {
   const normalized = String(prefix || '');
   if (!normalized) return;
   const match = String(BASE_URL) + normalized;
+
   for (const key of __getCache.keys()) {
     if (key.startsWith(match)) {
       __getCache.delete(key);
     }
+  }
+
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const keysToDelete = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const storageKey = localStorage.key(i);
+      if (!storageKey || !storageKey.startsWith(__storagePrefix)) continue;
+      const cacheKey = storageKey.slice(__storagePrefix.length);
+      if (cacheKey.startsWith(match)) {
+        keysToDelete.push(storageKey);
+      }
+    }
+    keysToDelete.forEach((storageKey) => localStorage.removeItem(storageKey));
+  } catch {
+    // ignore storage failures
   }
 }
 

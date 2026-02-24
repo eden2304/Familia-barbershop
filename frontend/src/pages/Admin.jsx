@@ -493,7 +493,12 @@ export default function Admin() { // Removed props
       setDayHoursModalOpen(false);
     } catch (error) {
       console.error('Failed saving day business hours override', error);
-      toast({ title: 'שמירת שעות היום נכשלה', variant: 'destructive' });
+      const description = error?.payload?.message || error?.payload?.error || error?.message || undefined;
+      toast({
+        title: 'שמירת שעות היום נכשלה',
+        description,
+        variant: 'destructive',
+      });
     } finally {
       setDayHoursSaving(false);
     }

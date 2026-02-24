@@ -2831,117 +2831,123 @@ const extractRecurringSchedules = (client) => {
                           </Button>
                         </div>
                         <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
-                          <div className="grid min-w-[700px] gap-2 p-2 md:grid-cols-6">
-                            {weeklyCalendarColumns.map(({ day, dayKey, isOpen, slots }) => (
-                              <div key={dayKey} className="border rounded-xl overflow-hidden bg-white">
-                                <div className={`sticky top-0 z-20 border-b px-1 py-1 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
+                          <div className="min-w-[700px]">
+                            <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
+                              {weeklyCalendarColumns.map(({ day, dayKey }) => (
+                                <div key={`header-${dayKey}`} className={`sticky top-0 z-20 border-b border-l px-1 py-1 text-center text-xs font-semibold first:border-l-0 ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
                                   <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
                                   <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
                                 </div>
+                              ))}
+                            </div>
 
-                                {!isOpen ? (
-                                  <div className="min-h-10 px-2 py-3 text-center text-[11px] text-gray-400">סגור</div>
-                                ) : (
-                                  slots.map((slotMinute) => {
-                                    const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
-                                    const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
-                                    const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
-                                    return (
-                                      <div
-                                        key={`${dayKey}-${slotMinute}`}
-                                        data-calendar-cell="1"
-                                        data-day-date={dayKey}
-                                        data-slot-minute={slotMinute}
-                                        className={`relative border-b min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
-                                        onDragOver={(e) => {
-                                          if (!draggedAppointmentId) return;
-                                          e.preventDefault();
-                                        }}
-                                        onDrop={() => {
-                                          if (!draggedAppointmentId) return;
-                                          handleCalendarDrop(draggedAppointmentId, day, slotMinute);
-                                          setDraggedAppointmentId(null);
-                                        }}
-                                      >
-                                        {!apt ? (
-                                          <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
-                                            {toTimeString(slotMinute)}
-                                          </div>
-                                        ) : null}
-                                        {apt ? (
-                                          <button
-                                            type="button"
-                                            draggable={isDraggableApt}
-                                            onDragStart={(event) => {
-                                              if (!isDraggableApt) {
-                                                  return;
-                                              }
-                                              setDraggedAppointmentId(apt.id);
-                                              startCalendarDragPreview(apt, event);
-                                            }}
-                                            onDrag={(event) => {
-                                              if (!isDraggableApt || event.clientX <= 0 || event.clientY <= 0) return;
-                                              moveCalendarDragPreview(event);
-                                              autoScrollWeeklyCalendarWhileDragging(event);
-                                            }}
-                                            onDragEnd={() => {
-                                              setDraggedAppointmentId(null);
-                                              endCalendarDragPreview();
-                                            }}
-                                            onTouchStart={(event) => {
-                                              if (!isDraggableApt) return;
-                                              const touchPoint = event.touches?.[0];
-                                              if (!touchPoint) return;
-                                              touchDragStartRef.current = { x: touchPoint.clientX, y: touchPoint.clientY, aptId: apt.id };
-                                              setDraggedAppointmentId(apt.id);
-                                            }}
-                                            onTouchMove={(event) => {
-                                              if (!isDraggableApt || !draggedAppointmentId) return;
-                                              const touchPoint = event.touches?.[0];
-                                              if (!touchPoint) return;
-                                              const start = touchDragStartRef.current;
-                                              if (!start) return;
-                                              const moved = Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y);
-                                              if (moved < 10) return;
-                                              if (!dragPreview) {
-                                                startCalendarDragPreview(apt, touchPoint);
-                                              } else {
-                                                moveCalendarDragPreview(touchPoint);
-                                              }
-                                              autoScrollWeeklyCalendarWhileDragging(touchPoint);
-                                            }}
-                                            onTouchEnd={(event) => {
-                                              if (!isDraggableApt || !draggedAppointmentId) return;
-                                              const touchPoint = event.changedTouches?.[0];
-                                              const start = touchDragStartRef.current;
-                                              const moved = (touchPoint && start)
-                                                ? Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y)
-                                                : 0;
-                                              if (touchPoint && moved >= 10) {
-                                                handleCalendarTouchDrop(touchPoint);
-                                              }
-                                              clearTouchDragState();
-                                            }}
-                                            onTouchCancel={clearTouchDragState}
-                                            onClick={() => setSelectedAppointment({
-                                              ...apt,
-                                              client_name: displayInfo?.name || apt.client_name,
-                                              clientName: displayInfo?.name || apt.client_name,
-                                              client_phone: displayInfo?.phone || apt.client_phone,
-                                              client: displayInfo?.client || apt.client,
-                                            })}
-                                            className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
-                                          >
-                                            <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
-                                            <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
-                                          </button>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            ))}
+                            <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
+                              {weeklyCalendarColumns.map(({ day, dayKey, isOpen, slots }) => (
+                                <div key={dayKey} className="border-l first:border-l-0">
+                                  {!isOpen ? (
+                                    <div className="min-h-10 border-b px-2 py-3 text-center text-[11px] text-gray-400">סגור</div>
+                                  ) : (
+                                    slots.map((slotMinute) => {
+                                      const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
+                                      const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
+                                      const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
+                                      return (
+                                        <div
+                                          key={`${dayKey}-${slotMinute}`}
+                                          data-calendar-cell="1"
+                                          data-day-date={dayKey}
+                                          data-slot-minute={slotMinute}
+                                          className={`relative border-b min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                          onDragOver={(e) => {
+                                            if (!draggedAppointmentId) return;
+                                            e.preventDefault();
+                                          }}
+                                          onDrop={() => {
+                                            if (!draggedAppointmentId) return;
+                                            handleCalendarDrop(draggedAppointmentId, day, slotMinute);
+                                            setDraggedAppointmentId(null);
+                                          }}
+                                        >
+                                          {!apt ? (
+                                            <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
+                                              {toTimeString(slotMinute)}
+                                            </div>
+                                          ) : null}
+                                          {apt ? (
+                                            <button
+                                              type="button"
+                                              draggable={isDraggableApt}
+                                              onDragStart={(event) => {
+                                                if (!isDraggableApt) {
+                                                    return;
+                                                }
+                                                setDraggedAppointmentId(apt.id);
+                                                startCalendarDragPreview(apt, event);
+                                              }}
+                                              onDrag={(event) => {
+                                                if (!isDraggableApt || event.clientX <= 0 || event.clientY <= 0) return;
+                                                moveCalendarDragPreview(event);
+                                                autoScrollWeeklyCalendarWhileDragging(event);
+                                              }}
+                                              onDragEnd={() => {
+                                                setDraggedAppointmentId(null);
+                                                endCalendarDragPreview();
+                                              }}
+                                              onTouchStart={(event) => {
+                                                if (!isDraggableApt) return;
+                                                const touchPoint = event.touches?.[0];
+                                                if (!touchPoint) return;
+                                                touchDragStartRef.current = { x: touchPoint.clientX, y: touchPoint.clientY, aptId: apt.id };
+                                                setDraggedAppointmentId(apt.id);
+                                              }}
+                                              onTouchMove={(event) => {
+                                                if (!isDraggableApt || !draggedAppointmentId) return;
+                                                const touchPoint = event.touches?.[0];
+                                                if (!touchPoint) return;
+                                                const start = touchDragStartRef.current;
+                                                if (!start) return;
+                                                const moved = Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y);
+                                                if (moved < 10) return;
+                                                if (!dragPreview) {
+                                                  startCalendarDragPreview(apt, touchPoint);
+                                                } else {
+                                                  moveCalendarDragPreview(touchPoint);
+                                                }
+                                                autoScrollWeeklyCalendarWhileDragging(touchPoint);
+                                              }}
+                                              onTouchEnd={(event) => {
+                                                if (!isDraggableApt || !draggedAppointmentId) return;
+                                                const touchPoint = event.changedTouches?.[0];
+                                                const start = touchDragStartRef.current;
+                                                const moved = (touchPoint && start)
+                                                  ? Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y)
+                                                  : 0;
+                                                if (touchPoint && moved >= 10) {
+                                                  handleCalendarTouchDrop(touchPoint);
+                                                }
+                                                clearTouchDragState();
+                                              }}
+                                              onTouchCancel={clearTouchDragState}
+                                              onClick={() => setSelectedAppointment({
+                                                ...apt,
+                                                client_name: displayInfo?.name || apt.client_name,
+                                                clientName: displayInfo?.name || apt.client_name,
+                                                client_phone: displayInfo?.phone || apt.client_phone,
+                                                client: displayInfo?.client || apt.client,
+                                              })}
+                                              className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                            >
+                                              <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
+                                              <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                           <div className="p-2 text-[11px] text-gray-500 border-t">
                             גרור תור לקובייה אחרת ואז לחץ אישור כדי לעדכן את השעה/היום.

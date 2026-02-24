@@ -10,8 +10,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { DateTime } from 'luxon';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
+import { Appointment } from '../../entities/appointment.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 
@@ -51,6 +53,7 @@ export class AdminBusinessHoursController {
     constructor(
         @InjectRepository(BusinessHour) private readonly businessHoursRepo: Repository<BusinessHour>,
         @InjectRepository(BusinessHoursOverride) private readonly businessHoursOverrideRepo: Repository<BusinessHoursOverride>,
+        @InjectRepository(Appointment) private readonly appointmentsRepo: Repository<Appointment>,
     ) {}
 
     private isValidDate(value: string) {
@@ -63,6 +66,33 @@ export class AdminBusinessHoursController {
 
     private sanitizeTime(value: any) {
         return sanitizeTime(value);
+    }
+
+    private async findConflictingAppointmentsForDay(
+        dateStr: string,
+        isOpen: boolean,
+        openMin: number | null,
+        closeMin: number | null,
+    ) {
+        const dayAppointments = await this.appointmentsRepo
+            .createQueryBuilder('a')
+            .where("(a.startsAt AT TIME ZONE 'Asia/Jerusalem')::date = :d", { d: dateStr })
+            .andWhere("coalesce(a.status, 'booked') <> 'canceled'")
+            .orderBy('a.startsAt', 'ASC')
+            .getMany();
+
+        return dayAppointments.filter((appointment) => {
+            const localStart = DateTime.fromJSDate(appointment.startsAt, { zone: 'utc' }).setZone('Asia/Jerusalem');
+            const localEnd = DateTime.fromJSDate(appointment.endsAt ?? appointment.startsAt, { zone: 'utc' }).setZone('Asia/Jerusalem');
+            const startInMinutes = localStart.hour * 60 + localStart.minute;
+            const endInMinutes = localEnd.hour * 60 + localEnd.minute;
+
+            if (!isOpen || openMin === null || closeMin === null) {
+                return true;
+            }
+
+            return startInMinutes < openMin || endInMinutes > closeMin;
+        });
     }
 
     @Get('business-hours/day/:date')
@@ -135,6 +165,27 @@ export class AdminBusinessHoursController {
             if (closeMin <= openMin) {
                 throw new BadRequestException('INVALID_HOUR_RANGE');
             }
+        }
+
+        const openMin = resolvedIsOpen ? timeToMinutes(open) : null;
+        const closeMin = resolvedIsOpen ? timeToMinutes(close) : null;
+        const conflictingAppointments = await this.findConflictingAppointmentsForDay(
+            dateStr,
+            resolvedIsOpen,
+            openMin,
+            closeMin,
+        );
+
+        if (conflictingAppointments.length > 0) {
+            throw new BadRequestException({
+                code: 'BUSINESS_HOURS_CONFLICT',
+                message: 'לא ניתן לעדכן את שעות היום הזה כי קיימים תורים בטווח שייצא מחוץ לשעות החדשות.',
+                conflicts: conflictingAppointments.map((appointment) => ({
+                    id: appointment.id,
+                    startsAt: appointment.startsAt,
+                    endsAt: appointment.endsAt,
+                })),
+            });
         }
 
         const existing = await this.businessHoursOverrideRepo.findOne({ where: { date: dateStr } });

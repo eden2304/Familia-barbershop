@@ -1186,41 +1186,45 @@ const extractRecurringSchedules = (client) => {
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   }, [weeklyAppointmentsData, weeklyCalendarStart]);
 
-  const calendarBounds = useMemo(() => {
-    const fallbackStart = 8 * 60;
-    const fallbackEnd = 21 * 60;
-    const visibleWeekdays = new Set(weeklyCalendarDays.map((day) => day.getDay()));
+  const weeklyBusinessHoursByDay = useMemo(() => {
+    const map = {};
+    (businessHours || []).forEach((row) => {
+      const normalized = normalizeBusinessHourRow(row);
+      if (!normalized) return;
+      map[normalized.weekday] = normalized;
+    });
+    return map;
+  }, [businessHours]);
 
-    const relevantRows = (businessHours || [])
-      .map((row) => normalizeBusinessHourRow(row))
-      .filter((row) => row && row.isOpen && visibleWeekdays.has(row.weekday));
+  const weeklyAppointmentsBySlot = useMemo(() => {
+    const map = new Map();
+    (weeklyAppointments || []).forEach((appointment) => {
+      const start = new Date(appointment.starts_at);
+      const dayKey = format(start, 'yyyy-MM-dd');
+      const minute = start.getHours() * 60 + start.getMinutes();
+      map.set(`${dayKey}-${minute}`, appointment);
+    });
+    return map;
+  }, [weeklyAppointments]);
 
-    const opens = relevantRows
-      .map((row) => toMinutes(row?.open))
-      .filter((val) => Number.isFinite(val));
-    const closes = relevantRows
-      .map((row) => toMinutes(row?.close))
-      .filter((val) => Number.isFinite(val));
-
-    const minOpen = opens.length ? Math.min(...opens) : fallbackStart;
-    const maxClose = closes.length ? Math.max(...closes) : fallbackEnd;
-
-    const startMinutes = Math.max(0, Math.floor(minOpen / 30) * 30);
-    const endMinutes = Math.min(24 * 60, Math.ceil(maxClose / 30) * 30 + 30);
-    return {
-      startMinutes,
-      endMinutes: endMinutes > startMinutes ? endMinutes : startMinutes + 30,
-      slotMinutes: 30,
-    };
-  }, [businessHours, weeklyCalendarDays]);
-
-  const calendarTimeSlots = useMemo(() => {
-    const slots = [];
-    for (let minute = calendarBounds.startMinutes; minute < calendarBounds.endMinutes; minute += calendarBounds.slotMinutes) {
-      slots.push(minute);
-    }
-    return slots;
-  }, [calendarBounds]);
+  const weeklyCalendarColumns = useMemo(() => {
+    return weeklyCalendarDays.map((day) => {
+      const dayKey = format(day, 'yyyy-MM-dd');
+      const weekday = day.getDay();
+      const dayHours = weeklyBusinessHoursByDay[weekday];
+      const step = Math.max(5, Number(dayHours?.slotMinutes ?? 30) || 30);
+      const openMinutes = toMinutes(dayHours?.open);
+      const closeMinutes = toMinutes(dayHours?.close);
+      const isOpen = Boolean(dayHours?.isOpen) && Number.isFinite(openMinutes) && Number.isFinite(closeMinutes) && closeMinutes > openMinutes;
+      const slots = [];
+      if (isOpen) {
+        for (let minute = openMinutes; minute < closeMinutes; minute += step) {
+          slots.push(minute);
+        }
+      }
+      return { day, dayKey, isOpen, slots };
+    });
+  }, [weeklyCalendarDays, weeklyBusinessHoursByDay]);
 
   const canDragAppointmentInCalendar = React.useCallback((appointment) => {
     if (!appointment) return false;
@@ -2827,26 +2831,19 @@ const extractRecurringSchedules = (client) => {
                           </Button>
                         </div>
                         <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
-                          <div className="grid min-w-[700px]" style={{ gridTemplateColumns: '52px repeat(6, minmax(96px, 1fr))' }}>
-                            <div className="sticky top-0 z-20 border-b border-l px-1 py-1 bg-gray-100 text-[11px] text-gray-500">שעה</div>
-                            {weeklyCalendarDays.map((day) => (
-                              <div key={day.toISOString()} className={`sticky top-0 z-20 border-b border-l px-1 py-1 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
-                                <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
-                                <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
-                              </div>
-                            ))}
+                          <div className="grid min-w-[700px] gap-2 p-2 md:grid-cols-6">
+                            {weeklyCalendarColumns.map(({ day, dayKey, isOpen, slots }) => (
+                              <div key={dayKey} className="border rounded-xl overflow-hidden bg-white">
+                                <div className={`sticky top-0 z-20 border-b px-1 py-1 text-center text-xs font-semibold ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
+                                  <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
+                                  <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
+                                </div>
 
-                              {calendarTimeSlots.map((slotMinute) => (
-                                <React.Fragment key={slotMinute}>
-                                  <div className="border-b border-l px-1 py-0.5 text-[11px] text-gray-500 bg-gray-50">
-                                    {toTimeString(slotMinute)}
-                                  </div>
-                                  {weeklyCalendarDays.map((day) => {
-                                    const dayKey = format(day, 'yyyy-MM-dd');
-                                    const apt = weeklyAppointments.find((item) => (
-                                        format(new Date(item.starts_at), 'yyyy-MM-dd') === dayKey &&
-                                        new Date(item.starts_at).getHours() * 60 + new Date(item.starts_at).getMinutes() === slotMinute
-                                    ));
+                                {!isOpen ? (
+                                  <div className="min-h-10 px-2 py-3 text-center text-[11px] text-gray-400">סגור</div>
+                                ) : (
+                                  slots.map((slotMinute) => {
+                                    const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
                                     const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
                                     const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
                                     return (
@@ -2855,7 +2852,7 @@ const extractRecurringSchedules = (client) => {
                                         data-calendar-cell="1"
                                         data-day-date={dayKey}
                                         data-slot-minute={slotMinute}
-                                        className={`relative border-b border-l min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                        className={`relative border-b min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
                                         onDragOver={(e) => {
                                           if (!draggedAppointmentId) return;
                                           e.preventDefault();
@@ -2941,10 +2938,11 @@ const extractRecurringSchedules = (client) => {
                                         ) : null}
                                       </div>
                                     );
-                                  })}
-                                </React.Fragment>
-                              ))}
-                            </div>
+                                  })
+                                )}
+                              </div>
+                            ))}
+                          </div>
                           <div className="p-2 text-[11px] text-gray-500 border-t">
                             גרור תור לקובייה אחרת ואז לחץ אישור כדי לעדכן את השעה/היום.
                           </div>

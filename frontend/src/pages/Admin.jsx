@@ -389,6 +389,7 @@ export default function Admin() { // Removed props
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
+  const [weeklyDayHoursOverrides, setWeeklyDayHoursOverrides] = useState({});
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
@@ -410,6 +411,28 @@ export default function Admin() { // Removed props
       options.push(`${String(hour).padStart(2, '0')}:30`);
     }
     return options;
+  }, []);
+
+  const loadWeeklyDayHours = React.useCallback(async (days) => {
+    if (!Array.isArray(days) || days.length === 0) return;
+    try {
+      const rows = await Promise.all(
+          days.map(async (day) => {
+            const dayKey = format(day, 'yyyy-MM-dd');
+            const data = await BusinessHours.getDay(dayKey).catch(() => null);
+            return [dayKey, data];
+          })
+      );
+      const next = {};
+      rows.forEach(([dayKey, data]) => {
+        if (!data) return;
+        next[dayKey] = data;
+      });
+      setWeeklyDayHoursOverrides(next);
+    } catch (error) {
+      console.error('Failed loading weekly day hours', error);
+      setWeeklyDayHoursOverrides({});
+    }
   }, []);
 
   const openDayHoursModal = async (day) => {
@@ -464,6 +487,9 @@ export default function Admin() { // Removed props
       });
       toast({ title: 'שעות הפעילות ליום נשמרו' });
       await loadData();
+      if (appointmentsViewMode === 'calendar') {
+        await loadWeeklyDayHours(weeklyCalendarDays);
+      }
       setDayHoursModalOpen(false);
     } catch (error) {
       console.error('Failed saving day business hours override', error);
@@ -1261,6 +1287,11 @@ const extractRecurringSchedules = (client) => {
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   }, [weeklyAppointmentsData, weeklyCalendarStart]);
 
+  useEffect(() => {
+    if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
+    loadWeeklyDayHours(weeklyCalendarDays);
+  }, [isAuthenticated, appointmentsViewMode, loadWeeklyDayHours, weeklyCalendarDays]);
+
   const weeklyBusinessHoursByDay = useMemo(() => {
     const map = {};
     (businessHours || []).forEach((row) => {
@@ -1286,7 +1317,7 @@ const extractRecurringSchedules = (client) => {
     return weeklyCalendarDays.map((day) => {
       const dayKey = format(day, 'yyyy-MM-dd');
       const weekday = day.getDay();
-      const dayHours = weeklyBusinessHoursByDay[weekday];
+      const dayHours = weeklyDayHoursOverrides[dayKey] ?? weeklyBusinessHoursByDay[weekday];
       const step = Math.max(5, Number(dayHours?.slotMinutes ?? 30) || 30);
       const openMinutes = toMinutes(dayHours?.open);
       const closeMinutes = toMinutes(dayHours?.close);
@@ -1299,7 +1330,7 @@ const extractRecurringSchedules = (client) => {
       }
       return { day, dayKey, isOpen, slots };
     });
-  }, [weeklyCalendarDays, weeklyBusinessHoursByDay]);
+  }, [weeklyCalendarDays, weeklyBusinessHoursByDay, weeklyDayHoursOverrides]);
 
   const canDragAppointmentInCalendar = React.useCallback((appointment) => {
     if (!appointment) return false;

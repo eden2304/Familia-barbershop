@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import VerificationModal from "../components/VerificationModal.jsx";
 import WaitingListModal from "../components/WaitingListModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
+import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
@@ -208,6 +209,7 @@ export default function Book() {
   const [showVerification, setShowVerification] = useState(false);
   const [showWaitingList, setShowWaitingList] = useState(false);
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
 
   const shouldAutoOpenNextWeek = useCallback(() => {
     const now = new Date();
@@ -325,6 +327,13 @@ export default function Book() {
       }
     }
   }, [clientIsMember, selectedService, membersOnlySet]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("showBookingUpdates") === "true") {
+      setShowWelcomeBanner(true);
+      sessionStorage.removeItem("showBookingUpdates");
+    }
+  }, []);
 
   /* -------- init: client + services -------- */
   useEffect(() => {
@@ -653,6 +662,10 @@ export default function Book() {
 
   return (
       <>
+        <AnimatePresence>
+          {showWelcomeBanner && <ClientWelcomeBanner onClose={() => setShowWelcomeBanner(false)} />}
+        </AnimatePresence>
+
         {showVerification && (
             <VerificationModal
                 isOpen={showVerification}

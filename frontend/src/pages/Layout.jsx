@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { User, Home as HomeIcon, History, Navigation, Phone, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AnimatePresence } from "framer-motion";
-import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
@@ -15,7 +13,6 @@ function MainLayout({ children, currentPageName }) {
   const { setSidebarOpen } = useSidebar();
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
 
   const checkLoginState = useCallback(() => {
     const storedClient = localStorage.getItem('familiaClient');
@@ -37,10 +34,6 @@ function MainLayout({ children, currentPageName }) {
       setClient(parsedClient);
       const adminFlag = Boolean(parsedClient.isAdmin || parsedClient.is_admin || parsedClient.roles?.includes('admin'));
       setIsAdmin(adminFlag);
-      if (sessionStorage.getItem('justLoggedIn') === 'true') {
-        setShowWelcomeBanner(true);
-        sessionStorage.removeItem('justLoggedIn');
-      }
     } else {
       setClient(null);
       setIsAdmin(false);
@@ -98,10 +91,6 @@ function MainLayout({ children, currentPageName }) {
           min-height: calc(100vh - 100px);
         }
       `}</style>
-      <AnimatePresence>
-        {showWelcomeBanner && client && <ClientWelcomeBanner onClose={() => setShowWelcomeBanner(false)} />}
-      </AnimatePresence>
-
       <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none">
         <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
@@ -183,4 +172,3 @@ export default function Layout({ children, currentPageName }) {
     </SidebarProvider>
   );
 }
-

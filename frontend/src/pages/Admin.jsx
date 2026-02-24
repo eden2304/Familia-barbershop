@@ -485,16 +485,12 @@ export default function Admin() { // Removed props
         slotIntervalMinutes: dayHoursDraft.slotMinutes,
         isOpen: dayHoursDraft.isOpen,
       });
-      toast({
-        title: 'שעות הפעילות ליום נשמרו',
-        description: 'המערכת תתעדכן אוטומטית בעוד רגע.',
-      });
+      toast({ title: 'שעות הפעילות ליום נשמרו' });
       await loadData();
       if (appointmentsViewMode === 'calendar') {
         await loadWeeklyDayHours(weeklyCalendarDays);
       }
       setDayHoursModalOpen(false);
-      triggerShortAutoRefresh();
     } catch (error) {
       console.error('Failed saving day business hours override', error);
       const description = error?.payload?.message || error?.payload?.error || error?.message || undefined;
@@ -985,12 +981,6 @@ export default function Admin() { // Removed props
     setBusinessHoursFeedback(null);
   };
 
-  const triggerShortAutoRefresh = React.useCallback(() => {
-    window.setTimeout(() => {
-      window.location.reload();
-    }, 900);
-  }, []);
-
   const handleBusinessDayToggle = (weekday, isOpen) => {
     setBusinessHoursDraft((prev) =>
         prev.map((row) => {
@@ -1052,8 +1042,7 @@ export default function Admin() { // Removed props
       const normalized = Array.isArray(response) ? response : rowsToSave;
       setBusinessHours(normalized);
       setBusinessHoursDirty(false);
-      setBusinessHoursFeedback({ type: 'success', message: 'שעות הפעילות נשמרו בהצלחה. מתבצע רענון אוטומטי...' });
-      triggerShortAutoRefresh();
+      setBusinessHoursFeedback({ type: 'success', message: 'שעות הפעילות נשמרו בהצלחה.' });
     } catch (error) {
       console.error('Failed to save business hours', error);
       setBusinessHoursFeedback({ type: 'error', message: 'שמירת שעות הפעילות נכשלה. נסה שוב.' });

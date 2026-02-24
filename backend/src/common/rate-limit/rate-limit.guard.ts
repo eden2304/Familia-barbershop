@@ -91,6 +91,8 @@ export class RateLimitGuard implements CanActivate {
 
     private buildChecks(policy: RateLimitPolicyName, req: Request & { user?: any }): Array<{ key: string; limit: number; windowSec: number; maskedPhone: string; maskedIp: string }> {
         const ip = getClientIp(req);
+        const routePathRaw = String(req.path || req.originalUrl || '').split('?')[0];
+        const routePath = routePathRaw.startsWith('/') ? routePathRaw : `/${routePathRaw}`;
         const maskedIp = maskIp(ip);
         const bodyPhone = normalizePhoneKey((req.body as any)?.phone ?? (req.body as any)?.clientPhone ?? (req.body as any)?.client_phone ?? (req.body as any)?.client?.phone);
         const userPhone = normalizePhoneKey(req.user?.phone);
@@ -132,6 +134,21 @@ export class RateLimitGuard implements CanActivate {
             return [
                 { key: `admin-verify:ip:${ip}`, limit: rateLimitConfig.adminVerify.ipLimit, windowSec: rateLimitConfig.adminVerify.ipWindowSec, maskedPhone: 'unknown', maskedIp },
             ];
+        }
+
+        const isAdminUiRoute =
+            routePath === '/admin' ||
+            routePath.startsWith('/admin/') ||
+            routePath.startsWith('/settings/admin.updates');
+
+        if (isAdminUiRoute) {
+            return [{
+                key: `admin-ui:ip:${ip}:${req.method.toUpperCase()}:${routePath}`,
+                limit: rateLimitConfig.adminUi.limit,
+                windowSec: rateLimitConfig.adminUi.windowSec,
+                maskedPhone,
+                maskedIp,
+            }];
         }
 
         return [{ key: `global:ip:${ip}`, limit: rateLimitConfig.global.limit, windowSec: rateLimitConfig.global.windowSec, maskedPhone, maskedIp }];

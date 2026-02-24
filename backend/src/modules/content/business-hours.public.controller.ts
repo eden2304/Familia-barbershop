@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Public } from '../auth/public.decorator';
 
@@ -34,6 +34,10 @@ async function seedBusinessHoursIfEmpty(ds: DataSource) {
 export class BusinessHoursPublicController {
     constructor(private readonly ds: DataSource) {}
 
+    private isValidDate(value: string) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+    }
+
     @Public()
     @Get('business-hours')
     async list() {
@@ -45,5 +49,57 @@ export class BusinessHoursPublicController {
        FROM business_hours
        ORDER BY weekday ASC, id ASC`,
         );
+    }
+
+    @Public()
+    @Get('business-hours/day')
+    async day(@Query('date') date: string) {
+        const dateStr = String(date || '').trim();
+        if (!this.isValidDate(dateStr)) {
+            throw new BadRequestException('INVALID_DATE');
+        }
+
+        await seedBusinessHoursIfEmpty(this.ds);
+
+        const offset = '+02:00';
+        const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
+        const [base] = await this.ds.query(
+            `SELECT id, weekday, open, close, slot_interval_minutes
+       FROM business_hours
+       WHERE weekday = $1
+       ORDER BY id ASC
+       LIMIT 1`,
+            [jsDow],
+        );
+
+        const [override] = await this.ds.query(
+            `SELECT id, date, open, close, slot_interval_minutes
+       FROM business_hours_overrides
+       WHERE date = $1
+       LIMIT 1`,
+            [dateStr],
+        );
+
+        const open = String(override?.open ?? base?.open ?? '00:00');
+        const close = String(override?.close ?? base?.close ?? '00:00');
+        const slot = Number(override?.slot_interval_minutes ?? base?.slot_interval_minutes ?? 30) || 30;
+        const isOpen = Boolean(open && close && open !== close);
+
+        return {
+            date: dateStr,
+            weekday: jsDow,
+            open: isOpen ? open : null,
+            close: isOpen ? close : null,
+            open_time: isOpen ? open : null,
+            close_time: isOpen ? close : null,
+            slotIntervalMinutes: slot,
+            slot_interval_minutes: slot,
+            isOpen,
+            is_open: isOpen,
+            isClosed: !isOpen,
+            is_closed: !isOpen,
+            hasOverride: Boolean(override),
+            has_override: Boolean(override),
+        };
     }
 }

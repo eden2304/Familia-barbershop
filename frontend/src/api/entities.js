@@ -197,6 +197,45 @@ export const BusinessHours = {
         return normalizeBusinessHourArr(payload);
     },
     update: async (rows) => BusinessHours.updateAll(rows),
+    getDay: async (date) => {
+        const dateStr = String(date || '').trim();
+        if (!dateStr) return null;
+        const res = await api.get(`/business-hours/day?date=${encodeURIComponent(dateStr)}`);
+        if (!res) return null;
+        return normalizeBusinessHour({
+            ...res,
+            weekday: res.weekday,
+            open: res.open ?? res.open_time,
+            close: res.close ?? res.close_time,
+            slotIntervalMinutes: res.slotIntervalMinutes ?? res.slot_interval_minutes,
+            isOpen: res.isOpen ?? res.is_open ?? !(res.isClosed ?? res.is_closed),
+            hasOverride: Boolean(res.hasOverride ?? res.has_override),
+            date: dateStr,
+        }) || null;
+    },
+    updateDay: async (date, row) => {
+        const dateStr = String(date || '').trim();
+        if (!dateStr) throw new Error('INVALID_DATE');
+        const payload = {
+            open: row?.open ?? row?.open_time ?? null,
+            close: row?.close ?? row?.close_time ?? null,
+            slotIntervalMinutes: Number(row?.slotIntervalMinutes ?? row?.slot_interval_minutes ?? row?.slot ?? 30) || 30,
+            isOpen: row?.isOpen ?? row?.is_open ?? !(row?.isClosed ?? row?.is_closed),
+        };
+        const res = await api.put(`/admin/business-hours/day/${encodeURIComponent(dateStr)}`, payload);
+        invalidateCacheByPathPrefix('/business-hours');
+        invalidateCacheByPathPrefix('/business-hours/day');
+        return normalizeBusinessHour({
+            ...res,
+            weekday: res.weekday,
+            open: res.open ?? res.open_time,
+            close: res.close ?? res.close_time,
+            slotIntervalMinutes: res.slotIntervalMinutes ?? res.slot_interval_minutes,
+            isOpen: res.isOpen ?? res.is_open ?? !(res.isClosed ?? res.is_closed),
+            hasOverride: true,
+            date: dateStr,
+        });
+    },
 };
 export const BusinessHour = BusinessHours;
 export const OpeningHours = BusinessHours;

@@ -2,12 +2,16 @@ import {
     BadRequestException,
     Body,
     Controller,
+    Get,
+    Param,
+    Put as PutRoute,
     Put,
     UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessHour } from '../../entities/business-hour.entity';
+import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 
@@ -46,7 +50,118 @@ function timeToMinutes(value: string | null) {
 export class AdminBusinessHoursController {
     constructor(
         @InjectRepository(BusinessHour) private readonly businessHoursRepo: Repository<BusinessHour>,
+        @InjectRepository(BusinessHoursOverride) private readonly businessHoursOverrideRepo: Repository<BusinessHoursOverride>,
     ) {}
+
+    private isValidDate(value: string) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+    }
+
+    private weekdayForDate(dateStr: string) {
+        return new Date(`${dateStr}T12:00:00+02:00`).getDay();
+    }
+
+    private sanitizeTime(value: any) {
+        return sanitizeTime(value);
+    }
+
+    @Get('business-hours/day/:date')
+    async getDay(@Param('date') date: string) {
+        const dateStr = String(date || '').trim();
+        if (!this.isValidDate(dateStr)) {
+            throw new BadRequestException('INVALID_DATE');
+        }
+
+        const weekday = this.weekdayForDate(dateStr);
+        const base = await this.businessHoursRepo.findOne({ where: { weekday } });
+        const override = await this.businessHoursOverrideRepo.findOne({ where: { date: dateStr } });
+
+        const open = String(override?.open ?? base?.open ?? '00:00');
+        const close = String(override?.close ?? base?.close ?? '00:00');
+        const slotIntervalMinutes = Number(override?.slotIntervalMinutes ?? base?.slotIntervalMinutes ?? 30) || 30;
+        const isOpen = Boolean(open && close && open !== close);
+
+        return {
+            date: dateStr,
+            weekday,
+            open: isOpen ? open : null,
+            close: isOpen ? close : null,
+            open_time: isOpen ? open : null,
+            close_time: isOpen ? close : null,
+            slotIntervalMinutes,
+            slot_interval_minutes: slotIntervalMinutes,
+            isOpen,
+            is_open: isOpen,
+            isClosed: !isOpen,
+            is_closed: !isOpen,
+            hasOverride: Boolean(override),
+            has_override: Boolean(override),
+        };
+    }
+
+    @PutRoute('business-hours/day/:date')
+    async updateDay(@Param('date') date: string, @Body() body: any) {
+        const dateStr = String(date || '').trim();
+        if (!this.isValidDate(dateStr)) {
+            throw new BadRequestException('INVALID_DATE');
+        }
+
+        const weekday = this.weekdayForDate(dateStr);
+        const base = await this.businessHoursRepo.findOne({ where: { weekday } });
+        const openCandidate = this.sanitizeTime(body?.open ?? body?.open_time ?? body?.openTime);
+        const closeCandidate = this.sanitizeTime(body?.close ?? body?.close_time ?? body?.closeTime);
+        const isOpenFlag = body?.isOpen ?? body?.is_open ?? (body?.isClosed !== undefined ? !body?.isClosed : undefined);
+        const resolvedIsOpen = isOpenFlag !== undefined
+            ? Boolean(isOpenFlag)
+            : Boolean(openCandidate && closeCandidate && openCandidate !== closeCandidate);
+
+        const slotIntervalMinutes = Number(
+            body?.slotIntervalMinutes ??
+            body?.slot_interval_minutes ??
+            base?.slotIntervalMinutes ??
+            30,
+        ) || 30;
+
+        const fallback = DEFAULT_HOURS.find((h) => h.weekday === weekday);
+        const open = resolvedIsOpen ? (openCandidate ?? base?.open ?? fallback?.open ?? '00:00') : '00:00';
+        const close = resolvedIsOpen ? (closeCandidate ?? base?.close ?? fallback?.close ?? '00:00') : '00:00';
+
+        if (resolvedIsOpen) {
+            const openMin = timeToMinutes(open);
+            const closeMin = timeToMinutes(close);
+            if (openMin === null || closeMin === null) {
+                throw new BadRequestException('INVALID_HOUR_VALUE');
+            }
+            if (closeMin <= openMin) {
+                throw new BadRequestException('INVALID_HOUR_RANGE');
+            }
+        }
+
+        const existing = await this.businessHoursOverrideRepo.findOne({ where: { date: dateStr } });
+        const row = existing ?? this.businessHoursOverrideRepo.create({ date: dateStr });
+        row.open = open;
+        row.close = close;
+        row.slotIntervalMinutes = slotIntervalMinutes;
+        await this.businessHoursOverrideRepo.save(row);
+
+        const isOpen = Boolean(open && close && open !== close);
+        return {
+            date: dateStr,
+            weekday,
+            open: isOpen ? open : null,
+            close: isOpen ? close : null,
+            open_time: isOpen ? open : null,
+            close_time: isOpen ? close : null,
+            slotIntervalMinutes,
+            slot_interval_minutes: slotIntervalMinutes,
+            isOpen,
+            is_open: isOpen,
+            isClosed: !isOpen,
+            is_closed: !isOpen,
+            hasOverride: true,
+            has_override: true,
+        };
+    }
 
     @Put('business-hours')
     async updateAll(@Body() body: any) {

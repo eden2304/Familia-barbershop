@@ -5,6 +5,7 @@ import { ServiceEntity } from '../../entities/service.entity';
 import { Client } from '../../clients/client.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
+import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsController } from './appointments.controller';
 import { ClientsController } from './clients.controller';
@@ -14,7 +15,7 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour, Setting]),
+        TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour, BusinessHoursOverride, Setting]),
         AuthModule,
         WhatsAppModule,
     ],

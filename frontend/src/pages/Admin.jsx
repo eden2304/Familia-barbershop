@@ -2860,9 +2860,11 @@ const extractRecurringSchedules = (client) => {
                                           setDraggedAppointmentId(null);
                                         }}
                                       >
-                                        <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
-                                          {toTimeString(slotMinute)}
-                                        </div>
+                                        {!apt ? (
+                                          <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
+                                            {toTimeString(slotMinute)}
+                                          </div>
+                                        ) : null}
                                         {apt ? (
                                           <button
                                             type="button"

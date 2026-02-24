@@ -283,6 +283,11 @@ export default function Admin() { // Removed props
   const [businessHoursDirty, setBusinessHoursDirty] = useState(false);
   const [businessHoursSaving, setBusinessHoursSaving] = useState(false);
   const [businessHoursFeedback, setBusinessHoursFeedback] = useState(null);
+  const [dayHoursModalOpen, setDayHoursModalOpen] = useState(false);
+  const [dayHoursDate, setDayHoursDate] = useState(null);
+  const [dayHoursDraft, setDayHoursDraft] = useState({ open: '10:00', close: '19:00', slotMinutes: 30, isOpen: true, hasOverride: false });
+  const [dayHoursLoading, setDayHoursLoading] = useState(false);
+  const [dayHoursSaving, setDayHoursSaving] = useState(false);
   const [allClients, setAllClients] = useState([]);
   const [backgroundVideos, setBackgroundVideos] = useState([]);
   const [products, setProducts] = useState([]);
@@ -384,6 +389,7 @@ export default function Admin() { // Removed props
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
+  const [weeklyDayHoursOverrides, setWeeklyDayHoursOverrides] = useState({});
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
@@ -397,6 +403,101 @@ export default function Admin() { // Removed props
       () => format(startOfDay(selectedDate), "yyyy-MM-dd"),
       [selectedDate]
   );
+
+  const halfHourOptions = useMemo(() => {
+    const options = [];
+    for (let hour = 0; hour < 24; hour += 1) {
+      options.push(`${String(hour).padStart(2, '0')}:00`);
+      options.push(`${String(hour).padStart(2, '0')}:30`);
+    }
+    return options;
+  }, []);
+
+  const loadWeeklyDayHours = React.useCallback(async (days) => {
+    if (!Array.isArray(days) || days.length === 0) return;
+    try {
+      const rows = await Promise.all(
+          days.map(async (day) => {
+            const dayKey = format(day, 'yyyy-MM-dd');
+            const data = await BusinessHours.getDay(dayKey).catch(() => null);
+            return [dayKey, data];
+          })
+      );
+      const next = {};
+      rows.forEach(([dayKey, data]) => {
+        if (!data) return;
+        next[dayKey] = data;
+      });
+      setWeeklyDayHoursOverrides(next);
+    } catch (error) {
+      console.error('Failed loading weekly day hours', error);
+      setWeeklyDayHoursOverrides({});
+    }
+  }, []);
+
+  const openDayHoursModal = async (day) => {
+    if (!(day instanceof Date) || Number.isNaN(day.getTime())) return;
+    const dateStr = format(startOfDay(day), 'yyyy-MM-dd');
+    const fallback = normalizeBusinessHourRow((businessHours || []).find((row) => Number(row?.weekday ?? row?.day ?? row?.day_of_week ?? row?.dayOfWeek) === day.getDay()));
+    setDayHoursDate(day);
+    setDayHoursDraft({
+      open: fallback?.open ?? '10:00',
+      close: fallback?.close ?? '19:00',
+      slotMinutes: fallback?.slotMinutes ?? 30,
+      isOpen: fallback?.isOpen ?? true,
+      hasOverride: false,
+    });
+    setDayHoursModalOpen(true);
+    try {
+      setDayHoursLoading(true);
+      const dayData = await BusinessHours.getDay(dateStr);
+      if (dayData) {
+        setDayHoursDraft({
+          open: dayData.open ?? fallback?.open ?? '10:00',
+          close: dayData.close ?? fallback?.close ?? '19:00',
+          slotMinutes: dayData.slotMinutes ?? 30,
+          isOpen: dayData.isOpen ?? false,
+          hasOverride: Boolean(dayData.hasOverride ?? dayData.has_override),
+        });
+      }
+    } catch (error) {
+      console.error('Failed loading day business hours', error);
+      toast({ title: 'טעינת שעות היום נכשלה', variant: 'destructive' });
+    } finally {
+      setDayHoursLoading(false);
+    }
+  };
+
+  const saveDayHours = async () => {
+    if (!dayHoursDate || dayHoursSaving) return;
+    const dateStr = format(startOfDay(dayHoursDate), 'yyyy-MM-dd');
+    const openMin = toMinutes(dayHoursDraft.open);
+    const closeMin = toMinutes(dayHoursDraft.close);
+    if (dayHoursDraft.isOpen && (!Number.isFinite(openMin) || !Number.isFinite(closeMin) || closeMin <= openMin)) {
+      toast({ title: 'שעות הפעילות אינן תקינות', description: 'בדקו ששעת הסגירה אחרי שעת הפתיחה.', variant: 'destructive' });
+      return;
+    }
+    try {
+      setDayHoursSaving(true);
+      await BusinessHours.updateDay(dateStr, {
+        open: dayHoursDraft.open,
+        close: dayHoursDraft.close,
+        slotIntervalMinutes: dayHoursDraft.slotMinutes,
+        isOpen: dayHoursDraft.isOpen,
+      });
+      toast({ title: 'שעות הפעילות ליום נשמרו' });
+      await loadData();
+      if (appointmentsViewMode === 'calendar') {
+        await loadWeeklyDayHours(weeklyCalendarDays);
+      }
+      setDayHoursModalOpen(false);
+    } catch (error) {
+      console.error('Failed saving day business hours override', error);
+      toast({ title: 'שמירת שעות היום נכשלה', variant: 'destructive' });
+    } finally {
+      setDayHoursSaving(false);
+    }
+  };
 
   useEffect(() => {
     const t = getStoredAuthToken();
@@ -1186,6 +1287,11 @@ const extractRecurringSchedules = (client) => {
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   }, [weeklyAppointmentsData, weeklyCalendarStart]);
 
+  useEffect(() => {
+    if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
+    loadWeeklyDayHours(weeklyCalendarDays);
+  }, [isAuthenticated, appointmentsViewMode, loadWeeklyDayHours, weeklyCalendarDays]);
+
   const weeklyBusinessHoursByDay = useMemo(() => {
     const map = {};
     (businessHours || []).forEach((row) => {
@@ -1211,7 +1317,7 @@ const extractRecurringSchedules = (client) => {
     return weeklyCalendarDays.map((day) => {
       const dayKey = format(day, 'yyyy-MM-dd');
       const weekday = day.getDay();
-      const dayHours = weeklyBusinessHoursByDay[weekday];
+      const dayHours = weeklyDayHoursOverrides[dayKey] ?? weeklyBusinessHoursByDay[weekday];
       const step = Math.max(5, Number(dayHours?.slotMinutes ?? 30) || 30);
       const openMinutes = toMinutes(dayHours?.open);
       const closeMinutes = toMinutes(dayHours?.close);
@@ -1224,7 +1330,7 @@ const extractRecurringSchedules = (client) => {
       }
       return { day, dayKey, isOpen, slots };
     });
-  }, [weeklyCalendarDays, weeklyBusinessHoursByDay]);
+  }, [weeklyCalendarDays, weeklyBusinessHoursByDay, weeklyDayHoursOverrides]);
 
   const canDragAppointmentInCalendar = React.useCallback((appointment) => {
     if (!appointment) return false;
@@ -2675,7 +2781,14 @@ const extractRecurringSchedules = (client) => {
                               return (
                                   <div key={index} data-day-index={index} className="flex-shrink-0 snap-center">
                                     <button
-                                        onClick={() => !isSaturday && setSelectedDate(day)}
+                                        onClick={() => {
+                                          if (isSaturday) return;
+                                          setSelectedDate(day);
+                                        }}
+                                        onDoubleClick={() => {
+                                          if (isSaturday) return;
+                                          openDayHoursModal(day);
+                                        }}
                                         disabled={isSaturday}
                                         aria-disabled={isSaturday}
                                         title={isSaturday ? "שבת - אין תורים" : ""}
@@ -4405,6 +4518,88 @@ const extractRecurringSchedules = (client) => {
                 }}
             />
         )}
+
+        <Dialog open={dayHoursModalOpen} onOpenChange={setDayHoursModalOpen}>
+          <DialogContent className="w-[92vw] max-w-md rounded-3xl p-4 sm:p-6" aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle className="text-xl sm:text-lg">שעות פעילות ליום ספציפי</DialogTitle>
+              <DialogDescription className="text-base sm:text-sm">
+                {dayHoursDate ? `${format(dayHoursDate, 'EEEE', { locale: he })}, ${format(dayHoursDate, 'dd/MM/yyyy')}` : 'בחרת יום מהרשימה'}
+              </DialogDescription>
+            </DialogHeader>
+            {dayHoursLoading ? (
+              <div className="py-8 flex items-center justify-center text-gray-500 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin ml-2" />
+                טוען שעות פעילות...
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">היום פתוח להזמנות</p>
+                    <p className="text-xs text-gray-500">ההגדרה תשפיע רק על התאריך שבחרת</p>
+                  </div>
+                  <Switch
+                    dir="ltr"
+                    checked={Boolean(dayHoursDraft.isOpen)}
+                    onCheckedChange={(value) => setDayHoursDraft((prev) => ({ ...prev, isOpen: Boolean(value) }))}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                  <div>
+                    <Label className="mb-1.5 block text-sm sm:text-base">פתיחה</Label>
+                    <select
+                      value={dayHoursDraft.open || '10:00'}
+                      disabled={!dayHoursDraft.isOpen}
+                      onChange={(e) => setDayHoursDraft((prev) => ({ ...prev, open: e.target.value }))}
+                      className="w-full h-12 sm:h-11 rounded-xl border border-gray-200 bg-white px-3 text-base text-center disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      {halfHourOptions.map((time) => (
+                        <option key={`open-${time}`} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block text-sm sm:text-base">סגירה</Label>
+                    <select
+                      value={dayHoursDraft.close || '19:00'}
+                      disabled={!dayHoursDraft.isOpen}
+                      onChange={(e) => setDayHoursDraft((prev) => ({ ...prev, close: e.target.value }))}
+                      className="w-full h-12 sm:h-11 rounded-xl border border-gray-200 bg-white px-3 text-base text-center disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      {halfHourOptions.map((time) => (
+                        <option key={`close-${time}`} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {dayHoursDraft.hasOverride && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                    ליום הזה כבר קיימת חריגה פעילה.
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter className="flex-row justify-center gap-2 pt-1">
+              <Button
+                size="sm"
+                className="w-32 h-10"
+                variant="outline"
+                onClick={() => setDayHoursModalOpen(false)}
+              >
+                סגור
+              </Button>
+              <Button
+                size="sm"
+                className="w-32 h-10"
+                onClick={saveDayHours}
+                disabled={dayHoursLoading || dayHoursSaving}
+              >
+                {dayHoursSaving ? 'שומר...' : 'שמור וסגור'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
 
         {showClientForm && (

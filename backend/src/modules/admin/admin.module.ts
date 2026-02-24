@@ -7,6 +7,7 @@ import { BackgroundVideo } from '../../entities/background-video.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { Setting } from '../../entities/setting.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
+import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { AdminContentController } from './admin-content.controller';
 import { BlockedTimesController } from './blocked-times.controller';
 import { SettingsController } from './settings.controller';
@@ -32,6 +33,7 @@ import { AdminWhatsAppController } from './admin-whatsapp.controller';
             BlockedTime,
             Setting,
             BusinessHour,
+            BusinessHoursOverride,
         ]),
         AuthModule, // מספיק! כי AuthModule מייצא JwtModule
         WhatsAppModule,
@@ -47,4 +49,3 @@ import { AdminWhatsAppController } from './admin-whatsapp.controller';
     ],
 })
 export class AdminModule {}
-

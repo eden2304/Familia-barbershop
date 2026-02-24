@@ -21,6 +21,7 @@ import { ServiceEntity } from '../../entities/service.entity';
 import { Client } from '../../clients/client.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
+import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { Setting } from '../../entities/setting.entity';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
@@ -81,6 +82,7 @@ export class AppointmentsService {
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
+        @InjectRepository(BusinessHoursOverride) private readonly bhOverrideRepo: Repository<BusinessHoursOverride>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
         private readonly whatsappService: WhatsAppService,
     ) {}
@@ -288,7 +290,16 @@ export class AppointmentsService {
         const offset = this.israelOffsetForDate(dateStr);
         const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
-        return { bh, offset, jsDow };
+        const override = await this.bhOverrideRepo.findOne({ where: { date: dateStr } });
+        const effective = override
+            ? {
+                ...bh,
+                open: override.open,
+                close: override.close,
+                slotIntervalMinutes: override.slotIntervalMinutes,
+            }
+            : bh;
+        return { bh: effective, offset, jsDow };
     }
 
     private buildMemberWindowsForDate(dateStr: string, rules: BookingRules, offset: string, jsDow: number) {
@@ -581,11 +592,20 @@ export class AppointmentsService {
 
         const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
         const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
+        const override = await this.bhOverrideRepo.findOne({ where: { date: dateStr } });
+        const effective = override
+            ? {
+                ...bh,
+                open: override.open,
+                close: override.close,
+                slotIntervalMinutes: override.slotIntervalMinutes,
+            }
+            : bh;
 
-        const interval = Number(bh?.slotIntervalMinutes ?? 30) || 30;
+        const interval = Number(effective?.slotIntervalMinutes ?? 30) || 30;
 
-        const openStr = String(bh?.open ?? '').trim();
-        const closeStr = String(bh?.close ?? '').trim();
+        const openStr = String(effective?.open ?? '').trim();
+        const closeStr = String(effective?.close ?? '').trim();
         const hasBaseWindow = Boolean(openStr && closeStr && openStr !== closeStr);
         const workStart = hasBaseWindow ? new Date(`${dateStr}T${openStr}:00${offset}`) : null;
         const workEnd = hasBaseWindow ? new Date(`${dateStr}T${closeStr}:00${offset}`) : null;

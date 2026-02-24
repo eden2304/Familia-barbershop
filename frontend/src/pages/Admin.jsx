@@ -1189,12 +1189,18 @@ const extractRecurringSchedules = (client) => {
   const calendarBounds = useMemo(() => {
     const fallbackStart = 8 * 60;
     const fallbackEnd = 21 * 60;
-    const opens = (businessHours || [])
-        .map((row) => toMinutes(row?.open || row?.opens_at || row?.open_time))
-        .filter((val) => Number.isFinite(val));
-    const closes = (businessHours || [])
-        .map((row) => toMinutes(row?.close || row?.closes_at || row?.close_time))
-        .filter((val) => Number.isFinite(val));
+    const visibleWeekdays = new Set(weeklyCalendarDays.map((day) => day.getDay()));
+
+    const relevantRows = (businessHours || [])
+      .map((row) => normalizeBusinessHourRow(row))
+      .filter((row) => row && row.isOpen && visibleWeekdays.has(row.weekday));
+
+    const opens = relevantRows
+      .map((row) => toMinutes(row?.open))
+      .filter((val) => Number.isFinite(val));
+    const closes = relevantRows
+      .map((row) => toMinutes(row?.close))
+      .filter((val) => Number.isFinite(val));
 
     const minOpen = opens.length ? Math.min(...opens) : fallbackStart;
     const maxClose = closes.length ? Math.max(...closes) : fallbackEnd;
@@ -1206,7 +1212,7 @@ const extractRecurringSchedules = (client) => {
       endMinutes: endMinutes > startMinutes ? endMinutes : startMinutes + 30,
       slotMinutes: 30,
     };
-  }, [businessHours]);
+  }, [businessHours, weeklyCalendarDays]);
 
   const calendarTimeSlots = useMemo(() => {
     const slots = [];

@@ -4509,6 +4509,7 @@ const extractRecurringSchedules = (client) => {
                     <p className="text-xs text-gray-500">ההגדרה תשפיע רק על התאריך שבחרת</p>
                   </div>
                   <Switch
+                    dir="ltr"
                     checked={Boolean(dayHoursDraft.isOpen)}
                     onCheckedChange={(value) => setDayHoursDraft((prev) => ({ ...prev, isOpen: Boolean(value) }))}
                   />

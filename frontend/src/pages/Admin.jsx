@@ -403,6 +403,15 @@ export default function Admin() { // Removed props
       [selectedDate]
   );
 
+  const halfHourOptions = useMemo(() => {
+    const options = [];
+    for (let hour = 0; hour < 24; hour += 1) {
+      options.push(`${String(hour).padStart(2, '0')}:00`);
+      options.push(`${String(hour).padStart(2, '0')}:30`);
+    }
+    return options;
+  }, []);
+
   const openDayHoursModal = async (day) => {
     if (!(day instanceof Date) || Number.isNaN(day.getTime())) return;
     const dateStr = format(startOfDay(day), 'yyyy-MM-dd');
@@ -4480,10 +4489,10 @@ const extractRecurringSchedules = (client) => {
         )}
 
         <Dialog open={dayHoursModalOpen} onOpenChange={setDayHoursModalOpen}>
-          <DialogContent className="max-w-sm rounded-3xl" aria-describedby={undefined}>
+          <DialogContent className="w-[92vw] max-w-md rounded-3xl p-4 sm:p-6" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle>שעות פעילות ליום ספציפי</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-3xl sm:text-2xl">שעות פעילות ליום ספציפי</DialogTitle>
+              <DialogDescription className="text-lg sm:text-base">
                 {dayHoursDate ? `${format(dayHoursDate, 'EEEE', { locale: he })}, ${format(dayHoursDate, 'dd/MM/yyyy')}` : 'בחרת יום מהרשימה'}
               </DialogDescription>
             </DialogHeader>
@@ -4504,24 +4513,32 @@ const extractRecurringSchedules = (client) => {
                     onCheckedChange={(value) => setDayHoursDraft((prev) => ({ ...prev, isOpen: Boolean(value) }))}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
                   <div>
-                    <Label className="mb-1 block">פתיחה</Label>
-                    <Input
-                      type="time"
+                    <Label className="mb-1.5 block text-sm sm:text-base">פתיחה</Label>
+                    <select
                       value={dayHoursDraft.open || '10:00'}
                       disabled={!dayHoursDraft.isOpen}
                       onChange={(e) => setDayHoursDraft((prev) => ({ ...prev, open: e.target.value }))}
-                    />
+                      className="w-full h-12 sm:h-11 rounded-xl border border-gray-200 bg-white px-3 text-base text-center disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      {halfHourOptions.map((time) => (
+                        <option key={`open-${time}`} value={time}>{time}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
-                    <Label className="mb-1 block">סגירה</Label>
-                    <Input
-                      type="time"
+                    <Label className="mb-1.5 block text-sm sm:text-base">סגירה</Label>
+                    <select
                       value={dayHoursDraft.close || '19:00'}
                       disabled={!dayHoursDraft.isOpen}
                       onChange={(e) => setDayHoursDraft((prev) => ({ ...prev, close: e.target.value }))}
-                    />
+                      className="w-full h-12 sm:h-11 rounded-xl border border-gray-200 bg-white px-3 text-base text-center disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      {halfHourOptions.map((time) => (
+                        <option key={`close-${time}`} value={time}>{time}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 {dayHoursDraft.hasOverride && (
@@ -4531,9 +4548,9 @@ const extractRecurringSchedules = (client) => {
                 )}
               </div>
             )}
-            <DialogFooter className="flex-row justify-end gap-2">
-              <Button size="sm" className="px-4" variant="outline" onClick={() => setDayHoursModalOpen(false)}>סגור</Button>
-              <Button size="sm" className="px-4" onClick={saveDayHours} disabled={dayHoursLoading || dayHoursSaving}>
+            <DialogFooter className="flex-row justify-end gap-2 pt-1">
+              <Button size="sm" className="px-3.5 sm:px-4 h-10" variant="outline" onClick={() => setDayHoursModalOpen(false)}>סגור</Button>
+              <Button size="sm" className="px-3.5 sm:px-4 h-10" onClick={saveDayHours} disabled={dayHoursLoading || dayHoursSaving}>
                 {dayHoursSaving ? 'שומר...' : 'שמור שעות ליום זה'}
               </Button>
             </DialogFooter>

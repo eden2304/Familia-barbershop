@@ -2744,6 +2744,9 @@ const extractRecurringSchedules = (client) => {
                                         onClick={() => {
                                           if (isSaturday) return;
                                           setSelectedDate(day);
+                                        }}
+                                        onDoubleClick={() => {
+                                          if (isSaturday) return;
                                           openDayHoursModal(day);
                                         }}
                                         disabled={isSaturday}
@@ -4477,7 +4480,7 @@ const extractRecurringSchedules = (client) => {
         )}
 
         <Dialog open={dayHoursModalOpen} onOpenChange={setDayHoursModalOpen}>
-          <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          <DialogContent className="max-w-sm rounded-3xl" aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>שעות פעילות ליום ספציפי</DialogTitle>
               <DialogDescription>
@@ -4528,9 +4531,9 @@ const extractRecurringSchedules = (client) => {
                 )}
               </div>
             )}
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setDayHoursModalOpen(false)}>סגור</Button>
-              <Button onClick={saveDayHours} disabled={dayHoursLoading || dayHoursSaving}>
+            <DialogFooter className="flex-row justify-end gap-2">
+              <Button size="sm" className="px-4" variant="outline" onClick={() => setDayHoursModalOpen(false)}>סגור</Button>
+              <Button size="sm" className="px-4" onClick={saveDayHours} disabled={dayHoursLoading || dayHoursSaving}>
                 {dayHoursSaving ? 'שומר...' : 'שמור שעות ליום זה'}
               </Button>
             </DialogFooter>

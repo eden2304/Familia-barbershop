@@ -91,8 +91,8 @@ export class AppointmentsService {
         const num = Number(value);
         if (!Number.isFinite(num)) return fallback;
         const intVal = Math.floor(num);
-        if (intVal < 0) return 0;
-        if (intVal > 365) return 365;
+        if (intVal < 1) return 1;
+        if (intVal > 30) return 30;
         return intVal;
     }
 

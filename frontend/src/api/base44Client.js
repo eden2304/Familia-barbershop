@@ -62,6 +62,40 @@ function handleUnauthorized(status, path, payload) {
 // ---------------- Simple GET cache with TTL ----------------
 const __getCache = new Map();
 const __storagePrefix = 'familia_api_cache::';
+let __rateLimitBlockedUntilMs = 0;
+let __lastRateLimitNoticeMs = 0;
+
+function __setRateLimitCooldown(seconds) {
+  const retryAfterSeconds = Math.max(1, Number.parseInt(seconds, 10) || 60);
+  __rateLimitBlockedUntilMs = Math.max(__rateLimitBlockedUntilMs, Date.now() + (retryAfterSeconds * 1000));
+}
+
+function __activeRateLimitSeconds() {
+  const msLeft = __rateLimitBlockedUntilMs - Date.now();
+  if (msLeft <= 0) return 0;
+  return Math.ceil(msLeft / 1000);
+}
+
+function __buildLocalRateLimitError(method, path) {
+  const retryAfterSeconds = __activeRateLimitSeconds();
+  const payload = { error: 'RATE_LIMITED', retryAfterSeconds };
+  const err = buildHttpError(method, path, 429, payload);
+  err.isLocalRateLimit = true;
+
+  const now = Date.now();
+  // מניעת ספאם של פופאפים בזמן חסימה מקומית
+  if (now - __lastRateLimitNoticeMs >= 5000) {
+    __lastRateLimitNoticeMs = now;
+    notifyRateLimited(retryAfterSeconds);
+  }
+
+  return err;
+}
+
+function __throwIfRateLimited(method, path) {
+  if (__activeRateLimitSeconds() <= 0) return;
+  throw __buildLocalRateLimitError(method, path);
+}
 
 function __cacheKey(path, headers) {
   // Base URL + path is enough; if you want, add auth header to avoid cross-user mixing
@@ -198,6 +232,8 @@ async function httpGet(path, options = {}) {
     }
   }
 
+  __throwIfRateLimited('GET', path);
+
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'GET',
     headers,
@@ -234,6 +270,7 @@ async function httpGet(path, options = {}) {
 
 
 async function httpPost(path, body) {
+  __throwIfRateLimited('POST', path);
   const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'POST',
@@ -255,6 +292,7 @@ async function httpPost(path, body) {
 }
 
 async function httpPut(path, body) {
+  __throwIfRateLimited('PUT', path);
   const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'PUT',
@@ -276,6 +314,7 @@ async function httpPut(path, body) {
 }
 
 async function httpDelete(path) {
+  __throwIfRateLimited('DELETE', path);
   const headers = authHeaders();
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'DELETE',
@@ -296,6 +335,7 @@ async function httpDelete(path) {
 }
 
 async function httpPatch(path, body) {
+  __throwIfRateLimited('PATCH', path);
   const headers = authHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(String(BASE_URL) + String(path), {
     method: 'PATCH',
@@ -319,6 +359,7 @@ async function httpPatch(path, body) {
 
 
 async function httpFormPost(path, data) {
+  __throwIfRateLimited('POST', path);
   const params = new URLSearchParams();
   Object.entries(data || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null) params.append(k, String(v));
@@ -375,6 +416,7 @@ function buildHttpError(method, path, status, payload, headers) {
       retryAfterHeader: headers?.get?.('retry-after'),
       retryAfterPayload: payload?.retryAfterSeconds,
     });
+    __setRateLimitCooldown(retryAfterSeconds);
     err.retryAfterSeconds = retryAfterSeconds;
     notifyRateLimited(retryAfterSeconds);
   }

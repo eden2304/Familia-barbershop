@@ -135,7 +135,8 @@ const normalizePhoneForAdminUpdates = (value = '') => {
   return digits;
 };
 
-const isAdminUpdateEntry = (item, adminPhoneSet) => {
+
+const isAdminUpdateEntry = (item, adminPhoneSet, adminClientIdSet) => {
   if (!item || typeof item !== 'object') return false;
   if (item?.isAdmin || item?.is_admin || item?.client?.isAdmin || item?.client?.is_admin) return true;
 
@@ -148,6 +149,22 @@ const isAdminUpdateEntry = (item, adminPhoneSet) => {
     item?.appointment?.client_phone,
     item?.client?.phone,
   ];
+
+
+  const candidateClientIds = [
+    item?.clientId,
+    item?.client_id,
+    item?.client?.id,
+    item?.appointment?.clientId,
+    item?.appointment?.client_id,
+    item?.appointment?.client?.id,
+  ];
+  const normalizedAdminClientIds = adminClientIdSet instanceof Set ? adminClientIdSet : new Set();
+  const hasAdminClientId = candidateClientIds
+    .map((value) => (value == null ? '' : String(value)))
+    .filter(Boolean)
+    .some((clientId) => normalizedAdminClientIds.has(clientId));
+  if (hasAdminClientId) return true;
 
   const normalizedAdminPhones = adminPhoneSet instanceof Set ? adminPhoneSet : new Set();
   return candidatePhones
@@ -863,22 +880,33 @@ export default function Admin() { // Removed props
     }
   };
 
-  const normalizeAdminUpdates = (raw, phonesOverride) => {
+  const collectAdminClientIds = (clients = []) => {
+    return new Set(
+      (Array.isArray(clients) ? clients : [])
+        .filter((client) => Boolean(client?.isAdmin || client?.is_admin || client?.roles?.includes?.('admin')))
+        .map((client) => (client?.id == null ? '' : String(client.id)))
+        .filter(Boolean)
+    );
+  };
+
+  const normalizeAdminUpdates = (raw, options = {}) => {
     const arr = Array.isArray(raw) ? raw : [];
-    const sourcePhones = Array.isArray(phonesOverride) ? phonesOverride : adminPhones;
+    const sourcePhones = Array.isArray(options?.phones) ? options.phones : adminPhones;
+    const sourceClients = Array.isArray(options?.clients) ? options.clients : allClients;
     const adminPhoneSet = new Set((sourcePhones || []).map(normalizePhoneForAdminUpdates).filter(Boolean));
+    const adminClientIdSet = collectAdminClientIds(sourceClients);
     return arr
-      .filter((item) => !isAdminUpdateEntry(item, adminPhoneSet))
+      .filter((item) => !isAdminUpdateEntry(item, adminPhoneSet, adminClientIdSet))
       .map((item) => ({ ...item }))
       .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
   };
 
-  const loadAdminUpdates = async ({ withSpinner = false, phones = null } = {}) => {
+  const loadAdminUpdates = async ({ withSpinner = false, phones = null, clients = null } = {}) => {
     if (withSpinner) setIsRefreshingUpdates(true);
     const startedAt = Date.now();
     try {
       const res = Setting?.get ? await Setting.get('admin.updates.feed').catch(() => null) : null;
-      setAdminUpdates(normalizeAdminUpdates(res?.value, phones));
+      setAdminUpdates(normalizeAdminUpdates(res?.value, { phones, clients }));
     } catch (error) {
       console.error('Failed loading admin updates feed', error);
       setAdminUpdates([]);
@@ -965,7 +993,7 @@ export default function Admin() { // Removed props
       setMemberSettingsDirty(false);
       setMemberSettingsFeedback(null);
       const phones = await loadAdminPhones();
-      await loadAdminUpdates({ phones });
+      await loadAdminUpdates({ phones, clients: clientsData });
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {

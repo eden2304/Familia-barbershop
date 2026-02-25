@@ -1278,19 +1278,25 @@ async function router(req, res) {
           group by c.id
           order by c.id desc
            `);
-        const rows = q.rows.map(r => ({
-            id: r.id,
-            first_name: r.first_name || '',
-            last_name:  r.last_name  || '',
-            phone:      r.phone      || '',
-            firstName:  r.first_name || '',
-            lastName:   r.last_name  || '',
-            is_member:  !!r.is_member,
-            isMember:   !!r.is_member,
-            lastAppointmentAt: r.last_appointment_at || null,
-            recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
-            recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
-        }));
+        const adminPhoneSet = new Set((await getAdminPhones()).map(normalizePhone));
+        const rows = q.rows.map(r => {
+            const adminFlag = adminPhoneSet.has(normalizePhone(r.phone || ''));
+            return {
+                id: r.id,
+                first_name: r.first_name || '',
+                last_name:  r.last_name  || '',
+                phone:      r.phone      || '',
+                firstName:  r.first_name || '',
+                lastName:   r.last_name  || '',
+                is_member:  !!r.is_member,
+                isMember:   !!r.is_member,
+                is_admin: adminFlag,
+                isAdmin: adminFlag,
+                lastAppointmentAt: r.last_appointment_at || null,
+                recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
+                recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
+            };
+        });
         return json(res, 200, rows);
     }
 

@@ -1044,7 +1044,12 @@ const api = {
   Setting: {
     // return { key, value } or null; doesn't throw on 404
     get: async (key) => normSetting(await httpGet('/settings/' + encodeURIComponent(key))),
-    set: async (key, value) => normSetting(await httpPost('/admin/settings/' + encodeURIComponent(key), { value: value })),
+    set: async (key, value) => {
+      const encodedKey = encodeURIComponent(key);
+      const result = normSetting(await httpPost('/admin/settings/' + encodedKey, { value: value }));
+      invalidateCacheByPathPrefix('/settings/' + encodedKey);
+      return result;
+    },
   },
 
   /* ---------------- AUTH ---------------- */

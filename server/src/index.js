@@ -49,10 +49,28 @@ function normalizePhone(raw = "") {
     if (d.startsWith("0")) return d;
     return d; // fallback
 }
-const ADMIN_PHONES = ["0537002171", "0523767851"].map(normalizePhone);
+let adminPhonesCache = { phones: [], expiresAt: 0 };
 
-function isAdminPhone(phone) {
-    return ADMIN_PHONES.includes(normalizePhone(phone));
+async function getAdminPhones() {
+    const now = Date.now();
+    if (adminPhonesCache.expiresAt > now) return adminPhonesCache.phones;
+    try {
+        const q = await pool.query(`select phone from admin_phones`);
+        const phones = (q.rows || [])
+            .map((row) => normalizePhone(row?.phone || ''))
+            .filter(Boolean);
+        adminPhonesCache = { phones, expiresAt: now + 60_000 };
+        return phones;
+    } catch (error) {
+        console.error('Failed loading admin phones from DB', error);
+        adminPhonesCache = { phones: [], expiresAt: now + 10_000 };
+        return [];
+    }
+}
+
+async function isAdminPhone(phone) {
+    const adminPhones = await getAdminPhones();
+    return adminPhones.includes(normalizePhone(phone));
 }
 
 function encodeBase64Url(value) {
@@ -72,7 +90,7 @@ function issueDevToken(payload) {
     }
 }
 
-function buildClientAuthPayload(row) {
+async function buildClientAuthPayload(row) {
     const client = {
         id: row.id,
         phone: row.phone,
@@ -80,7 +98,7 @@ function buildClientAuthPayload(row) {
         lastName: row.last_name || row.lastName || '',
         first_name: row.first_name || row.firstName || '',
         last_name: row.last_name || row.lastName || '',
-        isAdmin: isAdminPhone(row.phone),
+        isAdmin: await isAdminPhone(row.phone),
     };
     const roles = client.isAdmin ? ['client', 'admin'] : ['client'];
     const tokenPayload = {
@@ -261,6 +279,11 @@ async function migrate() {
                                                 id serial primary key,
                                                 key text unique not null,
                                                 value text
+        );
+
+        create table if not exists admin_phones (
+                                                    id serial primary key,
+                                                    phone text not null unique
         );
 
         create table if not exists waiting_list (
@@ -866,6 +889,11 @@ async function router(req, res) {
         return json(res, 401, { ok: false, error: 'INVALID_ADMIN_CODE' });
     }
 
+    if (req.method === 'GET' && pathname === '/admin/admin-phones') {
+        const phones = await getAdminPhones();
+        return json(res, 200, phones.map((phone) => ({ phone })));
+    }
+
 
 
     if (req.method === 'GET' && pathname.startsWith('/uploads/')) {
@@ -1250,19 +1278,25 @@ async function router(req, res) {
           group by c.id
           order by c.id desc
            `);
-        const rows = q.rows.map(r => ({
-            id: r.id,
-            first_name: r.first_name || '',
-            last_name:  r.last_name  || '',
-            phone:      r.phone      || '',
-            firstName:  r.first_name || '',
-            lastName:   r.last_name  || '',
-            is_member:  !!r.is_member,
-            isMember:   !!r.is_member,
-            lastAppointmentAt: r.last_appointment_at || null,
-            recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
-            recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
-        }));
+        const adminPhoneSet = new Set((await getAdminPhones()).map(normalizePhone));
+        const rows = q.rows.map(r => {
+            const adminFlag = adminPhoneSet.has(normalizePhone(r.phone || ''));
+            return {
+                id: r.id,
+                first_name: r.first_name || '',
+                last_name:  r.last_name  || '',
+                phone:      r.phone      || '',
+                firstName:  r.first_name || '',
+                lastName:   r.last_name  || '',
+                is_member:  !!r.is_member,
+                isMember:   !!r.is_member,
+                is_admin: adminFlag,
+                isAdmin: adminFlag,
+                lastAppointmentAt: r.last_appointment_at || null,
+                recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
+                recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],
+            };
+        });
         return json(res, 200, rows);
     }
 
@@ -2747,7 +2781,7 @@ async function router(req, res) {
         if (!q.rows[0]) return json(res, 409, { ok: false, message: 'UNREGISTERED_CLIENT' });
 
         const c = q.rows[0];
-        const authPayload = buildClientAuthPayload(c);
+        const authPayload = await buildClientAuthPayload(c);
         return json(res, 200, authPayload);
 
     }
@@ -2788,7 +2822,7 @@ async function router(req, res) {
         }
 
         // מחזירים payload עקבי
-        const authPayload = buildClientAuthPayload({
+        const authPayload = await buildClientAuthPayload({
             id: newId,
             phone: phone0,
             first_name: firstName,

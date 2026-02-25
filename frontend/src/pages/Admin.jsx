@@ -128,6 +128,49 @@ const navItems = [
 ];
 
 const WEEKDAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const normalizePhoneForAdminUpdates = (value = '') => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('972') && digits.length >= 11) return `0${digits.slice(3)}`;
+  if (digits.startsWith('0')) return digits;
+  return digits;
+};
+
+const isAdminUpdateEntry = (item, adminPhoneSet, adminClientIdSet) => {
+  if (!item || typeof item !== 'object') return false;
+  if (item?.isAdmin || item?.is_admin || item?.client?.isAdmin || item?.client?.is_admin) return true;
+
+  const candidatePhones = [
+    item?.phone,
+    item?.clientPhone,
+    item?.client_phone,
+    item?.appointment?.phone,
+    item?.appointment?.clientPhone,
+    item?.appointment?.client_phone,
+    item?.client?.phone,
+  ];
+
+
+  const candidateClientIds = [
+    item?.clientId,
+    item?.client_id,
+    item?.client?.id,
+    item?.appointment?.clientId,
+    item?.appointment?.client_id,
+    item?.appointment?.client?.id,
+  ];
+  const normalizedAdminClientIds = adminClientIdSet instanceof Set ? adminClientIdSet : new Set();
+  const hasAdminClientId = candidateClientIds
+    .map((value) => (value == null ? '' : String(value)))
+    .filter(Boolean)
+    .some((clientId) => normalizedAdminClientIds.has(clientId));
+  if (hasAdminClientId) return true;
+
+  const normalizedAdminPhones = adminPhoneSet instanceof Set ? adminPhoneSet : new Set();
+  return candidatePhones
+    .map(normalizePhoneForAdminUpdates)
+    .filter(Boolean)
+    .some((phone) => normalizedAdminPhones.has(phone));
+};
 const MEMBER_SLOT_WEEKDAYS = WEEKDAY_LABELS.slice(0, 6);
 
 const DEFAULT_MEMBER_DAY_HOURS = [
@@ -272,6 +315,7 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  const [adminPhones, setAdminPhones] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
   const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
@@ -817,19 +861,51 @@ export default function Admin() { // Removed props
     }
   };
 
-  const normalizeAdminUpdates = (raw) => {
+  const loadAdminPhones = async () => {
+    try {
+      const data = await api.get('/admin/admin-phones').catch(() => []);
+      const list = Array.isArray(data) ? data : [];
+      const normalized = list
+        .map((row) => row?.phone ?? row)
+        .map(normalizePhoneForAdminUpdates)
+        .filter(Boolean);
+      const uniquePhones = Array.from(new Set(normalized));
+      setAdminPhones(uniquePhones);
+      return uniquePhones;
+    } catch (error) {
+      console.error('Failed loading admin phones', error);
+      setAdminPhones([]);
+      return [];
+    }
+  };
+
+  const collectAdminClientIds = (clients = []) => {
+    return new Set(
+      (Array.isArray(clients) ? clients : [])
+        .filter((client) => Boolean(client?.isAdmin || client?.is_admin || client?.roles?.includes?.('admin')))
+        .map((client) => (client?.id == null ? '' : String(client.id)))
+        .filter(Boolean)
+    );
+  };
+
+  const normalizeAdminUpdates = (raw, options = {}) => {
     const arr = Array.isArray(raw) ? raw : [];
+    const sourcePhones = Array.isArray(options?.phones) ? options.phones : adminPhones;
+    const sourceClients = Array.isArray(options?.clients) ? options.clients : allClients;
+    const adminPhoneSet = new Set((sourcePhones || []).map(normalizePhoneForAdminUpdates).filter(Boolean));
+    const adminClientIdSet = collectAdminClientIds(sourceClients);
     return arr
+      .filter((item) => !isAdminUpdateEntry(item, adminPhoneSet, adminClientIdSet))
       .map((item) => ({ ...item }))
       .sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime());
   };
 
-  const loadAdminUpdates = async ({ withSpinner = false } = {}) => {
+  const loadAdminUpdates = async ({ withSpinner = false, phones = null, clients = null } = {}) => {
     if (withSpinner) setIsRefreshingUpdates(true);
     const startedAt = Date.now();
     try {
       const res = Setting?.get ? await Setting.get('admin.updates.feed').catch(() => null) : null;
-      setAdminUpdates(normalizeAdminUpdates(res?.value));
+      setAdminUpdates(normalizeAdminUpdates(res?.value, { phones, clients }));
     } catch (error) {
       console.error('Failed loading admin updates feed', error);
       setAdminUpdates([]);
@@ -915,7 +991,8 @@ export default function Admin() { // Removed props
       setMemberSettings(normalizedBookingRules);
       setMemberSettingsDirty(false);
       setMemberSettingsFeedback(null);
-      await loadAdminUpdates();
+      const phones = await loadAdminPhones();
+      await loadAdminUpdates({ phones, clients: clientsData });
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {

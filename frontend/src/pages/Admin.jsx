@@ -458,6 +458,11 @@ export default function Admin() { // Removed props
     return options;
   }, []);
 
+  const advanceDayOptions = useMemo(
+    () => Array.from({ length: 30 }, (_, idx) => idx + 1),
+    []
+  );
+
   const loadWeeklyDayHours = React.useCallback(async (days) => {
     if (!Array.isArray(days) || days.length === 0) return;
     try {
@@ -3482,32 +3487,40 @@ const extractRecurringSchedules = (client) => {
                                         <div className="grid gap-3 sm:grid-cols-3">
                                           <div>
                                             <Label className="text-xs text-gray-500 mb-1">שעת פתיחה</Label>
-                                            <Input
-                                                type="time"
-                                                value={row.open || ""}
+                                            <select
+                                                value={row.open || '10:00'}
                                                 disabled={!row.isOpen}
                                                 onChange={(e) => handleBusinessTimeChange(row.weekday, 'open', e.target.value)}
-                                            />
+                                                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:bg-muted disabled:text-muted-foreground"
+                                            >
+                                              {halfHourOptions.map((time) => (
+                                                <option key={`business-open-${row.weekday}-${time}`} value={time}>{time}</option>
+                                              ))}
+                                            </select>
                                           </div>
                                           <div>
                                             <Label className="text-xs text-gray-500 mb-1">שעת סגירה</Label>
-                                            <Input
-                                                type="time"
-                                                value={row.close || ""}
+                                            <select
+                                                value={row.close || '19:00'}
                                                 disabled={!row.isOpen}
                                                 onChange={(e) => handleBusinessTimeChange(row.weekday, 'close', e.target.value)}
-                                            />
+                                                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm disabled:bg-muted disabled:text-muted-foreground"
+                                            >
+                                              {halfHourOptions.map((time) => (
+                                                <option key={`business-close-${row.weekday}-${time}`} value={time}>{time}</option>
+                                              ))}
+                                            </select>
                                           </div>
                                           <div>
                                             <Label className="text-xs text-gray-500 mb-1">מרווחי תורים (בדקות)</Label>
-                                            <Input
-                                                type="number"
-                                                min={5}
-                                                max={180}
-                                                step={5}
+                                            <select
                                                 value={row.slotIntervalMinutes}
                                                 onChange={(e) => handleBusinessIntervalChange(row.weekday, e.target.value)}
-                                            />
+                                                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                            >
+                                              <option value={30}>30</option>
+                                              <option value={60}>60</option>
+                                            </select>
                                           </div>
                                         </div>
                                       </div>
@@ -3554,28 +3567,30 @@ const extractRecurringSchedules = (client) => {
                           <div className="grid gap-4 md:grid-cols-2">
                             <div>
                               <Label className="text-sm font-semibold text-gray-800">לקוחות רגילים</Label>
-                              <Input
-                                  type="number"
-                                  min={0}
-                                  max={365}
+                              <select
                                   value={memberSettings.publicMaxAdvanceDays}
                                   onChange={(e) => handlePublicAdvanceChange(e.target.value)}
-                                  className="mt-2"
-                              />
+                                  className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                {advanceDayOptions.map((day) => (
+                                  <option key={`public-day-${day}`} value={day}>{day}</option>
+                                ))}
+                              </select>
                               <p className="text-xs text-gray-500 mt-1">
                                 מספר הימים קדימה שלקוח שאינו חבר מועדון יכול להזמין.
                               </p>
                             </div>
                             <div>
                               <Label className="text-sm font-semibold text-gray-800">חברי מועדון</Label>
-                              <Input
-                                  type="number"
-                                  min={0}
-                                  max={365}
+                              <select
                                   value={memberSettings.memberMaxAdvanceDays}
                                   onChange={(e) => handleMemberAdvanceChange(e.target.value)}
-                                  className="mt-2"
-                              />
+                                  className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                {advanceDayOptions.map((day) => (
+                                  <option key={`member-day-${day}`} value={day}>{day}</option>
+                                ))}
+                              </select>
                               <p className="text-xs text-gray-500 mt-1">
                                 מספר הימים קדימה שחבר מועדון יכול להזמין תור.
                               </p>

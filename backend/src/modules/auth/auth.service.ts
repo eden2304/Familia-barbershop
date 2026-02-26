@@ -22,6 +22,7 @@ import {
 } from '../../common/security.utils';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { AdminPushService } from '../push/admin-push.service';
 
 
 interface OtpRecord {
@@ -90,6 +91,7 @@ export class AuthService {
         private readonly configService: ConfigService,
         private readonly jwt: JwtService,
         private readonly whatsAppService: WhatsAppService,
+        private readonly adminPushService: AdminPushService,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || '';
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
@@ -425,9 +427,15 @@ export class AuthService {
         if (existing) {
             existing.value = next;
             await this.settingRepo.save(existing);
-            return;
+        } else {
+            await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
         }
-        await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
+
+        await this.adminPushService.sendAdminUpdateNotification({
+            title: 'עדכון מנהל חדש',
+            body: String(event?.message || 'יש עדכון חדש במערכת').slice(0, 180),
+            url: '/admin/notifications',
+        });
     }
 
 

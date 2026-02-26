@@ -320,6 +320,8 @@ export default function Admin() { // Removed props
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
   const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const [services, setServices] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
   const [galleryImages, setGalleryImages] = useState([]);
@@ -929,6 +931,86 @@ export default function Admin() { // Removed props
     }
   };
 
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+  };
+
+  const checkPushStatus = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushEnabled(false);
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      setPushEnabled(false);
+      return;
+    }
+    try {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      const subscription = registration ? await registration.pushManager.getSubscription() : null;
+      setPushEnabled(Boolean(subscription));
+    } catch {
+      setPushEnabled(false);
+    }
+  };
+
+  const handleEnablePushNotifications = async () => {
+    if (pushBusy || pushEnabled) return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      toast({ title: 'המכשיר לא תומך בהתראות Push', variant: 'destructive' });
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast({ title: 'נדרש אישור התראות כדי להפעיל Push', variant: 'destructive' });
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        setPushEnabled(true);
+        return;
+      }
+
+      const keyRes = await api.get('/admin/push/public-key');
+      const publicKey = String(keyRes?.publicKey || '').trim();
+      if (!publicKey) {
+        toast({ title: 'מפתח VAPID ציבורי לא הוגדר בשרת', variant: 'destructive' });
+        return;
+      }
+
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+
+      await api.post('/admin/push/subscribe', subscription.toJSON());
+      setPushEnabled(true);
+      toast({ title: 'Push הופעל בהצלחה' });
+    } catch (error) {
+      console.error('Failed enabling push notifications', error);
+      toast({
+        title: 'הפעלת Push נכשלה',
+        description: 'ודא שהאפליקציה מותקנת למסך הבית ושיש HTTPS.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    checkPushStatus();
+  }, [isAuthenticated, activeTab]);
 
   const handleClearAdminUpdates = async () => {
     if (isClearingUpdates || isRefreshingUpdates) return;
@@ -3388,6 +3470,16 @@ const extractRecurringSchedules = (client) => {
                         <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>עדכוני לקוחות</CardTitle>
                           <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleEnablePushNotifications}
+                              disabled={pushBusy || pushEnabled}
+                              className="gap-1.5"
+                            >
+                              {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                              {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

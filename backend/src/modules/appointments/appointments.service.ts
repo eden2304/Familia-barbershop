@@ -24,6 +24,7 @@ import { BusinessHour } from '../../entities/business-hour.entity';
 import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { Setting } from '../../entities/setting.entity';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { AdminPushService } from '../push/admin-push.service';
 
 import { DateTime } from 'luxon';
 const TZ = 'Asia/Jerusalem';
@@ -85,6 +86,7 @@ export class AppointmentsService {
         @InjectRepository(BusinessHoursOverride) private readonly bhOverrideRepo: Repository<BusinessHoursOverride>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
         private readonly whatsappService: WhatsAppService,
+        private readonly adminPushService: AdminPushService,
     ) {}
 
     private clampAdvanceDays(value: any, fallback: number): number {
@@ -536,9 +538,15 @@ export class AppointmentsService {
         if (existing) {
             existing.value = next;
             await this.settingsRepo.save(existing);
-            return;
+        } else {
+            await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
         }
-        await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
+
+        await this.adminPushService.sendAdminUpdateNotification({
+            title: 'עדכון מנהל חדש',
+            body: String(event.message || 'יש עדכון חדש במערכת').slice(0, 180),
+            url: '/admin/notifications',
+        });
     }
 
     private israelOffsetForDate(dateStr: string): string {

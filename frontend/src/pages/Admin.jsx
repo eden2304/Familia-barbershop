@@ -869,22 +869,17 @@ export default function Admin() { // Removed props
     }
   };
 
-  const loadAdminPhones = async () => {
-    try {
-      const data = await api.get('/admin/admin-phones').catch(() => []);
-      const list = Array.isArray(data) ? data : [];
-      const normalized = list
-        .map((row) => row?.phone ?? row)
-        .map(normalizePhoneForAdminUpdates)
-        .filter(Boolean);
-      const uniquePhones = Array.from(new Set(normalized));
-      setAdminPhones(uniquePhones);
-      return uniquePhones;
-    } catch (error) {
-      console.error('Failed loading admin phones', error);
-      setAdminPhones([]);
-      return [];
-    }
+  const loadAdminPhones = async (clients = []) => {
+    const sourceClients = Array.isArray(clients) ? clients : [];
+    const normalized = sourceClients
+      .filter((client) => Boolean(client?.isAdmin || client?.is_admin || client?.roles?.includes?.('admin')))
+      .map((client) => client?.phone ?? client?.client_phone ?? '')
+      .map(normalizePhoneForAdminUpdates)
+      .filter(Boolean);
+
+    const uniquePhones = Array.from(new Set(normalized));
+    setAdminPhones(uniquePhones);
+    return uniquePhones;
   };
 
   const collectAdminClientIds = (clients = []) => {
@@ -1079,7 +1074,7 @@ export default function Admin() { // Removed props
       setMemberSettings(normalizedBookingRules);
       setMemberSettingsDirty(false);
       setMemberSettingsFeedback(null);
-      const phones = await loadAdminPhones();
+      const phones = await loadAdminPhones(clientsData);
       await loadAdminUpdates({ phones, clients: clientsData });
     } catch (error) {
       console.error("Error loading data:", error);

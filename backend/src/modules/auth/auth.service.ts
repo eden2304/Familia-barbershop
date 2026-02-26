@@ -392,6 +392,10 @@ export class AuthService {
     }
 
     private async logClientLoginUpdates(client: Client) {
+        if (await this.isAdminPhone(client.phone)) {
+            return;
+        }
+
         const firstName = ((client as any)?.firstName ?? client.first_name ?? '').toString().trim();
         const lastName = ((client as any)?.lastName ?? client.last_name ?? '').toString().trim();
         const clientName = `${firstName} ${lastName}`.trim() || client.phone;
@@ -505,6 +509,11 @@ export class AuthService {
         const future = all.filter((entry) => new Date(entry.dueAt).getTime() > now);
 
         for (const entry of due) {
+            const client = await this.clientRepo.findOne({ where: { id: Number(entry.clientId) } });
+            if (client && await this.isAdminPhone(client.phone)) {
+                continue;
+            }
+
             await this.appendAdminUpdate({
                 type: 'visit_no_booking',
                 message: `${entry.clientName} ביקר במערכת אבל לא קבע תור`,

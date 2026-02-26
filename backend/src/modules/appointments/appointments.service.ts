@@ -24,6 +24,7 @@ import { BusinessHour } from '../../entities/business-hour.entity';
 import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { Setting } from '../../entities/setting.entity';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { AdminPushService } from '../push/admin-push.service';
 
 import { DateTime } from 'luxon';
 const TZ = 'Asia/Jerusalem';
@@ -85,6 +86,7 @@ export class AppointmentsService {
         @InjectRepository(BusinessHoursOverride) private readonly bhOverrideRepo: Repository<BusinessHoursOverride>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
         private readonly whatsappService: WhatsAppService,
+        private readonly adminPushService: AdminPushService,
     ) {}
 
     private clampAdvanceDays(value: any, fallback: number): number {
@@ -516,10 +518,11 @@ export class AppointmentsService {
         const startsAtIso = appointment.startsAt instanceof Date
             ? appointment.startsAt.toISOString()
             : new Date(appointment.startsAt as any).toISOString();
+        const startsAtDisplay = this.formatBookingDisplayDate(startsAtIso);
 
         const event: AdminUpdateEvent = {
             type: 'booking',
-            message: `${clientName} קבע תור (${serviceName} · ${startsAtIso})`,
+            message: `${clientName} קבע תור חדש (${serviceName} - ${startsAtDisplay})`,
             color: 'green',
             clientName,
             clientId: Number(apptClient?.id),
@@ -536,9 +539,26 @@ export class AppointmentsService {
         if (existing) {
             existing.value = next;
             await this.settingsRepo.save(existing);
-            return;
+        } else {
+            await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
         }
-        await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
+
+        await this.adminPushService.sendAdminUpdateNotification({
+            title: 'Familia',
+            body: String(event.message || 'יש עדכון חדש במערכת').slice(0, 180),
+            url: '/admin/notifications',
+        });
+    }
+
+    private formatBookingDisplayDate(iso: string): string {
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) return String(iso || '');
+        const dd = String(date.getUTCDate()).padStart(2, '0');
+        const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const yy = String(date.getUTCFullYear()).slice(-2);
+        const hh = String(date.getUTCHours()).padStart(2, '0');
+        const min = String(date.getUTCMinutes()).padStart(2, '0');
+        return `${dd}/${mm}/${yy} בשעה ${hh}:${min}`;
     }
 
     private israelOffsetForDate(dateStr: string): string {

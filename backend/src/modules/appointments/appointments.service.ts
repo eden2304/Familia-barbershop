@@ -553,11 +553,23 @@ export class AppointmentsService {
     private formatBookingDisplayDate(iso: string): string {
         const date = new Date(iso);
         if (Number.isNaN(date.getTime())) return String(iso || '');
-        const dd = String(date.getUTCDate()).padStart(2, '0');
-        const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const yy = String(date.getUTCFullYear()).slice(-2);
-        const hh = String(date.getUTCHours()).padStart(2, '0');
-        const min = String(date.getUTCMinutes()).padStart(2, '0');
+
+        const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jerusalem',
+            day: '2-digit',
+            month: '2-digit',
+            year: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        }).formatToParts(date);
+
+        const dd = parts.find((part) => part.type === 'day')?.value ?? '00';
+        const mm = parts.find((part) => part.type === 'month')?.value ?? '00';
+        const yy = parts.find((part) => part.type === 'year')?.value ?? '00';
+        const hh = parts.find((part) => part.type === 'hour')?.value ?? '00';
+        const min = parts.find((part) => part.type === 'minute')?.value ?? '00';
+
         return `${dd}/${mm}/${yy} בשעה ${hh}:${min}`;
     }
 

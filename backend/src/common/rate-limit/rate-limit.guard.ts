@@ -151,6 +151,12 @@ export class RateLimitGuard implements CanActivate {
             }];
         }
 
-        return [{ key: `global:ip:${ip}`, limit: rateLimitConfig.global.limit, windowSec: rateLimitConfig.global.windowSec, maskedPhone, maskedIp }];
+        return [{
+            key: `global:ip:${ip}:${req.method.toUpperCase()}:${routePath}`,
+            limit: rateLimitConfig.global.limit,
+            windowSec: rateLimitConfig.global.windowSec,
+            maskedPhone,
+            maskedIp,
+        }];
     }
 }

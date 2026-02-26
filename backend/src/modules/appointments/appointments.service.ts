@@ -518,10 +518,11 @@ export class AppointmentsService {
         const startsAtIso = appointment.startsAt instanceof Date
             ? appointment.startsAt.toISOString()
             : new Date(appointment.startsAt as any).toISOString();
+        const startsAtDisplay = this.formatBookingDisplayDate(startsAtIso);
 
         const event: AdminUpdateEvent = {
             type: 'booking',
-            message: `${clientName} קבע תור (${serviceName} · ${startsAtIso})`,
+            message: `${clientName} קבע תור חדש (${serviceName} - ${startsAtDisplay})`,
             color: 'green',
             clientName,
             clientId: Number(apptClient?.id),
@@ -543,10 +544,21 @@ export class AppointmentsService {
         }
 
         await this.adminPushService.sendAdminUpdateNotification({
-            title: 'עדכון מנהל חדש',
+            title: 'Familia',
             body: String(event.message || 'יש עדכון חדש במערכת').slice(0, 180),
             url: '/admin/notifications',
         });
+    }
+
+    private formatBookingDisplayDate(iso: string): string {
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) return String(iso || '');
+        const dd = String(date.getUTCDate()).padStart(2, '0');
+        const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const yy = String(date.getUTCFullYear()).slice(-2);
+        const hh = String(date.getUTCHours()).padStart(2, '0');
+        const min = String(date.getUTCMinutes()).padStart(2, '0');
+        return `${dd}/${mm}/${yy} בשעה ${hh}:${min}`;
     }
 
     private israelOffsetForDate(dateStr: string): string {

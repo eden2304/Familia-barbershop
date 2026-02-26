@@ -432,7 +432,7 @@ export class AuthService {
         }
 
         await this.adminPushService.sendAdminUpdateNotification({
-            title: 'עדכון מנהל חדש',
+            title: 'Familia',
             body: String(event?.message || 'יש עדכון חדש במערכת').slice(0, 180),
             url: '/admin/notifications',
         });

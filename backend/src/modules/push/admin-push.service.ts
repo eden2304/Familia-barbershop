@@ -3,7 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as https from 'https';
-import { createPrivateKey, createSign } from 'crypto';
+import {
+    createECDH,
+    createHmac,
+    createPrivateKey,
+    createSign,
+    randomBytes,
+    createCipheriv,
+} from 'crypto';
 import { AdminPushSubscription } from '../../entities/admin-push-subscription.entity';
 import { normalizePhone } from '../../common/security.utils';
 
@@ -68,7 +75,7 @@ export class AdminPushService {
 
         await Promise.all(all.map(async (row) => {
             try {
-                const result = await this.sendVapidPushWithoutPayload(row.endpoint);
+                const result = await this.sendVapidPushWithPayload(row.endpoint, row.p256dh, row.auth, payload);
                 if (result === 410) {
                     await this.subscriptionsRepo.delete({ id: row.id });
                 }
@@ -77,19 +84,32 @@ export class AdminPushService {
             }
         }));
 
-        this.logger.log(`Push dispatched to ${all.length} admin subscriptions (${payload.title})`);
+        this.logger.log(`Push dispatched to ${all.length} admin subscriptions (${payload.body})`);
     }
 
-    private async sendVapidPushWithoutPayload(endpoint: string): Promise<number> {
+    private async sendVapidPushWithPayload(endpoint: string, p256dh: string, auth: string, payload: PushPayload): Promise<number> {
         const endpointUrl = new URL(endpoint);
         const aud = endpointUrl.origin;
         const jwt = this.buildVapidJwt(aud);
+
+        const encrypted = this.encryptPayload(
+            Buffer.from(JSON.stringify({
+                title: payload.title,
+                body: payload.body,
+                url: payload.url || '/admin/notifications',
+                tag: 'admin-updates',
+            }), 'utf8'),
+            p256dh,
+            auth,
+        );
 
         const headers = {
             TTL: '60',
             Urgency: 'high',
             Authorization: `vapid t=${jwt}, k=${this.vapidPublicKey}`,
-            'Content-Length': '0',
+            'Content-Encoding': 'aes128gcm',
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(encrypted.length),
         };
 
         return await new Promise<number>((resolve, reject) => {
@@ -111,8 +131,60 @@ export class AdminPushService {
             });
 
             req.on('error', reject);
+            req.write(encrypted);
             req.end();
         });
+    }
+
+    private encryptPayload(payload: Buffer, userPublicKeyB64Url: string, authB64Url: string): Buffer {
+        const userPublicKey = this.base64UrlDecode(userPublicKeyB64Url);
+        const authSecret = this.base64UrlDecode(authB64Url);
+        if (userPublicKey.length !== 65 || userPublicKey[0] !== 0x04 || authSecret.length < 16) {
+            throw new Error('INVALID_SUBSCRIPTION_KEYS');
+        }
+
+        const serverECDH = createECDH('prime256v1');
+        serverECDH.generateKeys();
+        const serverPublicKey = serverECDH.getPublicKey();
+        const sharedSecret = serverECDH.computeSecret(userPublicKey);
+
+        const prk = this.hmac(authSecret, sharedSecret);
+        const keyInfo = Buffer.concat([
+            Buffer.from('WebPush: info\x00', 'utf8'),
+            userPublicKey,
+            serverPublicKey,
+        ]);
+        const ikm = this.hmac(prk, Buffer.concat([keyInfo, Buffer.from([0x01])]));
+
+        const salt = randomBytes(16);
+        const contentPrk = this.hmac(salt, ikm);
+
+        const cekInfo = Buffer.concat([Buffer.from('Content-Encoding: aes128gcm\x00', 'utf8'), Buffer.from([0x01])]);
+        const nonceInfo = Buffer.concat([Buffer.from('Content-Encoding: nonce\x00', 'utf8'), Buffer.from([0x01])]);
+        const cek = this.hmac(contentPrk, cekInfo).subarray(0, 16);
+        const nonce = this.hmac(contentPrk, nonceInfo).subarray(0, 12);
+
+        const plaintext = Buffer.concat([payload, Buffer.from([0x02])]);
+        const cipher = createCipheriv('aes-128-gcm', cek, nonce);
+        const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const record = Buffer.concat([ciphertext, tag]);
+
+        const rs = Buffer.alloc(4);
+        rs.writeUInt32BE(4096, 0);
+        const keyIdLen = Buffer.from([serverPublicKey.length]);
+
+        return Buffer.concat([
+            salt,
+            rs,
+            keyIdLen,
+            serverPublicKey,
+            record,
+        ]);
+    }
+
+    private hmac(key: Buffer, value: Buffer): Buffer {
+        return createHmac('sha256', key).update(value).digest();
     }
 
     private buildVapidJwt(audience: string): string {

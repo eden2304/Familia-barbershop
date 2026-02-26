@@ -2,8 +2,6 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const webPush = require('web-push');
 import { AdminPushSubscription } from '../../entities/admin-push-subscription.entity';
 import { normalizePhone } from '../../common/security.utils';
 
@@ -19,18 +17,30 @@ export class AdminPushService {
     private readonly vapidPublicKey: string;
     private readonly vapidPrivateKey: string;
     private readonly vapidSubject: string;
+    private readonly webPush: any | null;
 
     constructor(
         @InjectRepository(AdminPushSubscription)
         private readonly subscriptionsRepo: Repository<AdminPushSubscription>,
         private readonly configService: ConfigService,
     ) {
+        this.webPush = this.loadWebPush();
         this.vapidPublicKey = String(this.configService.get<string>('VAPID_PUBLIC_KEY') || '').trim();
         this.vapidPrivateKey = String(this.configService.get<string>('VAPID_PRIVATE_KEY') || '').trim();
         this.vapidSubject = String(this.configService.get<string>('VAPID_SUBJECT') || 'mailto:admin@familia.local').trim();
 
-        if (this.vapidPublicKey && this.vapidPrivateKey) {
-            webPush.setVapidDetails(this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey);
+        if (this.webPush && this.vapidPublicKey && this.vapidPrivateKey) {
+            this.webPush.setVapidDetails(this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey);
+        }
+    }
+
+    private loadWebPush(): any | null {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            return require('web-push');
+        } catch {
+            this.logger.warn('web-push package is not installed; push notifications are disabled until dependency is available');
+            return null;
         }
     }
 
@@ -62,6 +72,11 @@ export class AdminPushService {
     }
 
     async sendAdminUpdateNotification(payload: PushPayload) {
+        if (!this.webPush) {
+            this.logger.warn('Skipping push send: web-push package unavailable');
+            return;
+        }
+
         if (!this.vapidPublicKey || !this.vapidPrivateKey) {
             this.logger.warn('Skipping push send: VAPID keys are not configured');
             return;
@@ -79,7 +94,7 @@ export class AdminPushService {
 
         await Promise.all(all.map(async (row) => {
             try {
-                await webPush.sendNotification(
+                await this.webPush.sendNotification(
                     {
                         endpoint: row.endpoint,
                         keys: {

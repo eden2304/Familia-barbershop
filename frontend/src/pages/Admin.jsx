@@ -2692,7 +2692,7 @@ const extractRecurringSchedules = (client) => {
 
   if (loading) {
     return (
-        <div className="min-h-screen bg-white flex items-center justify-center p-6" dir="rtl">
+        <div className="min-h-screen bg-black flex items-center justify-center p-6" dir="rtl">
           <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2708,11 +2708,11 @@ const extractRecurringSchedules = (client) => {
                   transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
               />
 
-              <p className="text-lg font-medium text-zinc-800">מעלים את נתוני המנהל</p>
+              <p className="text-lg font-medium text-white">מעלים את נתוני המנהל</p>
 
-              <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+              <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-white/20">
                 <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-zinc-800 via-zinc-500 to-zinc-800"
+                    className="h-full rounded-full bg-gradient-to-r from-white/60 via-white to-white/60"
                     animate={{ x: ["-100%", "100%"] }}
                     transition={{ duration: 1.05, repeat: Infinity, ease: "linear" }}
                 />

@@ -2707,19 +2707,18 @@ const extractRecurringSchedules = (client) => {
 
             <div className="relative flex flex-col items-center text-center">
               <motion.div
-                  className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20"
+                  className="mb-6 flex items-center justify-center"
                   animate={{ scale: [1, 1.04, 1] }}
                   transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
               >
                 <img
                     src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
                     alt="Familia Logo"
-                    className="h-12 w-auto object-contain"
+                    className="h-20 w-auto object-contain sm:h-24"
                 />
               </motion.div>
 
-              <p className="text-xl font-bold tracking-wide">FAMILIA</p>
-              <p className="mt-1 text-sm text-zinc-300">מכינים את מסך הניהול...</p>
+              <p className="text-sm text-zinc-300">מכינים את מסך הניהול...</p>
 
               <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                 <motion.div

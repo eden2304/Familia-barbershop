@@ -544,7 +544,7 @@ export class AppointmentsService {
         }
 
         await this.adminPushService.sendAdminUpdateNotification({
-            title: 'Familia',
+            title: 'תור חדש',
             body: String(event.message || 'יש עדכון חדש במערכת').slice(0, 180),
             url: '/admin/notifications',
         });

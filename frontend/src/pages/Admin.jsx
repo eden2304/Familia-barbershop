@@ -2692,39 +2692,29 @@ const extractRecurringSchedules = (client) => {
 
   if (loading) {
     return (
-        <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black flex items-center justify-center p-6" dir="rtl">
+        <div className="min-h-screen bg-white flex items-center justify-center p-6" dir="rtl">
           <motion.div
-              initial={{ opacity: 0, y: 24 }}
+              initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, ease: "easeOut" }}
-              className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 p-8 text-white shadow-2xl backdrop-blur-xl"
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="w-full max-w-sm"
           >
-            <motion.div
-                className="absolute inset-0 rounded-3xl border border-white/10"
-                animate={{ opacity: [0.2, 0.6, 0.2] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-            />
+            <div className="flex flex-col items-center text-center">
+              <motion.img
+                  src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
+                  alt="Familia Logo"
+                  className="mb-8 h-24 w-auto object-contain sm:h-28"
+                  animate={{ scale: [1, 1.03, 1] }}
+                  transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+              />
 
-            <div className="relative flex flex-col items-center text-center">
-              <motion.div
-                  className="mb-6 flex items-center justify-center"
-                  animate={{ scale: [1, 1.04, 1] }}
-                  transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <img
-                    src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
-                    alt="Familia Logo"
-                    className="h-20 w-auto object-contain sm:h-24"
-                />
-              </motion.div>
+              <p className="text-lg font-medium text-zinc-800">מעלים את נתוני המנהל</p>
 
-              <p className="text-sm text-zinc-300">מכינים את מסך הניהול...</p>
-
-              <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
                 <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-300 via-white to-amber-300"
+                    className="h-full rounded-full bg-gradient-to-r from-zinc-800 via-zinc-500 to-zinc-800"
                     animate={{ x: ["-100%", "100%"] }}
-                    transition={{ duration: 1.1, repeat: Infinity, ease: "linear" }}
+                    transition={{ duration: 1.05, repeat: Infinity, ease: "linear" }}
                 />
               </div>
             </div>
@@ -2732,6 +2722,7 @@ const extractRecurringSchedules = (client) => {
         </div>
     );
   }
+
 
 
   return (

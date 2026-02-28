@@ -28,6 +28,9 @@ export class WhatsAppService {
     private readonly wabaId = process.env.WHATSAPP_WABA_ID || '';
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
+    private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
+    private readonly sendRequestTimeoutMs = Math.max(1000, Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 4000));
+    private readonly retryBaseDelayMs = Math.max(50, Number(process.env.WHATSAPP_RETRY_BASE_DELAY_MS || 150));
 
     constructor(
         @InjectRepository(WhatsAppMessageLog) private readonly logRepo: Repository<WhatsAppMessageLog>,
@@ -272,11 +275,13 @@ export class WhatsAppService {
     }
 
     private async sendWithRetries(payload: Record<string, any>): Promise<SendTemplateResult> {
-        const maxAttempts = 3;
+        const maxAttempts = this.sendMaxAttempts;
         let attempt = 0;
         let lastError: string | null = null;
 
         while (attempt < maxAttempts) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), this.sendRequestTimeoutMs);
             try {
                 const res = await fetch(`https://graph.facebook.com/v19.0/${this.phoneNumberId}/messages`, {
                     method: 'POST',
@@ -285,6 +290,7 @@ export class WhatsAppService {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(payload),
+                    signal: controller.signal,
                 });
 
                 const raw = await res.text();
@@ -303,18 +309,30 @@ export class WhatsAppService {
                 }
 
                 lastError = data?.error?.message || raw || `http_${res.status}`;
+
+                if (!this.isRetryableHttpStatus(res.status)) {
+                    return { ok: false, status: 'failed', messageId: null, error: lastError };
+                }
             } catch (error: any) {
-                lastError = error?.message || 'network_error';
+                lastError = error?.name === 'AbortError'
+                    ? `request_timeout_${this.sendRequestTimeoutMs}ms`
+                    : error?.message || 'network_error';
+            } finally {
+                clearTimeout(timeout);
             }
 
             attempt += 1;
             if (attempt < maxAttempts) {
-                const delayMs = 500 * Math.pow(2, attempt - 1);
+                const delayMs = this.retryBaseDelayMs * Math.pow(2, attempt - 1);
                 await sleep(delayMs);
             }
         }
 
         return { ok: false, status: 'failed', messageId: null, error: lastError || 'unknown_error' };
+    }
+
+    private isRetryableHttpStatus(status: number): boolean {
+        return status === 408 || status === 429 || status >= 500;
     }
 
     private async saveLog(entry: {

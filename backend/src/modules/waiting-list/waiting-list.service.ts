@@ -172,6 +172,7 @@ export class WaitingListService {
         const key = 'admin.updates.feed';
         const clientName = String(entry.clientName || entry.phone || 'לקוח לא ידוע').trim();
         const slotDisplay = this.formatWaitingListDisplayDate(entry.desiredDate, entry.desiredTime);
+        const slotParts = this.formatWaitingListDateAndTime(entry.desiredDate, entry.desiredTime);
 
         const event: AdminUpdateEvent = {
             type: 'waiting_list',
@@ -197,11 +198,22 @@ export class WaitingListService {
 
         await this.adminPushService.sendAdminUpdateNotification({
             title: 'כניסה לרשימת ההמתנה',
-            body: `${slotDisplay} · ${clientName}`.slice(0, 180),
+            body: `״${clientName}״ נכנס לרשימת ההמתנה (״${slotParts.dateLabel}״ בשעה ״${slotParts.timeLabel}״)`.slice(0, 180),
             url: '/admin/notifications',
         });
     }
 
+
+    private formatWaitingListDateAndTime(date: string, time: string): { dateLabel: string; timeLabel: string } {
+        const parsed = DateTime.fromISO(`${date}T${time}`, { zone: TZ });
+        if (!parsed.isValid) {
+            return { dateLabel: date, timeLabel: time };
+        }
+        return {
+            dateLabel: parsed.toFormat('dd/LL/yyyy'),
+            timeLabel: parsed.toFormat('HH:mm'),
+        };
+    }
     private formatWaitingListDisplayDate(date: string, time: string): string {
         const parsed = DateTime.fromISO(`${date}T${time}`, { zone: TZ });
         if (!parsed.isValid) return `${date} ${time}`;

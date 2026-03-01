@@ -2635,6 +2635,9 @@ const extractRecurringSchedules = (client) => {
       const fromMsg = String(item?.message || '').replace(/\s*\(.*\)\s*$/, '').trim();
       return fromMsg || 'לקוח קבע תור';
     }
+    if (item?.type === 'waiting_list') {
+      return 'כניסה לרשימת ההמתנה';
+    }
     return item?.message || 'עדכון';
   };
 
@@ -3520,6 +3523,9 @@ const extractRecurringSchedules = (client) => {
                                   return (
                                       <div key={`${item?.createdAt || 'update'}-${idx}`} className="border border-gray-200 rounded-xl px-3 py-2">
                                         <p className={`font-medium ${colorClass}`}>{getUpdateHeadline(item)}</p>
+                                        {item?.type === 'waiting_list' && item?.message && (
+                                          <p className="text-xs text-gray-500 mt-1">{item.message}</p>
+                                        )}
                                         {booking && (
                                           <p className="text-xs text-gray-500 mt-1">{booking.serviceName} · {booking.dayLabel} · {booking.timeLabel}</p>
                                         )}

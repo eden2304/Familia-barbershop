@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 
 const logger = new Logger('Bootstrap');
 const RETENTION_DAYS = 7;
+const WHATSAPP_LOG_RETENTION_DAYS = 1;
 
 function securityHeaders(req: Request, res: Response, next: NextFunction) {
     res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none'");
@@ -45,6 +46,7 @@ async function pruneOldRecords(ds: DataSource) {
     try {
         await ds.query(`delete from appointments where ends_at < now() - interval '${RETENTION_DAYS} days'`);
         await ds.query(`delete from waiting_list where desired_starts_at < now() - interval '${RETENTION_DAYS} days'`);
+        await ds.query(`delete from whatsapp_message_logs where created_at < now() - interval '${WHATSAPP_LOG_RETENTION_DAYS} days'`);
 
         try {
             const blockedTimesPruneSql = await resolveBlockedTimesPruneSql(ds);

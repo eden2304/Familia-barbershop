@@ -326,7 +326,7 @@ export class AppointmentsService {
         }
     }
 
-    async create(dto: CreateAppointmentDto) {
+    async create(dto: CreateAppointmentDto, options: { bypassMemberRestrictions?: boolean } = {}) {
         // 1) שירות
         const service = await this.svcRepo.findOne({ where: { id: dto.serviceId } });
         if (!service) throw new NotFoundException('Service not found');
@@ -388,8 +388,12 @@ export class AppointmentsService {
         const clientAny = client as any;
         const isMember = Boolean(clientAny?.isMember ?? clientAny?.is_member ?? false);
 
-        this.ensureServiceAllowedForClient(service, isMember, bookingRules);
-        this.ensureWithinAdvanceWindow(startAt, isMember, bookingRules);
+        const bypassMemberRestrictions = Boolean(options.bypassMemberRestrictions);
+
+        if (!bypassMemberRestrictions) {
+            this.ensureServiceAllowedForClient(service, isMember, bookingRules);
+            this.ensureWithinAdvanceWindow(startAt, isMember, bookingRules);
+        }
 
         // 5) שעות פעילות + אינטרוול
         const dateStr = DateTime.fromJSDate(startAt).setZone(TZ).toFormat('yyyy-LL-dd');
@@ -419,12 +423,12 @@ export class AppointmentsService {
             throw new ForbiddenException('CLOSED_DAY');
         }
 
-        if (!isMember && isInMemberWindow) {
+        if (!bypassMemberRestrictions && !isMember && isInMemberWindow) {
             throw new ForbiddenException('MEMBERS_ONLY_WINDOW');
         }
 
         if (!isInBaseWindow && !isInMemberWindow) {
-            if (!hasBaseWindow && hasMemberWindow) {
+            if (!hasBaseWindow && hasMemberWindow && !bypassMemberRestrictions) {
                 throw new ForbiddenException('MEMBERS_ONLY_WINDOW');
             }
             throw new ForbiddenException('OUT_OF_BUSINESS_HOURS');
@@ -447,7 +451,7 @@ export class AppointmentsService {
         const overlappingBlocks = await this.blockRepo.find({
             where: { startsAt: LessThan(endAt), endsAt: MoreThan(startAt) },
         });
-        const blocking = overlappingBlocks.some(block => !block.membersOnly || !isMember);
+        const blocking = overlappingBlocks.some(block => !block.membersOnly || !(isMember || bypassMemberRestrictions));
         if (blocking) throw new ConflictException('Slot is blocked');
 
         // 7) יצירה

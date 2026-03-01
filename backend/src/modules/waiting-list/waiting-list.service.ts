@@ -7,6 +7,8 @@ import { Client } from '../../clients/client.entity';
 import { ServiceEntity } from '../../entities/service.entity';
 import { Appointment } from '../../entities/appointment.entity';
 import { BlockedTime } from '../../entities/blocked-time.entity';
+import { Setting } from '../../entities/setting.entity';
+import { AdminPushService } from '../push/admin-push.service';
 
 const TZ = 'Asia/Jerusalem';
 
@@ -20,6 +22,18 @@ interface WaitingListCreateInput {
     isClubMember?: boolean;
 }
 
+interface AdminUpdateEvent {
+    type: 'waiting_list';
+    message: string;
+    color: 'neutral';
+    clientName: string;
+    createdAt: string;
+    waitingList?: {
+        desiredDate: string;
+        desiredTime: string;
+    };
+}
+
 @Injectable()
 export class WaitingListService {
     constructor(
@@ -28,6 +42,8 @@ export class WaitingListService {
         @InjectRepository(ServiceEntity) private readonly serviceRepo: Repository<ServiceEntity>,
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
         @InjectRepository(BlockedTime) private readonly blockRepo: Repository<BlockedTime>,
+        @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
+        private readonly adminPushService: AdminPushService,
     ) {}
 
     private normalizePhone(raw?: string): string | null {
@@ -147,7 +163,49 @@ export class WaitingListService {
             status: 'open',
         });
 
-        return this.waitingRepo.save(entry);
+        const savedEntry = await this.waitingRepo.save(entry);
+        await this.appendWaitingListAdminUpdate(savedEntry);
+        return savedEntry;
+    }
+
+    private async appendWaitingListAdminUpdate(entry: WaitingList) {
+        const key = 'admin.updates.feed';
+        const clientName = String(entry.clientName || entry.phone || 'לקוח לא ידוע').trim();
+        const slotDisplay = this.formatWaitingListDisplayDate(entry.desiredDate, entry.desiredTime);
+
+        const event: AdminUpdateEvent = {
+            type: 'waiting_list',
+            message: `${clientName} נכנס לרשימת המתנה (${slotDisplay})`,
+            color: 'neutral',
+            clientName,
+            createdAt: new Date().toISOString(),
+            waitingList: {
+                desiredDate: entry.desiredDate,
+                desiredTime: entry.desiredTime,
+            },
+        };
+
+        const existing = await this.settingsRepo.findOne({ where: { key } });
+        const current = Array.isArray(existing?.value) ? existing.value : [];
+        const next = [event, ...current].slice(0, 300);
+        if (existing) {
+            existing.value = next;
+            await this.settingsRepo.save(existing);
+        } else {
+            await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
+        }
+
+        await this.adminPushService.sendAdminUpdateNotification({
+            title: 'כניסה לרשימת ההמתנה',
+            body: `${slotDisplay} · ${clientName}`.slice(0, 180),
+            url: '/admin/notifications',
+        });
+    }
+
+    private formatWaitingListDisplayDate(date: string, time: string): string {
+        const parsed = DateTime.fromISO(`${date}T${time}`, { zone: TZ });
+        if (!parsed.isValid) return `${date} ${time}`;
+        return parsed.toFormat('dd/LL/yy בשעה HH:mm');
     }
 
     async listByDate(date?: string) {

@@ -198,7 +198,7 @@ export class WaitingListService {
 
         await this.adminPushService.sendAdminUpdateNotification({
             title: 'כניסה לרשימת ההמתנה',
-            body: `״${clientName}״ נכנס לרשימת ההמתנה (״${slotParts.dateLabel}״ בשעה ״${slotParts.timeLabel}״)`.slice(0, 180),
+            body: `${clientName} נכנס לרשימת ההמתנה (${slotParts.dateLabel} בשעה ${slotParts.timeLabel})`.slice(0, 180),
             url: '/admin/notifications',
         });
     }
@@ -210,7 +210,7 @@ export class WaitingListService {
             return { dateLabel: date, timeLabel: time };
         }
         return {
-            dateLabel: parsed.toFormat('dd/LL/yyyy'),
+            dateLabel: parsed.toFormat('dd/LL/yy'),
             timeLabel: parsed.toFormat('HH:mm'),
         };
     }

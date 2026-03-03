@@ -226,26 +226,26 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
     <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mx-auto">
       <div className="space-y-4">
         {/* Back Button and Title */}
-        <div className="relative mb-4 h-10 flex items-center justify-center">
+        <div className="relative mb-4 pt-10 min-h-16 flex items-center justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            className="rounded-full absolute right-0 top-0"
+            aria-label="סגירת חלון"
+          >
+            <X className="w-5 h-5" />
+          </Button>
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={handleBack}
-            className="rounded-full absolute left-0"
+            className="rounded-full absolute right-0 top-10"
             aria-label="חזרה לשלב הקודם"
           >
             <ChevronRight className="w-5 h-5" />
           </Button>
           <h3 className="text-xl font-bold text-gray-900 text-center">הוספת תור חדש</h3>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onCancel}
-            className="rounded-full absolute right-0"
-            aria-label="סגירת חלון"
-          >
-            <X className="w-5 h-5" />
-          </Button>
         </div>
         
         <AnimatePresence mode="wait">

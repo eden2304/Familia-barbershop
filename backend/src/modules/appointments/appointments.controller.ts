@@ -1,7 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import {Public} from "../auth/public.decorator";
 import { RateLimitPolicy } from "../../common/rate-limit/rate-limit.decorator";
+import { Request } from 'express';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -54,7 +55,7 @@ export class AppointmentsController {
 
     @RateLimitPolicy('booking-create')
     @Post()
-    async create(@Body() body: any) {
+    async create(@Body() body: any, @Req() req: Request & { user?: { roles?: string[] } }) {
         // (ללא שינוי מהגרסה האחרונה ששלחתי)
         const hasNestedClient = !!body?.client;
 
@@ -95,7 +96,8 @@ export class AppointmentsController {
             requestId: body.requestId ?? body.request_id ?? undefined,
         };
 
-        const saved = await this.svc.create(dto);
+        const isAdmin = Boolean(req.user?.roles?.includes('admin'));
+        const saved = await this.svc.create(dto, { bypassMemberRestrictions: isAdmin });
 
         return {
             ok: true,

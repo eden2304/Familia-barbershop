@@ -226,12 +226,12 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
     <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mx-auto">
       <div className="space-y-4">
         {/* Back Button and Title */}
-        <div className="grid grid-cols-[40px_1fr_40px] items-center gap-3 mb-4">
+        <div className="relative mb-4 h-10 flex items-center justify-center">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={handleBack}
-            className="rounded-full"
+            className="rounded-full absolute left-0"
             aria-label="חזרה לשלב הקודם"
           >
             <ChevronRight className="w-5 h-5" />
@@ -241,7 +241,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
             variant="ghost"
             size="icon"
             onClick={onCancel}
-            className="rounded-full"
+            className="rounded-full absolute right-0"
             aria-label="סגירת חלון"
           >
             <X className="w-5 h-5" />

@@ -1,15 +1,11 @@
 
-import React, { useState, useEffect } from "react";
-import { Service } from "@/api/entities";
-import { BusinessHours } from "@/api/entities";
-import { Appointment } from "@/api/entities";
-import { BlockedTime } from "@/api/entities"; // Added import for BlockedTime
+import { useState, useEffect, useMemo } from "react";
+import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Clock, User, ChevronLeft, ChevronRight, Scissors } from "lucide-react";
-import { format, addDays, startOfWeek, parse, isSameDay, addMinutes, isAfter, isBefore, startOfDay } from "date-fns";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -46,7 +42,7 @@ const getWeekDays = (weekOffset = 0) => {
     return Array.from({ length: 7 }, (_, i) => addDays(base, i));
 };
 
-export default function AdminAppointmentForm({ onSubmit, onCancel, services, appointments, businessHours, clients }) {
+export default function AdminAppointmentForm({ onSubmit, onCancel, services, clients }) {
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -58,22 +54,75 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
   });
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
-    const [blockedTimesByDay, setBlockedTimesByDay] = useState([]);
+  const [availableByDate, setAvailableByDate] = useState({});
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
-    useEffect(() => {
-        // טען חסימות בכל פעם שהיום הנבחר משתנה
-        const loadBlocks = async () => {
-            try {
-                if (!selectedDay) { setBlockedTimesByDay([]); return; }
-                const list = await BlockedTime.listByDate(selectedDay); // מחזיר חסימות עם startAt/endAt
-                setBlockedTimesByDay(list || []);
-            } catch (e) {
-                console.error('Error loading blocked times by date:', e);
-                setBlockedTimesByDay([]);
-            }
-        };
-        loadBlocks();
-    }, [selectedDay]);
+  const weekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
+
+  const toYMD = (date) => {
+    if (!date) return "";
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  const extractSlotTimes = (raw) => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        const hhmm = entry?.hhmm || entry?.time || entry?.formatted || null;
+        return typeof hhmm === "string" && hhmm.includes(":") ? hhmm : null;
+      })
+      .filter(Boolean);
+  };
+
+  useEffect(() => {
+    const serviceId = selectedService?.id;
+    if (!serviceId) {
+      setAvailableByDate({});
+      return;
+    }
+
+    setLoadingSlots(true);
+    Promise.all(
+      weekDays.map(async (date) => {
+        const ymd = toYMD(date);
+        if (isBefore(date, startOfDay(new Date()))) return [ymd, []];
+
+        try {
+          const raw = await api.Appointment.getAvailable(serviceId, ymd, { isMember: true });
+          const hhmmSlots = extractSlotTimes(raw);
+          const slots = hhmmSlots
+            .map((hhmm) => {
+              const [hours, minutes] = hhmm.split(":").map(Number);
+              if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+              const time = new Date(date);
+              time.setHours(hours, minutes, 0, 0);
+              return {
+                date,
+                time,
+                formatted: format(time, "HH:mm"),
+              };
+            })
+            .filter(Boolean);
+          return [ymd, slots];
+        } catch (error) {
+          console.warn("Failed loading availability for", ymd, error);
+          return [ymd, []];
+        }
+      })
+    )
+      .then((entries) => {
+        const next = {};
+        entries.forEach(([dateKey, slots]) => {
+          next[dateKey] = slots;
+        });
+        setAvailableByDate(next);
+      })
+      .finally(() => setLoadingSlots(false));
+  }, [selectedService?.id, weekDays]);
 
     const resolveServiceDuration = (service) => {
         const duration = Number(
@@ -85,53 +134,10 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
         return Number.isFinite(duration) && duration > 0 ? duration : 0;
     };
 
-    const generateTimeSlotsForDay = (date) => {
-        if (!selectedService || !date) return [];
-        const serviceDuration = resolveServiceDuration(selectedService);
-        if (!serviceDuration) return [];
-
-        const slots = [];
-        const dayOfWeek = date.getDay();
-        const hours = businessHours.find(h => h.weekday === dayOfWeek);
-        const isClosed = hours?.is_closed ?? hours?.isClosed ?? false;
-        const openValue = hours?.open_time ?? hours?.open ?? hours?.openTime;
-        const closeValue = hours?.close_time ?? hours?.close ?? hours?.closeTime;
-        if (!hours || isClosed || !openValue || !closeValue) return [];
-
-        const openTime = parse(openValue, 'HH:mm', date);
-        const closeTime = parse(closeValue, 'HH:mm', date);
-
-        let currentTime = openTime;
-
-        while (isBefore(addMinutes(currentTime, serviceDuration), closeTime)) {
-            const slotEnd = addMinutes(currentTime, serviceDuration);
-
-            // חסימות לפי תאריך — משתמשים ב-startAt/endAt אמיתיים
-            const isBlocked = blockedTimesByDay.some(block => {
-                const bStart = new Date(block.startAt ?? block.start_at ?? block.start);
-                const bEnd   = new Date(block.endAt   ?? block.end_at   ?? block.end);
-                return (isBefore(currentTime, bEnd) && isAfter(slotEnd, bStart));
-            });
-
-            // מניעת עבר והתנגשויות עם תורים
-            if (isAfter(currentTime, new Date()) && !isBlocked) {
-                const hasConflict = appointments?.some(apt => {
-                    if (apt.status !== 'booked') return false;
-                    const aptStart = new Date(apt.starts_at);
-                    const aptEnd   = new Date(apt.ends_at);
-                    return (isBefore(currentTime, aptEnd) && isAfter(slotEnd, aptStart));
-                });
-
-                if (!hasConflict) {
-                    slots.push({ date, time: currentTime, formatted: format(currentTime, 'HH:mm') });
-                }
-            }
-
-            currentTime = addMinutes(currentTime, 30);
-        }
-
-        return slots;
-    };
+  const getAvailableSlotsForDay = (date) => {
+    if (!date) return [];
+    return availableByDate[toYMD(date)] || [];
+  };
 
 
     const handleNameChange = (e) => {
@@ -157,7 +163,23 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
       setSuggestions([]);
   };
 
-  const availableSlotsForSelectedDay = selectedDay ? generateTimeSlotsForDay(selectedDay) : [];
+  const availableSlotsForSelectedDay = selectedDay ? getAvailableSlotsForDay(selectedDay) : [];
+
+  const handleBack = () => {
+    if (selectedSlot) {
+      setSelectedSlot(null);
+      return;
+    }
+    if (selectedDay) {
+      setSelectedDay(null);
+      return;
+    }
+    if (selectedService) {
+      setSelectedService(null);
+      return;
+    }
+    onCancel();
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -204,17 +226,26 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
     <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mx-auto">
       <div className="space-y-4">
         {/* Back Button and Title */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="relative mb-4 pt-10 min-h-16 flex items-center justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            className="rounded-full absolute right-0 top-0"
+            aria-label="סגירת חלון"
+          >
+            <X className="w-5 h-5" />
+          </Button>
           <Button 
             variant="ghost" 
             size="icon" 
-            onClick={onCancel}
-            className="rounded-full"
+            onClick={handleBack}
+            className="rounded-full absolute right-0 top-10"
+            aria-label="חזרה לשלב הקודם"
           >
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <h3 className="text-xl font-bold text-gray-900 flex-1 text-center">הוספת תור חדש</h3>
-          <div className="w-10"></div> {/* Spacer for centering */}
+          <h3 className="text-xl font-bold text-gray-900 text-center">הוספת תור חדש</h3>
         </div>
         
         <AnimatePresence mode="wait">
@@ -258,10 +289,10 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
               </div>
 
               <div className="space-y-2">
-                {getWeekDays(selectedWeek).map((date) => {
+                {weekDays.map((date) => {
                   const isPast = isBefore(date, startOfDay(new Date()));
                   const dayName = DAYS_IN_WEEK.find(d => d.key === date.getDay())?.name;
-                  const hasSlots = generateTimeSlotsForDay(date).length > 0;
+                  const hasSlots = getAvailableSlotsForDay(date).length > 0;
 
                   return (
                     <Button
@@ -286,6 +317,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, app
               <h2 className="text-xl font-bold text-gray-900 mb-4">{format(selectedDay, 'EEEE, dd/MM', { locale: he })}</h2>
 
               <div className="max-h-80 overflow-y-auto space-y-3 p-1">
+                {loadingSlots && <p className="text-gray-500 text-sm mt-2">טוען שעות פנויות...</p>}
                 {availableSlotsForSelectedDay.map((slot, index) => (
                   <Button key={index} onClick={() => setSelectedSlot(slot)} variant="outline" className="w-full h-12 rounded-2xl bg-white hover:border-black font-medium text-base">
                     {slot.formatted}

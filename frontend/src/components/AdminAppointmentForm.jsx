@@ -4,7 +4,7 @@ import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -226,17 +226,26 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
     <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mx-auto">
       <div className="space-y-4">
         {/* Back Button and Title */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="grid grid-cols-[40px_1fr_40px] items-center gap-3 mb-4">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={handleBack}
             className="rounded-full"
+            aria-label="חזרה לשלב הקודם"
           >
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <h3 className="text-xl font-bold text-gray-900 flex-1 text-center">הוספת תור חדש</h3>
-          <div className="w-10"></div> {/* Spacer for centering */}
+          <h3 className="text-xl font-bold text-gray-900 text-center">הוספת תור חדש</h3>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            className="rounded-full"
+            aria-label="סגירת חלון"
+          >
+            <X className="w-5 h-5" />
+          </Button>
         </div>
         
         <AnimatePresence mode="wait">

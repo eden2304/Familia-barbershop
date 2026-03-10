@@ -11,6 +11,8 @@ import { Setting } from '../../entities/setting.entity';
 import { AdminPushService } from '../push/admin-push.service';
 
 const TZ = 'Asia/Jerusalem';
+const MAX_OPEN_WAITING_LIST_ENTRIES_PER_CLIENT = 5;
+const WAITING_LIST_CANCEL_LOCK_MINUTES = 5;
 
 interface WaitingListCreateInput {
     clientId?: number;
@@ -118,6 +120,44 @@ export class WaitingListService {
         const desiredTime = this.normalizeTime(input.desiredTime);
         const phone = this.normalizePhone(input.phone);
         const client = await this.resolveClient(input, null);
+
+        const desiredDateTime = DateTime.fromISO(`${desiredDate}T${desiredTime}`, { zone: TZ });
+        if (!desiredDateTime.isValid) {
+            throw new BadRequestException('Invalid desired slot');
+        }
+        if (desiredDateTime <= DateTime.now().setZone(TZ)) {
+            throw new BadRequestException('Cannot join waiting list for a past slot');
+        }
+
+        const desiredSlotStartUtc = desiredDateTime.toUTC().toJSDate();
+        const desiredSlotEndUtc = desiredDateTime.plus({ minutes: 1 }).toUTC().toJSDate();
+
+        const hasOwnAppointmentAtSlot = await this.apptRepo
+            .createQueryBuilder('appointment')
+            .leftJoin('appointment.client', 'apptClient')
+            .where('appointment.startsAt >= :slotStart', { slotStart: desiredSlotStartUtc })
+            .andWhere('appointment.startsAt < :slotEnd', { slotEnd: desiredSlotEndUtc })
+            .andWhere(
+                client?.id && phone
+                    ? '(apptClient.id = :clientId OR apptClient.phone = :phone)'
+                    : client?.id
+                      ? 'apptClient.id = :clientId'
+                      : 'apptClient.phone = :phone',
+                {
+                    clientId: client?.id,
+                    phone,
+                },
+            )
+            .andWhere("COALESCE(appointment.status, 'booked') <> :canceledStatus", { canceledStatus: 'canceled' })
+            .getExists();
+
+        if (hasOwnAppointmentAtSlot) {
+            throw new ConflictException({
+                code: 'WAITING_LIST_OWN_SLOT',
+                message: 'אי אפשר להצטרף לרשימת ההמתנה לתור שלך.',
+            });
+        }
+
         const clientName =
             input.clientName ||
             (client ? `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim() : '') ||
@@ -126,6 +166,33 @@ export class WaitingListService {
 
         if (!client && (!clientName || !phone)) {
             throw new BadRequestException('client_name and phone are required');
+        }
+
+        const countQuery = this.waitingRepo
+            .createQueryBuilder('waiting')
+            .leftJoin('waiting.client', 'client')
+            .where('waiting.status = :status', { status: 'open' });
+
+        if (client?.id && phone) {
+            countQuery.andWhere('(client.id = :clientId OR waiting.phone = :phone OR client.phone = :phone)', {
+                clientId: client.id,
+                phone,
+            });
+        } else if (client?.id) {
+            countQuery.andWhere('client.id = :clientId', { clientId: client.id });
+        } else if (phone) {
+            countQuery.andWhere('(waiting.phone = :phone OR client.phone = :phone)', { phone });
+        }
+
+        const openEntriesCount = await countQuery.getCount();
+
+        if (openEntriesCount >= MAX_OPEN_WAITING_LIST_ENTRIES_PER_CLIENT) {
+            throw new ConflictException({
+                code: 'WAITING_LIST_LIMIT_REACHED',
+                message:
+                    'כבר נרשמת למקסימום המותר של 5 תורים ברשימת ההמתנה. כדי להירשם לתור נוסף יש לבטל הרשמה קיימת.',
+                limit: MAX_OPEN_WAITING_LIST_ENTRIES_PER_CLIENT,
+            });
         }
 
         const isClubMember =
@@ -243,8 +310,8 @@ export class WaitingListService {
             .createQueryBuilder('waiting')
             .leftJoinAndSelect('waiting.client', 'client')
             .leftJoinAndSelect('waiting.service', 'service')
-            .where('waiting.phone = :phone', { phone: normalizedPhone })
-            .orWhere('client.phone = :phone', { phone: normalizedPhone })
+            .where('waiting.status = :status', { status: 'open' })
+            .andWhere('(waiting.phone = :phone OR client.phone = :phone)', { phone: normalizedPhone })
             .orderBy('waiting.desiredDate', 'ASC')
             .addOrderBy('waiting.desiredTime', 'ASC')
             .addOrderBy('waiting.isClubMember', 'DESC')
@@ -269,6 +336,20 @@ export class WaitingListService {
             .andWhere('(waiting.phone = :phone OR client.phone = :phone)', { phone: normalizedPhone })
             .getOne();
         if (!entry) throw new NotFoundException('Waiting list entry not found');
+
+        const createdAt = DateTime.fromJSDate(entry.createdAt).setZone(TZ);
+        const unlockAt = createdAt.plus({ minutes: WAITING_LIST_CANCEL_LOCK_MINUTES });
+        const now = DateTime.now().setZone(TZ);
+        if (unlockAt > now) {
+            const remainingSeconds = Math.max(1, Math.ceil(unlockAt.diff(now, 'seconds').seconds));
+            throw new BadRequestException({
+                code: 'WAITING_LIST_CANCEL_LOCKED',
+                message: `ניתן לבטל הרשמה לרשימת המתנה רק אחרי ${WAITING_LIST_CANCEL_LOCK_MINUTES} דקות מההצטרפות.`,
+                remainingSeconds,
+                lockMinutes: WAITING_LIST_CANCEL_LOCK_MINUTES,
+            });
+        }
+
         await this.waitingRepo.remove(entry);
         return { ok: true };
     }

@@ -139,20 +139,23 @@ export class WaitingListService {
             throw new BadRequestException('client_name and phone are required');
         }
 
-        const openEntriesCount = await this.waitingRepo
+        const countQuery = this.waitingRepo
             .createQueryBuilder('waiting')
             .leftJoin('waiting.client', 'client')
-            .where('waiting.status = :status', { status: 'open' })
-            .andWhere(
-                client?.id
-                    ? '(waiting.clientId = :clientId OR waiting.phone = :phone OR client.phone = :phone)'
-                    : '(waiting.phone = :phone OR client.phone = :phone)',
-                {
-                    clientId: client?.id,
-                    phone,
-                },
-            )
-            .getCount();
+            .where('waiting.status = :status', { status: 'open' });
+
+        if (client?.id && phone) {
+            countQuery.andWhere('(client.id = :clientId OR waiting.phone = :phone OR client.phone = :phone)', {
+                clientId: client.id,
+                phone,
+            });
+        } else if (client?.id) {
+            countQuery.andWhere('client.id = :clientId', { clientId: client.id });
+        } else if (phone) {
+            countQuery.andWhere('(waiting.phone = :phone OR client.phone = :phone)', { phone });
+        }
+
+        const openEntriesCount = await countQuery.getCount();
 
         if (openEntriesCount >= MAX_OPEN_WAITING_LIST_ENTRIES_PER_CLIENT) {
             throw new ConflictException({

@@ -100,7 +100,11 @@ export default function WaitingListModal({
     } catch (error) {
       console.error("Error joining waiting list:", error);
       if (error?.status === 409) {
-        alert("אתה כבר רשום לשעה זו.");
+        if (error?.code === 'WAITING_LIST_LIMIT_REACHED') {
+          alert("אתה כבר רשום למקסימום המותר ברשימת ההמתנה. כדי להירשם לתור נוסף צריך קודם לבטל הרשמה קיימת.");
+        } else {
+          alert("אתה כבר רשום לשעה זו.");
+        }
       } else {
         alert("שגיאה בהצטרפות לרשימת ההמתנה.");
       }

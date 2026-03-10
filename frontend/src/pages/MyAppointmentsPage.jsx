@@ -96,6 +96,13 @@ const normWaiting = (entry) => {
   };
 };
 
+const formatCountdown = (seconds) => {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const mm = String(Math.floor(safe / 60)).padStart(2, '0');
+  const ss = String(safe % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+};
+
 
 const StatusChip = ({ apt }) => {
   const pill = statusPill(apt);
@@ -119,6 +126,7 @@ export default function MyAppointmentsPage() {
   const [err, setErr] = useState("");
   const [showVerification, setShowVerification] = useState(false);
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+  const [cancelLockByEntry, setCancelLockByEntry] = useState({});
 
   if (showPostLoginLoading) {
     return <LoadingScreen />;
@@ -213,12 +221,43 @@ export default function MyAppointmentsPage() {
   const handleWaitingCancel = async (entry) => {
     try {
       await api.WaitingList.removeMine(entry.id);
+      setCancelLockByEntry((prev) => {
+        const next = { ...prev };
+        delete next[entry.id];
+        return next;
+      });
       await fetchMine();
     } catch (e) {
       console.error("failed to cancel waiting list", e);
+      if (e?.code === 'WAITING_LIST_CANCEL_LOCKED') {
+        const remainingSeconds = Number(e?.payload?.remainingSeconds ?? 0);
+        if (remainingSeconds > 0) {
+          setCancelLockByEntry((prev) => ({ ...prev, [entry.id]: remainingSeconds }));
+        }
+        alert(`אפשר לבטל את ההרשמה בעוד ${formatCountdown(remainingSeconds)}.`);
+        return;
+      }
       alert("לא ניתן לבטל את ההרשמה לרשימת ההמתנה. נסה שוב.");
     }
   };
+
+  useEffect(() => {
+    const hasLocks = Object.values(cancelLockByEntry).some((seconds) => Number(seconds) > 0);
+    if (!hasLocks) return;
+
+    const timer = window.setInterval(() => {
+      setCancelLockByEntry((prev) => {
+        const next = {};
+        Object.entries(prev).forEach(([entryId, seconds]) => {
+          const left = Math.max(0, Number(seconds) - 1);
+          if (left > 0) next[entryId] = left;
+        });
+        return next;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [cancelLockByEntry]);
 
   /* ---------------- renders ---------------- */
   if (loading) {
@@ -285,7 +324,10 @@ export default function MyAppointmentsPage() {
                   <>
                     <h2 className="text-lg font-bold text-gray-900 mb-3 text-right">רשימת המתנה</h2>
                     <div className="space-y-3 mb-8">
-                      {waitingItems.map((entry) => (
+                      {waitingItems.map((entry) => {
+                            const lockSeconds = Number(cancelLockByEntry[entry.id] ?? 0);
+                            const isLocked = lockSeconds > 0;
+                            return (
                           <Card key={entry.id} className="p-5 rounded-2xl border-gray-200">
                             <CardContent className="p-0">
                               <div className="flex items-start justify-between">
@@ -312,15 +354,22 @@ export default function MyAppointmentsPage() {
                                   <Button
                                       variant="outline"
                                       className="rounded-full text-xs"
+                                      disabled={isLocked}
                                       onClick={() => handleWaitingCancel(entry)}
                                   >
-                                    ביטול הרשמה
+                                    {isLocked ? `ניתן לבטל בעוד ${formatCountdown(lockSeconds)}` : 'ביטול הרשמה'}
                                   </Button>
+                                  {isLocked && (
+                                      <p className="text-[11px] text-amber-700 text-right">
+                                        אפשר לבטל רק 5 דקות אחרי ההרשמה.
+                                      </p>
+                                  )}
                                 </div>
                               </div>
                             </CardContent>
                           </Card>
-                      ))}
+                            );
+                      })}
                     </div>
                   </>
               )}

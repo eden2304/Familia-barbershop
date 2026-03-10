@@ -129,6 +129,35 @@ export class WaitingListService {
             throw new BadRequestException('Cannot join waiting list for a past slot');
         }
 
+        const desiredSlotStartUtc = desiredDateTime.toUTC().toJSDate();
+        const desiredSlotEndUtc = desiredDateTime.plus({ minutes: 1 }).toUTC().toJSDate();
+
+        const hasOwnAppointmentAtSlot = await this.apptRepo
+            .createQueryBuilder('appointment')
+            .leftJoin('appointment.client', 'apptClient')
+            .where('appointment.startsAt >= :slotStart', { slotStart: desiredSlotStartUtc })
+            .andWhere('appointment.startsAt < :slotEnd', { slotEnd: desiredSlotEndUtc })
+            .andWhere(
+                client?.id && phone
+                    ? '(apptClient.id = :clientId OR apptClient.phone = :phone)'
+                    : client?.id
+                      ? 'apptClient.id = :clientId'
+                      : 'apptClient.phone = :phone',
+                {
+                    clientId: client?.id,
+                    phone,
+                },
+            )
+            .andWhere("COALESCE(appointment.status, 'booked') <> :canceledStatus", { canceledStatus: 'canceled' })
+            .getExists();
+
+        if (hasOwnAppointmentAtSlot) {
+            throw new ConflictException({
+                code: 'WAITING_LIST_OWN_SLOT',
+                message: 'אי אפשר להצטרף לרשימת ההמתנה לתור שלך.',
+            });
+        }
+
         const clientName =
             input.clientName ||
             (client ? `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim() : '') ||

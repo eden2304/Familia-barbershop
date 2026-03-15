@@ -243,7 +243,7 @@ export class AuthService {
 
         await this.storeOtp(norm, code);
 
-        const whatsappResult = await this.whatsAppService.sendAuthCode(norm, code);
+        const whatsappResult = await this.whatsAppService.sendVerificationCodeTemplate(norm, code);
         if (!whatsappResult.ok && whatsappResult.status === 'failed') {
             this.logger.error(`OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.error || 'unknown_error'}`);
             throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);

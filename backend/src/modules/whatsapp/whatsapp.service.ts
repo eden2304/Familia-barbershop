@@ -27,6 +27,8 @@ export class WhatsAppService {
     private readonly phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     private readonly wabaId = process.env.WHATSAPP_WABA_ID || '';
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
+    private readonly authTemplateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || 'verification_code';
+    private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
     private readonly sendRequestTimeoutMs = Math.max(1000, Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 4000));
@@ -91,12 +93,77 @@ export class WhatsAppService {
         });
     }
 
-    async sendAuthCode(toPhone: string, code: string) {
-        return this.sendTemplateMessage({
-            templateName: 'login_and_register',
-            toPhone,
-            params: [code],
+    async sendVerificationCodeTemplate(toPhone: string, code: string): Promise<SendTemplateResult> {
+        const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
+        const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
+        const payload = this.buildAuthTemplatePayload(this.authTemplateName, recipientForMeta, code);
+        const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
+
+        if (!normalized) {
+            await this.saveLog({
+                toPhone: toPhone || '',
+                templateName: this.authTemplateName,
+                payloadJson: safePayload,
+                status: 'failed',
+                metaMessageId: null,
+                error: 'invalid_phone_auth_template',
+                appointmentId: null,
+            });
+            this.logger.warn(`WhatsApp auth template skipped (invalid phone): template=${this.authTemplateName}, category=AUTHENTICATION`);
+            return { ok: false, status: 'failed', messageId: null, error: 'invalid_phone_auth_template' };
+        }
+
+        if (!this.enabled) {
+            await this.saveLog({
+                toPhone: normalized,
+                templateName: this.authTemplateName,
+                payloadJson: safePayload,
+                status: 'skipped',
+                metaMessageId: null,
+                error: 'disabled_auth_template',
+                appointmentId: null,
+            });
+            this.logger.warn(`WhatsApp auth template disabled: template=${this.authTemplateName}, category=AUTHENTICATION`);
+            return { ok: true, status: 'skipped', messageId: null, error: 'disabled_auth_template' };
+        }
+
+        if (!this.token || !this.phoneNumberId) {
+            const error = 'missing_config_auth_template';
+            await this.saveLog({
+                toPhone: normalized,
+                templateName: this.authTemplateName,
+                payloadJson: safePayload,
+                status: 'failed',
+                metaMessageId: null,
+                error,
+                appointmentId: null,
+            });
+            this.logger.warn(`WhatsApp auth template config missing: template=${this.authTemplateName}, category=AUTHENTICATION`);
+            return { ok: false, status: 'failed', messageId: null, error };
+        }
+
+        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${this.authTemplateLanguage}, flow=COPY_CODE`);
+
+        const result = await this.sendWithRetries(payload);
+        await this.saveLog({
+            toPhone: normalized,
+            templateName: this.authTemplateName,
+            payloadJson: safePayload,
+            status: result.status,
+            metaMessageId: result.messageId,
+            error: result.error,
+            appointmentId: null,
         });
+
+        if (!result.ok) {
+            this.logger.warn(`WhatsApp auth template send failed: template=${this.authTemplateName}, category=AUTHENTICATION, error=${result.error}`);
+        }
+
+        return result;
+    }
+
+    async sendAuthCode(toPhone: string, code: string) {
+        return this.sendVerificationCodeTemplate(toPhone, code);
     }
 
     async sendAdminAppointmentMessage(appointment: Appointment, messageText: string) {
@@ -272,6 +339,40 @@ export class WhatsAppService {
                 ],
             },
         };
+    }
+
+    private buildAuthTemplatePayload(templateName: string, toPhone: string, code: string) {
+        return {
+            messaging_product: 'whatsapp',
+            to: toPhone,
+            type: 'template',
+            template: {
+                name: templateName,
+                language: { code: this.authTemplateLanguage },
+                components: [
+                    {
+                        type: 'button',
+                        sub_type: 'copy_code',
+                        index: '0',
+                        parameters: [
+                            {
+                                type: 'text',
+                                text: code ?? '',
+                            },
+                        ],
+                    },
+                ],
+            },
+        };
+    }
+
+    private buildSafeAuthTemplatePayloadForLogging(payload: Record<string, any>) {
+        const clone = JSON.parse(JSON.stringify(payload));
+        const textParameter = clone?.template?.components?.[0]?.parameters?.[0];
+        if (textParameter && typeof textParameter === 'object' && 'text' in textParameter) {
+            textParameter.text = '[REDACTED_OTP]';
+        }
+        return clone;
     }
 
     private async sendWithRetries(payload: Record<string, any>): Promise<SendTemplateResult> {

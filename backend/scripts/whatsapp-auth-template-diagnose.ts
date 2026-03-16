@@ -25,10 +25,6 @@ class LogRepoStub {
   const doSend = String(process.env.WHATSAPP_DIAG_SEND || '').toLowerCase() === 'true';
 
   const spec = await (service as any).resolveAuthTemplateSpec();
-  if (!spec) {
-    console.error('No approved AUTHENTICATION template spec resolved. Check WABA ID/token/template name/language.');
-    process.exit(1);
-  }
 
   console.log('Resolved approved auth template definition (raw):');
   console.log(JSON.stringify(spec.rawDefinition || null, null, 2));
@@ -42,6 +38,7 @@ class LogRepoStub {
     category: spec.category,
     locale: spec.languageCode,
     bodyParamCount: spec.bodyParamCount,
+    footerParamCount: spec.footerParamCount,
     buttons: spec.buttons,
     outboundComponents: (payload?.template?.components || []).map((c: any) => ({
       type: c.type,

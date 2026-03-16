@@ -31,6 +31,7 @@ interface AuthTemplateSpec {
     category: string;
     languageCode: string;
     bodyParamCount: number;
+    footerParamCount: number;
     buttons: AuthTemplateButtonSpec[];
     source: 'waba_api' | 'env_config';
     rawDefinition?: Record<string, any> | null;
@@ -49,7 +50,9 @@ export class WhatsAppService {
     private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
     private readonly hasAuthTemplateNameOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_NAME);
     private readonly hasAuthTemplateLanguageOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_LANG);
-    private readonly authTemplateBodyParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT || 0));
+    private readonly authTemplateBodyParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT || 1));
+    private readonly authTemplateFooterParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_FOOTER_PARAM_COUNT || 0));
+    private readonly authTemplateExpirationMinutes = String(process.env.WHATSAPP_AUTH_TEMPLATE_EXPIRATION_MINUTES || '10');
     private readonly authTemplateButtonParamCount = Math.max(1, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_COUNT || 1));
     private readonly authTemplateButtonSubType = (process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_SUB_TYPE || 'copy_code').toLowerCase();
     private authTemplateSpecCache: AuthTemplateSpec | null = null;
@@ -173,9 +176,17 @@ export class WhatsAppService {
         const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
         const button = authTemplateSpec.buttons[0];
 
+        const componentsSummary = payload.template.components.map((component: any) => ({
+            type: component.type,
+            sub_type: component.sub_type || null,
+            index: component.index || null,
+            parameterCount: Array.isArray(component.parameters) ? component.parameters.length : 0,
+        }));
+
         this.logger.log(
-            `WhatsApp auth template send: template=${authTemplateSpec.templateName}, category=${authTemplateSpec.category}, locale=${authTemplateSpec.languageCode}, bodyIncluded=${authTemplateSpec.bodyParamCount > 0}, buttonSubType=${button?.subType || 'none'}, buttonParamCount=${button?.paramCount || 0}, bodyParamCount=${authTemplateSpec.bodyParamCount}`
+            `WhatsApp auth template send: template=${authTemplateSpec.templateName}, category=${authTemplateSpec.category}, locale=${authTemplateSpec.languageCode}, bodyIncluded=${authTemplateSpec.bodyParamCount > 0}, footerIncluded=${authTemplateSpec.footerParamCount > 0}, buttonSubType=${button?.subType || 'none'}, buttonParamCount=${button?.paramCount || 0}, bodyParamCount=${authTemplateSpec.bodyParamCount}, footerParamCount=${authTemplateSpec.footerParamCount}, components=${JSON.stringify(componentsSummary)}`
         );
+        this.logger.log(`WhatsApp auth template payload (redacted): ${JSON.stringify(safePayload.template?.components || [])}`);
 
         const result = await this.sendWithRetries(payload);
 
@@ -389,6 +400,16 @@ export class WhatsAppService {
             });
         }
 
+        if (spec.footerParamCount > 0) {
+            components.push({
+                type: 'footer',
+                parameters: Array.from({ length: spec.footerParamCount }, () => ({
+                    type: 'text',
+                    text: this.authTemplateExpirationMinutes,
+                })),
+            });
+        }
+
         for (const button of spec.buttons) {
             components.push({
                 type: 'button',
@@ -439,7 +460,8 @@ export class WhatsAppService {
             return fallback;
         }
 
-        const bodyParamCount = this.extractBodyParamCount(approvedTemplate.components);
+        const bodyParamCount = this.extractBodyParamCount(approvedTemplate.components, String(approvedTemplate.category || ''));
+        const footerParamCount = this.extractFooterParamCount(approvedTemplate.components);
         const buttons = this.extractAuthButtons(approvedTemplate.components);
 
         if (buttons.length === 0) {
@@ -465,6 +487,7 @@ export class WhatsAppService {
             category: String(approvedTemplate.category || 'AUTHENTICATION'),
             languageCode,
             bodyParamCount,
+            footerParamCount,
             buttons,
             source: 'waba_api',
             rawDefinition: approvedTemplate,
@@ -476,6 +499,7 @@ export class WhatsAppService {
             category: this.authTemplateSpecCache.category,
             language: this.authTemplateSpecCache.languageCode,
             bodyParamCount: this.authTemplateSpecCache.bodyParamCount,
+            footerParamCount: this.authTemplateSpecCache.footerParamCount,
             buttons: this.authTemplateSpecCache.buttons,
         };
         this.logger.log(`Resolved auth template definition: ${JSON.stringify(compact)}`);
@@ -489,6 +513,7 @@ export class WhatsAppService {
             category: 'AUTHENTICATION',
             languageCode: this.authTemplateLanguage,
             bodyParamCount: this.authTemplateBodyParamCount,
+            footerParamCount: this.authTemplateFooterParamCount,
             buttons: [
                 {
                     index: '0',
@@ -505,7 +530,7 @@ export class WhatsAppService {
         try {
             const url = new URL(`https://graph.facebook.com/v19.0/${this.wabaId}/message_templates`);
             url.searchParams.set('name', name);
-            url.searchParams.set('fields', 'name,status,category,language,components');
+            url.searchParams.set('fields', 'name,status,category,language,components,quality_score');
             url.searchParams.set('limit', '50');
 
             const res = await fetch(url.toString(), {
@@ -529,11 +554,27 @@ export class WhatsAppService {
         }
     }
 
-    private extractBodyParamCount(components: any): number {
+    private extractBodyParamCount(components: any, category: string): number {
         if (!Array.isArray(components)) return 0;
         const body = components.find(c => String(c?.type || '').toUpperCase() === 'BODY');
         if (!body) return 0;
-        return this.countTemplatePlaceholders(String(body?.text || ''));
+
+        const placeholders = this.countTemplatePlaceholders(String(body?.text || ''));
+        if (placeholders > 0) return placeholders;
+
+        const isAuthentication = String(category || '').toUpperCase() === 'AUTHENTICATION';
+        if (isAuthentication) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private extractFooterParamCount(components: any): number {
+        if (!Array.isArray(components)) return 0;
+        const footer = components.find(c => String(c?.type || '').toUpperCase() === 'FOOTER');
+        if (!footer) return 0;
+        return this.countTemplatePlaceholders(String(footer?.text || ''));
     }
 
     private extractAuthButtons(components: any): AuthTemplateButtonSpec[] {
@@ -583,6 +624,7 @@ export class WhatsAppService {
             authTemplateNameConfigured: this.hasAuthTemplateNameOverride,
             authTemplateLangConfigured: this.hasAuthTemplateLanguageOverride,
             authBodyParamCount: this.authTemplateBodyParamCount,
+            authFooterParamCount: this.authTemplateFooterParamCount,
             authButtonParamCount: this.authTemplateButtonParamCount,
             authButtonSubType: this.authTemplateButtonSubType,
         };

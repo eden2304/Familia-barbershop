@@ -29,7 +29,6 @@ export class WhatsAppService {
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly authTemplateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || 'verification_code';
     private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
-    private readonly authTemplateMode = (process.env.WHATSAPP_AUTH_TEMPLATE_MODE || 'body_and_button').toLowerCase();
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
     private readonly sendRequestTimeoutMs = Math.max(1000, Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 4000));
@@ -97,8 +96,8 @@ export class WhatsAppService {
     async sendVerificationCodeTemplate(toPhone: string, code: string): Promise<SendTemplateResult> {
         const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const payloads = this.buildAuthTemplatePayloadCandidates(this.authTemplateName, recipientForMeta, code);
-        const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payloads[0].payload);
+        const payload = this.buildAuthTemplatePayload(this.authTemplateName, recipientForMeta, code);
+        const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
 
         if (!normalized) {
             await this.saveLog({
@@ -143,29 +142,14 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
-        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${this.authTemplateLanguage}, flow=COPY_CODE, mode=${this.authTemplateMode}`);
+        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${this.authTemplateLanguage}, flow=COPY_CODE`);
 
-        let result: SendTemplateResult = { ok: false, status: 'failed', messageId: null, error: 'auth_template_send_failed' };
-        let usedPayload = payloads[0].payload;
-        for (const candidate of payloads) {
-            usedPayload = candidate.payload;
-            result = await this.sendWithRetries(candidate.payload);
-            if (result.ok) {
-                break;
-            }
-
-            const isParamsMismatch = String(result.error || '').includes('132000') || String(result.error || '').toLowerCase().includes('number of parameters');
-            if (!isParamsMismatch) {
-                break;
-            }
-
-            this.logger.warn(`WhatsApp auth template payload mismatch; retrying alternate auth payload mode=${candidate.mode}`);
-        }
+        const result = await this.sendWithRetries(payload);
 
         await this.saveLog({
             toPhone: normalized,
             templateName: this.authTemplateName,
-            payloadJson: this.buildSafeAuthTemplatePayloadForLogging(usedPayload),
+            payloadJson: safePayload,
             status: result.status,
             metaMessageId: result.messageId,
             error: result.error,
@@ -358,8 +342,8 @@ export class WhatsAppService {
         };
     }
 
-    private buildAuthTemplatePayloadCandidates(templateName: string, toPhone: string, code: string) {
-        const buttonOnlyPayload = {
+    private buildAuthTemplatePayload(templateName: string, toPhone: string, code: string) {
+        return {
             messaging_product: 'whatsapp',
             to: toPhone,
             type: 'template',
@@ -373,58 +357,14 @@ export class WhatsAppService {
                         index: '0',
                         parameters: [
                             {
-                                type: 'text',
-                                text: code ?? '',
+                                type: 'payload',
+                                payload: code ?? '',
                             },
                         ],
                     },
                 ],
             },
         };
-
-        const bodyAndButtonPayload = {
-            messaging_product: 'whatsapp',
-            to: toPhone,
-            type: 'template',
-            template: {
-                name: templateName,
-                language: { code: this.authTemplateLanguage },
-                components: [
-                    {
-                        type: 'body',
-                        parameters: [
-                            {
-                                type: 'text',
-                                text: code ?? '',
-                            },
-                        ],
-                    },
-                    {
-                        type: 'button',
-                        sub_type: 'copy_code',
-                        index: '0',
-                        parameters: [
-                            {
-                                type: 'text',
-                                text: code ?? '',
-                            },
-                        ],
-                    },
-                ],
-            },
-        };
-
-        if (this.authTemplateMode === 'button_only') {
-            return [
-                { mode: 'button_only', payload: buttonOnlyPayload },
-                { mode: 'body_and_button', payload: bodyAndButtonPayload },
-            ];
-        }
-
-        return [
-            { mode: 'body_and_button', payload: bodyAndButtonPayload },
-            { mode: 'button_only', payload: buttonOnlyPayload },
-        ];
     }
 
     private buildSafeAuthTemplatePayloadForLogging(payload: Record<string, any>) {

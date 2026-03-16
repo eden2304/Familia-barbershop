@@ -54,11 +54,9 @@ function makeService(env: Record<string, string>) {
   const specButtonOnly = await (buttonOnlyService as any).resolveAuthTemplateSpec();
   const payloadButtonOnly = (buttonOnlyService as any).buildAuthTemplatePayload(specButtonOnly, '972500000000', '1234');
   assert.equal(payloadButtonOnly.template.language.code, 'en_US');
-  assert.equal(payloadButtonOnly.template.components.length, 2);
-  assert.equal(payloadButtonOnly.template.components[0].type, 'body');
+  assert.equal(payloadButtonOnly.template.components.length, 1);
+  assert.equal(payloadButtonOnly.template.components[0].type, 'button');
   assert.equal(payloadButtonOnly.template.components[0].parameters[0].type, 'text');
-  assert.equal(payloadButtonOnly.template.components[1].type, 'button');
-  assert.equal(payloadButtonOnly.template.components[1].parameters[0].type, 'text');
 
   const bodyAndButtonService = makeService({
     WHATSAPP_ENABLED: 'true',

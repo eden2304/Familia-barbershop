@@ -50,7 +50,7 @@ export class WhatsAppService {
     private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
     private readonly hasAuthTemplateNameOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_NAME);
     private readonly hasAuthTemplateLanguageOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_LANG);
-    private readonly authTemplateBodyParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT || 1));
+    private readonly authTemplateBodyParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT || 0));
     private readonly authTemplateFooterParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_FOOTER_PARAM_COUNT || 0));
     private readonly authTemplateExpirationMinutes = String(process.env.WHATSAPP_AUTH_TEMPLATE_EXPIRATION_MINUTES || '10');
     private readonly authTemplateButtonParamCount = Math.max(1, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_COUNT || 1));
@@ -554,20 +554,12 @@ export class WhatsAppService {
         }
     }
 
-    private extractBodyParamCount(components: any, category: string): number {
+    private extractBodyParamCount(components: any, _category: string): number {
         if (!Array.isArray(components)) return 0;
         const body = components.find(c => String(c?.type || '').toUpperCase() === 'BODY');
         if (!body) return 0;
 
-        const placeholders = this.countTemplatePlaceholders(String(body?.text || ''));
-        if (placeholders > 0) return placeholders;
-
-        const isAuthentication = String(category || '').toUpperCase() === 'AUTHENTICATION';
-        if (isAuthentication) {
-            return 1;
-        }
-
-        return 0;
+        return this.countTemplatePlaceholders(String(body?.text || ''));
     }
 
     private extractFooterParamCount(components: any): number {

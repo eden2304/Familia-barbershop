@@ -13,7 +13,6 @@ class LogRepoStub {
   const status = {
     WHATSAPP_TOKEN: Boolean(process.env.WHATSAPP_TOKEN),
     WHATSAPP_PHONE_NUMBER_ID: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
-    WHATSAPP_WABA_ID: Boolean(process.env.WHATSAPP_WABA_ID),
     WHATSAPP_AUTH_TEMPLATE_NAME: Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_NAME),
     WHATSAPP_AUTH_TEMPLATE_LANG: Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_LANG),
   };
@@ -24,62 +23,8 @@ class LogRepoStub {
   const otp = process.env.WHATSAPP_TEST_OTP || '1234';
   const doSend = String(process.env.WHATSAPP_DIAG_SEND || '').toLowerCase() === 'true';
 
-  const spec = await (service as any).resolveAuthTemplateSpec();
-
-  console.log('Resolved approved auth template definition (raw):');
-  console.log(JSON.stringify(spec.rawDefinition || null, null, 2));
-
-  const rawComponents = (spec.rawDefinition?.components || []) as any[];
-  const rawButtons = rawComponents
-    .filter((c: any) => String(c?.type || '').toUpperCase() === 'BUTTONS')
-    .flatMap((c: any) => Array.isArray(c?.buttons) ? c.buttons : []);
-  console.log('Raw Meta components and button metadata:');
-  console.log(JSON.stringify({ components: rawComponents, buttons: rawButtons }, null, 2));
-
-
-  const recipient = toPhone || '972500000000';
-  const payload = (service as any).buildAuthTemplatePayload(spec, recipient, otp);
-  const safePayload = (service as any).buildSafeAuthTemplatePayloadForLogging(payload);
-
-  const summary = {
-    templateName: spec.templateName,
-    category: spec.category,
-    locale: spec.languageCode,
-    bodyParamCount: spec.bodyParamCount,
-    footerParamCount: spec.footerParamCount,
-    buttons: spec.buttons,
-    outboundComponents: (payload?.template?.components || []).map((c: any) => ({
-      type: c.type,
-      sub_type: c.sub_type,
-      index: c.index,
-      parameterCount: Array.isArray(c.parameters) ? c.parameters.length : 0,
-      parameterTypes: Array.isArray(c.parameters) ? c.parameters.map((p: any) => p.type) : [],
-    })),
-  };
-
-  console.log('Template/payload contract summary:');
-  console.log(JSON.stringify(summary, null, 2));
-
-  const expectedFromSpec = {
-    locale: spec.languageCode,
-    components: [
-      ...(spec.bodyParamCount > 0 ? [{ type: 'body', parameterCount: spec.bodyParamCount, parameterType: 'text' }] : []),
-      ...(spec.footerParamCount > 0 ? [{ type: 'footer', parameterCount: spec.footerParamCount, parameterType: 'text' }] : []),
-      ...spec.buttons.map((b: any) => ({ type: 'button', sub_type: b.subType, index: b.index, parameterCount: b.paramCount, parameterType: 'text', rawButtonMeta: b })),
-    ],
-  };
-
-  const actualFromPayload = (payload?.template?.components || []).map((c: any) => ({
-    type: c.type,
-    sub_type: c.sub_type,
-    index: c.index,
-    parameterCount: Array.isArray(c.parameters) ? c.parameters.length : 0,
-    parameterType: Array.isArray(c.parameters) && c.parameters.length ? c.parameters[0].type : null,
-  }));
-
-  console.log('Expected vs actual component contract:');
-  console.log(JSON.stringify({ expected: expectedFromSpec, actual: actualFromPayload }, null, 2));
-
+  const payload = (service as any).buildVerificationCodePayload(toPhone || '972500000000', otp);
+  const safePayload = (service as any).buildSafePayloadForLogging(payload);
 
   console.log('Final outbound payload (redacted):');
   console.log(JSON.stringify(safePayload, null, 2));

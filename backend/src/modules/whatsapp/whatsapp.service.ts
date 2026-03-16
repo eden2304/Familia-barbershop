@@ -19,6 +19,11 @@ interface SendTemplateResult {
     error: string | null;
 }
 
+interface AuthTemplateSpec {
+    languageCode: string;
+    hasBodyVariable: boolean;
+}
+
 @Injectable()
 export class WhatsAppService {
     private readonly logger = new Logger(WhatsAppService.name);
@@ -29,6 +34,8 @@ export class WhatsAppService {
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly authTemplateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || 'verification_code';
     private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
+    private readonly hasAuthTemplateLanguageOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_LANG);
+    private authTemplateSpecCache: AuthTemplateSpec | null = null;
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
     private readonly sendRequestTimeoutMs = Math.max(1000, Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 4000));
@@ -96,7 +103,8 @@ export class WhatsAppService {
     async sendVerificationCodeTemplate(toPhone: string, code: string): Promise<SendTemplateResult> {
         const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const payload = this.buildAuthTemplatePayload(this.authTemplateName, recipientForMeta, code);
+        const authTemplateSpec = await this.resolveAuthTemplateSpec();
+        const payload = this.buildAuthTemplatePayload(this.authTemplateName, recipientForMeta, code, authTemplateSpec);
         const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
 
         if (!normalized) {
@@ -142,7 +150,7 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
-        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${this.authTemplateLanguage}, flow=COPY_CODE`);
+        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${authTemplateSpec.languageCode}, flow=COPY_CODE, bodyVariable=${authTemplateSpec.hasBodyVariable}`);
 
         const result = await this.sendWithRetries(payload);
 
@@ -342,29 +350,118 @@ export class WhatsAppService {
         };
     }
 
-    private buildAuthTemplatePayload(templateName: string, toPhone: string, code: string) {
+    private buildAuthTemplatePayload(templateName: string, toPhone: string, code: string, spec: AuthTemplateSpec) {
+        const components: any[] = [];
+        if (spec.hasBodyVariable) {
+            components.push({
+                type: 'body',
+                parameters: [
+                    {
+                        type: 'text',
+                        text: code ?? '',
+                    },
+                ],
+            });
+        }
+
+        components.push({
+            type: 'button',
+            sub_type: 'copy_code',
+            index: '0',
+            parameters: [
+                {
+                    type: 'text',
+                    text: code ?? '',
+                },
+            ],
+        });
+
         return {
             messaging_product: 'whatsapp',
             to: toPhone,
             type: 'template',
             template: {
                 name: templateName,
-                language: { code: this.authTemplateLanguage },
-                components: [
-                    {
-                        type: 'button',
-                        sub_type: 'copy_code',
-                        index: '0',
-                        parameters: [
-                            {
-                                type: 'payload',
-                                payload: code ?? '',
-                            },
-                        ],
-                    },
-                ],
+                language: { code: spec.languageCode },
+                components,
             },
         };
+    }
+
+    private async resolveAuthTemplateSpec(): Promise<AuthTemplateSpec> {
+        if (this.authTemplateSpecCache) {
+            return this.authTemplateSpecCache;
+        }
+
+        const fallback: AuthTemplateSpec = {
+            languageCode: this.authTemplateLanguage,
+            hasBodyVariable: false,
+        };
+
+        if (!this.token || !this.wabaId) {
+            this.authTemplateSpecCache = fallback;
+            return fallback;
+        }
+
+        try {
+            const url = new URL(`https://graph.facebook.com/v19.0/${this.wabaId}/message_templates`);
+            url.searchParams.set('name', this.authTemplateName);
+            url.searchParams.set('fields', 'name,status,category,language,components');
+            url.searchParams.set('limit', '50');
+
+            const res = await fetch(url.toString(), {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                },
+            });
+
+            if (!res.ok) {
+                this.authTemplateSpecCache = fallback;
+                return fallback;
+            }
+
+            const data = await res.json() as { data?: Array<Record<string, any>> };
+            const approvedTemplate = (data?.data || []).find(item =>
+                String(item?.name || '') === this.authTemplateName
+                && String(item?.status || '').toUpperCase() === 'APPROVED'
+                && String(item?.category || '').toUpperCase() === 'AUTHENTICATION'
+            ) || null;
+
+            if (!approvedTemplate) {
+                this.authTemplateSpecCache = fallback;
+                return fallback;
+            }
+
+            const hasBodyVariable = this.templateHasBodyVariable(approvedTemplate.components);
+            const languageCode = this.hasAuthTemplateLanguageOverride
+                ? this.authTemplateLanguage
+                : String(approvedTemplate.language || this.authTemplateLanguage || this.defaultLang);
+
+            this.authTemplateSpecCache = {
+                languageCode,
+                hasBodyVariable,
+            };
+            return this.authTemplateSpecCache;
+        } catch (error: any) {
+            this.logger.warn(`WhatsApp auth template definition lookup failed: ${error?.message || error}`);
+            this.authTemplateSpecCache = fallback;
+            return fallback;
+        }
+    }
+
+    private templateHasBodyVariable(components: any): boolean {
+        if (!Array.isArray(components)) return false;
+        const body = components.find(c => String(c?.type || '').toUpperCase() === 'BODY');
+        if (!body) return false;
+
+        const text = String(body?.text || '');
+        if (/\{\{\s*1\s*\}\}/.test(text)) {
+            return true;
+        }
+
+        const examples = body?.example?.body_text;
+        return Array.isArray(examples) && examples.length > 0;
     }
 
     private buildSafeAuthTemplatePayloadForLogging(payload: Record<string, any>) {

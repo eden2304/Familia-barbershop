@@ -24,7 +24,6 @@ interface AuthTemplateButtonSpec {
     index: string;
     subType: string;
     paramCount: number;
-    paramType: 'text' | 'payload' | 'coupon_code';
 }
 
 interface AuthTemplateSpec {
@@ -56,7 +55,6 @@ export class WhatsAppService {
     private readonly authTemplateExpirationMinutes = String(process.env.WHATSAPP_AUTH_TEMPLATE_EXPIRATION_MINUTES || '10');
     private readonly authTemplateButtonParamCount = Math.max(1, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_COUNT || 1));
     private readonly authTemplateButtonSubType = (process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_SUB_TYPE || 'copy_code').toLowerCase();
-    private readonly authTemplateButtonParamType = (process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_TYPE || 'coupon_code').toLowerCase() as 'text' | 'payload' | 'coupon_code';
     private authTemplateSpecCache: AuthTemplateSpec | null = null;
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
@@ -418,7 +416,7 @@ export class WhatsAppService {
                 type: 'button',
                 sub_type: button.subType,
                 index: button.index,
-                parameters: Array.from({ length: button.paramCount }, () => this.buildAuthButtonParameter(button.paramType, code)),
+                parameters: Array.from({ length: button.paramCount }, () => this.buildAuthButtonParameter(code)),
             });
         }
 
@@ -434,13 +432,7 @@ export class WhatsAppService {
         };
     }
 
-    private buildAuthButtonParameter(paramType: 'text' | 'payload' | 'coupon_code', code: string) {
-        if (paramType === 'payload') {
-            return { type: 'payload', payload: code ?? '' };
-        }
-        if (paramType === 'coupon_code') {
-            return { type: 'coupon_code', coupon_code: code ?? '' };
-        }
+    private buildAuthButtonParameter(code: string) {
         return { type: 'text', text: code ?? '' };
     }
 
@@ -529,7 +521,6 @@ export class WhatsAppService {
                     index: '0',
                     subType: this.authTemplateButtonSubType,
                     paramCount: this.authTemplateButtonParamCount,
-                    paramType: this.authTemplateButtonParamType,
                 },
             ],
             source: 'env_config',
@@ -593,7 +584,7 @@ export class WhatsAppService {
                 const subType = String(btn?.otp_type || btn?.type || 'copy_code').toLowerCase();
                 const isOtp = String(btn?.type || '').toUpperCase() === 'OTP' || String(btn?.otp_type || '').toUpperCase() === 'COPY_CODE';
                 const paramCount = isOtp ? 1 : this.countTemplatePlaceholders(String(btn?.text || btn?.url || ''));
-                out.push({ index: String(i), subType, paramCount, paramType: this.authTemplateButtonParamType });
+                out.push({ index: String(i), subType, paramCount });
             }
         }
 
@@ -630,7 +621,6 @@ export class WhatsAppService {
             authFooterParamCount: this.authTemplateFooterParamCount,
             authButtonParamCount: this.authTemplateButtonParamCount,
             authButtonSubType: this.authTemplateButtonSubType,
-            authButtonParamType: this.authTemplateButtonParamType,
         };
         this.logger.log(`WhatsApp auth config summary: ${JSON.stringify(summary)}`);
     }
@@ -662,7 +652,6 @@ export class WhatsAppService {
                     if (parameter && typeof parameter === 'object') {
                         if ('text' in parameter) parameter.text = '[REDACTED_OTP]';
                         if ('payload' in parameter) parameter.payload = '[REDACTED_OTP]';
-                        if ('coupon_code' in parameter) parameter.coupon_code = '[REDACTED_OTP]';
                     }
                 }
             }

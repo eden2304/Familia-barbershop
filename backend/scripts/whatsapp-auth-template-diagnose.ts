@@ -29,6 +29,14 @@ class LogRepoStub {
   console.log('Resolved approved auth template definition (raw):');
   console.log(JSON.stringify(spec.rawDefinition || null, null, 2));
 
+  const rawComponents = (spec.rawDefinition?.components || []) as any[];
+  const rawButtons = rawComponents
+    .filter((c: any) => String(c?.type || '').toUpperCase() === 'BUTTONS')
+    .flatMap((c: any) => Array.isArray(c?.buttons) ? c.buttons : []);
+  console.log('Raw Meta components and button metadata:');
+  console.log(JSON.stringify({ components: rawComponents, buttons: rawButtons }, null, 2));
+
+
   const recipient = toPhone || '972500000000';
   const payload = (service as any).buildAuthTemplatePayload(spec, recipient, otp);
   const safePayload = (service as any).buildSafeAuthTemplatePayloadForLogging(payload);
@@ -57,7 +65,7 @@ class LogRepoStub {
     components: [
       ...(spec.bodyParamCount > 0 ? [{ type: 'body', parameterCount: spec.bodyParamCount, parameterType: 'text' }] : []),
       ...(spec.footerParamCount > 0 ? [{ type: 'footer', parameterCount: spec.footerParamCount, parameterType: 'text' }] : []),
-      ...spec.buttons.map((b: any) => ({ type: 'button', sub_type: b.subType, index: b.index, parameterCount: b.paramCount, parameterType: b.paramType })),
+      ...spec.buttons.map((b: any) => ({ type: 'button', sub_type: b.subType, index: b.index, parameterCount: b.paramCount, parameterType: 'text', rawButtonMeta: b })),
     ],
   };
 

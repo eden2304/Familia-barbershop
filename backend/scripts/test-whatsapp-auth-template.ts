@@ -32,7 +32,7 @@ function makeService(env: Record<string, string>) {
   const payloadNoWaba = (noWabaService as any).buildAuthTemplatePayload(specNoWaba, '972500000000', '1234');
   assert.equal(payloadNoWaba.template.components.length, 1);
   assert.equal(payloadNoWaba.template.components[0].type, 'button');
-  assert.equal(payloadNoWaba.template.components[0].parameters[0].type, 'coupon_code');
+  assert.equal(payloadNoWaba.template.components[0].parameters[0].type, 'text');
 
   const buttonOnlyService = makeService({
     WHATSAPP_ENABLED: 'true',
@@ -57,7 +57,7 @@ function makeService(env: Record<string, string>) {
   assert.equal(payloadButtonOnly.template.language.code, 'en_US');
   assert.equal(payloadButtonOnly.template.components.length, 1);
   assert.equal(payloadButtonOnly.template.components[0].type, 'button');
-  assert.equal(payloadButtonOnly.template.components[0].parameters[0].type, 'coupon_code');
+  assert.equal(payloadButtonOnly.template.components[0].parameters[0].type, 'text');
 
   const bodyAndButtonService = makeService({
     WHATSAPP_ENABLED: 'true',
@@ -88,7 +88,7 @@ function makeService(env: Record<string, string>) {
   assert.equal(payloadBodyAndButton.template.components[0].parameters.length, 1);
   assert.equal(payloadBodyAndButton.template.components[1].parameters.length, 1);
   assert.equal(payloadBodyAndButton.template.components[2].parameters.length, 1);
-  assert.equal(payloadBodyAndButton.template.components[2].parameters[0].type, 'coupon_code');
+  assert.equal(payloadBodyAndButton.template.components[2].parameters[0].type, 'text');
 
   const localeOverrideService = makeService({
     WHATSAPP_ENABLED: 'true',
@@ -139,7 +139,7 @@ function makeService(env: Record<string, string>) {
   assert.equal(logged.templateName, 'verification_code');
   assert.equal(logged.payloadJson.template.components[0].parameters[0].text, '[REDACTED_OTP]');
   assert.equal(logged.payloadJson.template.components[1].parameters[0].text, '[REDACTED_OTP]');
-  assert.equal(logged.payloadJson.template.components[2].parameters[0].coupon_code, '[REDACTED_OTP]');
+  assert.equal(logged.payloadJson.template.components[2].parameters[0].text, '[REDACTED_OTP]');
 
   console.log('whatsapp auth template tests passed');
 })();

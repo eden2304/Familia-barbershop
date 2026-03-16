@@ -14,12 +14,32 @@ function makeService(env: Record<string, string>) {
 }
 
 (async () => {
+
+  const noWabaService = makeService({
+    WHATSAPP_ENABLED: 'true',
+    WHATSAPP_TOKEN: 'token',
+    WHATSAPP_PHONE_NUMBER_ID: '123',
+    WHATSAPP_WABA_ID: '',
+    WHATSAPP_AUTH_TEMPLATE_NAME: 'verification_code',
+    WHATSAPP_AUTH_TEMPLATE_LANG: 'he_IL',
+    WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT: '0',
+    WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_COUNT: '1',
+    WHATSAPP_AUTH_TEMPLATE_BUTTON_SUB_TYPE: 'copy_code',
+  });
+  const specNoWaba = await (noWabaService as any).resolveAuthTemplateSpec();
+  assert.equal(specNoWaba.source, 'env_config');
+  assert.equal(specNoWaba.languageCode, 'he_IL');
+  const payloadNoWaba = (noWabaService as any).buildAuthTemplatePayload(specNoWaba, '972500000000', '1234');
+  assert.equal(payloadNoWaba.template.components.length, 1);
+  assert.equal(payloadNoWaba.template.components[0].type, 'button');
+
   const buttonOnlyService = makeService({
     WHATSAPP_ENABLED: 'true',
     WHATSAPP_TOKEN: 'token',
     WHATSAPP_PHONE_NUMBER_ID: '123',
     WHATSAPP_WABA_ID: 'waba-1',
     WHATSAPP_AUTH_TEMPLATE_NAME: 'verification_code',
+    WHATSAPP_AUTH_TEMPLATE_LANG: 'en_US',
   });
   (buttonOnlyService as any).fetchWabaTemplatesByName = async () => ([{
     name: 'verification_code',
@@ -44,6 +64,7 @@ function makeService(env: Record<string, string>) {
     WHATSAPP_PHONE_NUMBER_ID: '123',
     WHATSAPP_WABA_ID: 'waba-1',
     WHATSAPP_AUTH_TEMPLATE_NAME: 'verification_code',
+    WHATSAPP_AUTH_TEMPLATE_LANG: 'he_IL',
   });
   (bodyAndButtonService as any).fetchWabaTemplatesByName = async () => ([{
     name: 'verification_code',
@@ -85,9 +106,13 @@ function makeService(env: Record<string, string>) {
   const specLocaleOverride = await (localeOverrideService as any).resolveAuthTemplateSpec();
   assert.equal(specLocaleOverride.languageCode, 'fr');
 
-  delete process.env.WHATSAPP_AUTH_TEMPLATE_LANG;
-
   const repo = new LogRepoStub();
+  process.env.WHATSAPP_ENABLED = 'true';
+  process.env.WHATSAPP_TOKEN = 'token';
+  process.env.WHATSAPP_PHONE_NUMBER_ID = '123';
+  process.env.WHATSAPP_AUTH_TEMPLATE_NAME = 'verification_code';
+  process.env.WHATSAPP_AUTH_TEMPLATE_LANG = 'he_IL';
+  process.env.WHATSAPP_WABA_ID = 'waba-1';
   const sendService = new WhatsAppService(repo as any);
   (sendService as any).fetchWabaTemplatesByName = async () => ([{
     name: 'verification_code',

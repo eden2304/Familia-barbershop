@@ -32,7 +32,7 @@ interface AuthTemplateSpec {
     languageCode: string;
     bodyParamCount: number;
     buttons: AuthTemplateButtonSpec[];
-    source: 'waba_api';
+    source: 'waba_api' | 'env_config';
     rawDefinition?: Record<string, any> | null;
 }
 
@@ -47,7 +47,11 @@ export class WhatsAppService {
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly authTemplateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || 'verification_code';
     private readonly authTemplateLanguage = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || this.defaultLang;
+    private readonly hasAuthTemplateNameOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_NAME);
     private readonly hasAuthTemplateLanguageOverride = Boolean(process.env.WHATSAPP_AUTH_TEMPLATE_LANG);
+    private readonly authTemplateBodyParamCount = Math.max(0, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BODY_PARAM_COUNT || 0));
+    private readonly authTemplateButtonParamCount = Math.max(1, Number(process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_PARAM_COUNT || 1));
+    private readonly authTemplateButtonSubType = (process.env.WHATSAPP_AUTH_TEMPLATE_BUTTON_SUB_TYPE || 'copy_code').toLowerCase();
     private authTemplateSpecCache: AuthTemplateSpec | null = null;
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
@@ -56,7 +60,10 @@ export class WhatsAppService {
 
     constructor(
         @InjectRepository(WhatsAppMessageLog) private readonly logRepo: Repository<WhatsAppMessageLog>,
-    ) {}
+    ) {
+        this.logAuthTemplateConfigSummary();
+        this.assertCriticalAuthConfigOnStartup();
+    }
 
     isEnabled(): boolean {
         return this.enabled;
@@ -145,8 +152,8 @@ export class WhatsAppService {
             return { ok: true, status: 'skipped', messageId: null, error: 'disabled_auth_template' };
         }
 
-        if (!this.token || !this.phoneNumberId || !this.wabaId) {
-            const error = 'missing_config_auth_template';
+        if (!this.token || !this.phoneNumberId || !this.hasAuthTemplateNameOverride || !this.hasAuthTemplateLanguageOverride) {
+            const error = `missing_config_auth_template:${this.getMissingAuthSendConfig().join(',')}`;
             await this.saveLog({
                 toPhone: normalized,
                 templateName: this.authTemplateName,
@@ -161,20 +168,6 @@ export class WhatsAppService {
         }
 
         const authTemplateSpec = await this.resolveAuthTemplateSpec();
-        if (!authTemplateSpec) {
-            const error = 'auth_template_definition_unavailable';
-            await this.saveLog({
-                toPhone: normalized,
-                templateName: this.authTemplateName,
-                payloadJson: { skipped: true, reason: error },
-                status: 'failed',
-                metaMessageId: null,
-                error,
-                appointmentId: null,
-            });
-            this.logger.warn(`WhatsApp auth template definition unavailable: template=${this.authTemplateName}`);
-            return { ok: false, status: 'failed', messageId: null, error };
-        }
 
         const payload = this.buildAuthTemplatePayload(authTemplateSpec, recipientForMeta, code);
         const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
@@ -420,9 +413,16 @@ export class WhatsAppService {
         };
     }
 
-    private async resolveAuthTemplateSpec(): Promise<AuthTemplateSpec | null> {
+    private async resolveAuthTemplateSpec(): Promise<AuthTemplateSpec> {
         if (this.authTemplateSpecCache) {
             return this.authTemplateSpecCache;
+        }
+
+        if (!this.wabaId) {
+            const fallback = this.buildEnvConfiguredAuthTemplateSpec();
+            this.logger.warn('WHATSAPP_WABA_ID missing: using configured auth template contract without WABA introspection.');
+            this.authTemplateSpecCache = fallback;
+            return fallback;
         }
 
         const templates = await this.fetchWabaTemplatesByName(this.authTemplateName);
@@ -433,15 +433,20 @@ export class WhatsAppService {
         ) || null;
 
         if (!approvedTemplate) {
-            return null;
+            const fallback = this.buildEnvConfiguredAuthTemplateSpec();
+            this.logger.warn(`No APPROVED AUTHENTICATION template found via WABA lookup; falling back to configured auth contract: template=${this.authTemplateName}`);
+            this.authTemplateSpecCache = fallback;
+            return fallback;
         }
 
         const bodyParamCount = this.extractBodyParamCount(approvedTemplate.components);
         const buttons = this.extractAuthButtons(approvedTemplate.components);
 
         if (buttons.length === 0) {
-            this.logger.warn(`Auth template has no button metadata: template=${this.authTemplateName}`);
-            return null;
+            const fallback = this.buildEnvConfiguredAuthTemplateSpec();
+            this.logger.warn(`Auth template lookup returned no button metadata; falling back to configured auth contract: template=${this.authTemplateName}`);
+            this.authTemplateSpecCache = fallback;
+            return fallback;
         }
 
         const languageCode = this.hasAuthTemplateLanguageOverride
@@ -449,8 +454,10 @@ export class WhatsAppService {
             : String(approvedTemplate.language || '');
 
         if (!languageCode) {
-            this.logger.warn(`Auth template language missing and no override: template=${this.authTemplateName}`);
-            return null;
+            const fallback = this.buildEnvConfiguredAuthTemplateSpec();
+            this.logger.warn(`Auth template lookup missing language; falling back to configured auth contract: template=${this.authTemplateName}`);
+            this.authTemplateSpecCache = fallback;
+            return fallback;
         }
 
         this.authTemplateSpecCache = {
@@ -474,6 +481,24 @@ export class WhatsAppService {
         this.logger.log(`Resolved auth template definition: ${JSON.stringify(compact)}`);
 
         return this.authTemplateSpecCache;
+    }
+
+    private buildEnvConfiguredAuthTemplateSpec(): AuthTemplateSpec {
+        return {
+            templateName: this.authTemplateName,
+            category: 'AUTHENTICATION',
+            languageCode: this.authTemplateLanguage,
+            bodyParamCount: this.authTemplateBodyParamCount,
+            buttons: [
+                {
+                    index: '0',
+                    subType: this.authTemplateButtonSubType,
+                    paramCount: this.authTemplateButtonParamCount,
+                },
+            ],
+            source: 'env_config',
+            rawDefinition: null,
+        };
     }
 
     private async fetchWabaTemplatesByName(name: string): Promise<Array<Record<string, any>>> {
@@ -536,6 +561,48 @@ export class WhatsAppService {
         if (!matches.length) return 0;
         const unique = new Set(matches.map(m => Number(m[1])));
         return unique.size;
+    }
+
+    private getMissingAuthSendConfig(): string[] {
+        const missing: string[] = [];
+        if (!this.token) missing.push('WHATSAPP_TOKEN');
+        if (!this.phoneNumberId) missing.push('WHATSAPP_PHONE_NUMBER_ID');
+        if (!this.hasAuthTemplateNameOverride) missing.push('WHATSAPP_AUTH_TEMPLATE_NAME');
+        if (!this.hasAuthTemplateLanguageOverride) missing.push('WHATSAPP_AUTH_TEMPLATE_LANG');
+        return missing;
+    }
+
+    private logAuthTemplateConfigSummary() {
+        const summary = {
+            enabled: this.enabled,
+            tokenPresent: Boolean(this.token),
+            phoneNumberIdPresent: Boolean(this.phoneNumberId),
+            wabaIdPresent: Boolean(this.wabaId),
+            authTemplateName: this.authTemplateName,
+            authTemplateLang: this.authTemplateLanguage,
+            authTemplateNameConfigured: this.hasAuthTemplateNameOverride,
+            authTemplateLangConfigured: this.hasAuthTemplateLanguageOverride,
+            authBodyParamCount: this.authTemplateBodyParamCount,
+            authButtonParamCount: this.authTemplateButtonParamCount,
+            authButtonSubType: this.authTemplateButtonSubType,
+        };
+        this.logger.log(`WhatsApp auth config summary: ${JSON.stringify(summary)}`);
+    }
+
+    private assertCriticalAuthConfigOnStartup() {
+        if (!this.enabled) return;
+        const missing = this.getMissingAuthSendConfig();
+        if (missing.length > 0) {
+            const message = `Missing critical WhatsApp auth send config: ${missing.join(', ')}`;
+            if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') {
+                throw new Error(message);
+            }
+            this.logger.warn(message);
+        }
+
+        if (!this.wabaId) {
+            this.logger.warn('WHATSAPP_WABA_ID missing: WABA template introspection disabled; send path will use explicit auth template config.');
+        }
     }
 
     private buildSafeAuthTemplatePayloadForLogging(payload: Record<string, any>) {

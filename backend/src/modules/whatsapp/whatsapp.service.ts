@@ -17,12 +17,25 @@ interface SendTemplateResult {
     status: string;
     messageId: string | null;
     error: string | null;
+    metaError?: Record<string, any> | null;
+}
+
+interface AuthTemplateButtonSpec {
+    index: string;
+    subType: string;
+    paramCount: number;
 }
 
 interface AuthTemplateSpec {
+    templateName: string;
+    category: string;
     languageCode: string;
-    hasBodyVariable: boolean;
+    bodyParamCount: number;
+    buttons: AuthTemplateButtonSpec[];
+    source: 'waba_api';
+    rawDefinition?: Record<string, any> | null;
 }
+
 
 @Injectable()
 export class WhatsAppService {
@@ -103,15 +116,12 @@ export class WhatsAppService {
     async sendVerificationCodeTemplate(toPhone: string, code: string): Promise<SendTemplateResult> {
         const normalized = normalizeIsraeliPhoneToE164(toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const authTemplateSpec = await this.resolveAuthTemplateSpec();
-        const payload = this.buildAuthTemplatePayload(this.authTemplateName, recipientForMeta, code, authTemplateSpec);
-        const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
 
         if (!normalized) {
             await this.saveLog({
                 toPhone: toPhone || '',
                 templateName: this.authTemplateName,
-                payloadJson: safePayload,
+                payloadJson: { skipped: true, reason: 'invalid_phone_auth_template' },
                 status: 'failed',
                 metaMessageId: null,
                 error: 'invalid_phone_auth_template',
@@ -125,7 +135,7 @@ export class WhatsAppService {
             await this.saveLog({
                 toPhone: normalized,
                 templateName: this.authTemplateName,
-                payloadJson: safePayload,
+                payloadJson: { skipped: true, reason: 'disabled_auth_template' },
                 status: 'skipped',
                 metaMessageId: null,
                 error: 'disabled_auth_template',
@@ -135,12 +145,12 @@ export class WhatsAppService {
             return { ok: true, status: 'skipped', messageId: null, error: 'disabled_auth_template' };
         }
 
-        if (!this.token || !this.phoneNumberId) {
+        if (!this.token || !this.phoneNumberId || !this.wabaId) {
             const error = 'missing_config_auth_template';
             await this.saveLog({
                 toPhone: normalized,
                 templateName: this.authTemplateName,
-                payloadJson: safePayload,
+                payloadJson: { skipped: true, reason: error },
                 status: 'failed',
                 metaMessageId: null,
                 error,
@@ -150,13 +160,35 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
-        this.logger.log(`WhatsApp auth template send: template=${this.authTemplateName}, category=AUTHENTICATION, language=${authTemplateSpec.languageCode}, flow=COPY_CODE, bodyVariable=${authTemplateSpec.hasBodyVariable}`);
+        const authTemplateSpec = await this.resolveAuthTemplateSpec();
+        if (!authTemplateSpec) {
+            const error = 'auth_template_definition_unavailable';
+            await this.saveLog({
+                toPhone: normalized,
+                templateName: this.authTemplateName,
+                payloadJson: { skipped: true, reason: error },
+                status: 'failed',
+                metaMessageId: null,
+                error,
+                appointmentId: null,
+            });
+            this.logger.warn(`WhatsApp auth template definition unavailable: template=${this.authTemplateName}`);
+            return { ok: false, status: 'failed', messageId: null, error };
+        }
+
+        const payload = this.buildAuthTemplatePayload(authTemplateSpec, recipientForMeta, code);
+        const safePayload = this.buildSafeAuthTemplatePayloadForLogging(payload);
+        const button = authTemplateSpec.buttons[0];
+
+        this.logger.log(
+            `WhatsApp auth template send: template=${authTemplateSpec.templateName}, category=${authTemplateSpec.category}, locale=${authTemplateSpec.languageCode}, bodyIncluded=${authTemplateSpec.bodyParamCount > 0}, buttonSubType=${button?.subType || 'none'}, buttonParamCount=${button?.paramCount || 0}, bodyParamCount=${authTemplateSpec.bodyParamCount}`
+        );
 
         const result = await this.sendWithRetries(payload);
 
         await this.saveLog({
             toPhone: normalized,
-            templateName: this.authTemplateName,
+            templateName: authTemplateSpec.templateName,
             payloadJson: safePayload,
             status: result.status,
             metaMessageId: result.messageId,
@@ -165,7 +197,8 @@ export class WhatsAppService {
         });
 
         if (!result.ok) {
-            this.logger.warn(`WhatsApp auth template send failed: template=${this.authTemplateName}, category=AUTHENTICATION, error=${result.error}`);
+            const metaErrorJson = result.metaError ? JSON.stringify(result.metaError) : 'null';
+            this.logger.warn(`WhatsApp auth template send failed: template=${authTemplateSpec.templateName}, category=${authTemplateSpec.category}, locale=${authTemplateSpec.languageCode}, error=${result.error}, metaError=${metaErrorJson}`);
         }
 
         return result;
@@ -350,62 +383,103 @@ export class WhatsAppService {
         };
     }
 
-    private buildAuthTemplatePayload(templateName: string, toPhone: string, code: string, spec: AuthTemplateSpec) {
+    private buildAuthTemplatePayload(spec: AuthTemplateSpec, toPhone: string, code: string) {
         const components: any[] = [];
-        if (spec.hasBodyVariable) {
+
+        if (spec.bodyParamCount > 0) {
             components.push({
                 type: 'body',
-                parameters: [
-                    {
-                        type: 'text',
-                        text: code ?? '',
-                    },
-                ],
+                parameters: Array.from({ length: spec.bodyParamCount }, () => ({
+                    type: 'text',
+                    text: code ?? '',
+                })),
             });
         }
 
-        components.push({
-            type: 'button',
-            sub_type: 'copy_code',
-            index: '0',
-            parameters: [
-                {
+        for (const button of spec.buttons) {
+            components.push({
+                type: 'button',
+                sub_type: button.subType,
+                index: button.index,
+                parameters: Array.from({ length: button.paramCount }, () => ({
                     type: 'text',
                     text: code ?? '',
-                },
-            ],
-        });
+                })),
+            });
+        }
 
         return {
             messaging_product: 'whatsapp',
             to: toPhone,
             type: 'template',
             template: {
-                name: templateName,
+                name: spec.templateName,
                 language: { code: spec.languageCode },
                 components,
             },
         };
     }
 
-    private async resolveAuthTemplateSpec(): Promise<AuthTemplateSpec> {
+    private async resolveAuthTemplateSpec(): Promise<AuthTemplateSpec | null> {
         if (this.authTemplateSpecCache) {
             return this.authTemplateSpecCache;
         }
 
-        const fallback: AuthTemplateSpec = {
-            languageCode: this.authTemplateLanguage,
-            hasBodyVariable: false,
-        };
+        const templates = await this.fetchWabaTemplatesByName(this.authTemplateName);
+        const approvedTemplate = templates.find(item =>
+            String(item?.name || '') === this.authTemplateName
+            && String(item?.status || '').toUpperCase() === 'APPROVED'
+            && String(item?.category || '').toUpperCase() === 'AUTHENTICATION'
+        ) || null;
 
-        if (!this.token || !this.wabaId) {
-            this.authTemplateSpecCache = fallback;
-            return fallback;
+        if (!approvedTemplate) {
+            return null;
         }
 
+        const bodyParamCount = this.extractBodyParamCount(approvedTemplate.components);
+        const buttons = this.extractAuthButtons(approvedTemplate.components);
+
+        if (buttons.length === 0) {
+            this.logger.warn(`Auth template has no button metadata: template=${this.authTemplateName}`);
+            return null;
+        }
+
+        const languageCode = this.hasAuthTemplateLanguageOverride
+            ? this.authTemplateLanguage
+            : String(approvedTemplate.language || '');
+
+        if (!languageCode) {
+            this.logger.warn(`Auth template language missing and no override: template=${this.authTemplateName}`);
+            return null;
+        }
+
+        this.authTemplateSpecCache = {
+            templateName: String(approvedTemplate.name || this.authTemplateName),
+            category: String(approvedTemplate.category || 'AUTHENTICATION'),
+            languageCode,
+            bodyParamCount,
+            buttons,
+            source: 'waba_api',
+            rawDefinition: approvedTemplate,
+        };
+
+        const compact = {
+            name: this.authTemplateSpecCache.templateName,
+            status: approvedTemplate.status,
+            category: this.authTemplateSpecCache.category,
+            language: this.authTemplateSpecCache.languageCode,
+            bodyParamCount: this.authTemplateSpecCache.bodyParamCount,
+            buttons: this.authTemplateSpecCache.buttons,
+        };
+        this.logger.log(`Resolved auth template definition: ${JSON.stringify(compact)}`);
+
+        return this.authTemplateSpecCache;
+    }
+
+    private async fetchWabaTemplatesByName(name: string): Promise<Array<Record<string, any>>> {
         try {
             const url = new URL(`https://graph.facebook.com/v19.0/${this.wabaId}/message_templates`);
-            url.searchParams.set('name', this.authTemplateName);
+            url.searchParams.set('name', name);
             url.searchParams.set('fields', 'name,status,category,language,components');
             url.searchParams.set('limit', '50');
 
@@ -417,51 +491,51 @@ export class WhatsAppService {
             });
 
             if (!res.ok) {
-                this.authTemplateSpecCache = fallback;
-                return fallback;
+                const raw = await res.text();
+                this.logger.warn(`Failed to fetch auth templates from WABA: status=${res.status}, body=${raw}`);
+                return [];
             }
 
             const data = await res.json() as { data?: Array<Record<string, any>> };
-            const approvedTemplate = (data?.data || []).find(item =>
-                String(item?.name || '') === this.authTemplateName
-                && String(item?.status || '').toUpperCase() === 'APPROVED'
-                && String(item?.category || '').toUpperCase() === 'AUTHENTICATION'
-            ) || null;
-
-            if (!approvedTemplate) {
-                this.authTemplateSpecCache = fallback;
-                return fallback;
-            }
-
-            const hasBodyVariable = this.templateHasBodyVariable(approvedTemplate.components);
-            const languageCode = this.hasAuthTemplateLanguageOverride
-                ? this.authTemplateLanguage
-                : String(approvedTemplate.language || this.authTemplateLanguage || this.defaultLang);
-
-            this.authTemplateSpecCache = {
-                languageCode,
-                hasBodyVariable,
-            };
-            return this.authTemplateSpecCache;
+            return data?.data || [];
         } catch (error: any) {
             this.logger.warn(`WhatsApp auth template definition lookup failed: ${error?.message || error}`);
-            this.authTemplateSpecCache = fallback;
-            return fallback;
+            return [];
         }
     }
 
-    private templateHasBodyVariable(components: any): boolean {
-        if (!Array.isArray(components)) return false;
+    private extractBodyParamCount(components: any): number {
+        if (!Array.isArray(components)) return 0;
         const body = components.find(c => String(c?.type || '').toUpperCase() === 'BODY');
-        if (!body) return false;
+        if (!body) return 0;
+        return this.countTemplatePlaceholders(String(body?.text || ''));
+    }
 
-        const text = String(body?.text || '');
-        if (/\{\{\s*1\s*\}\}/.test(text)) {
-            return true;
+    private extractAuthButtons(components: any): AuthTemplateButtonSpec[] {
+        if (!Array.isArray(components)) return [];
+        const out: AuthTemplateButtonSpec[] = [];
+
+        for (const component of components) {
+            const type = String(component?.type || '').toUpperCase();
+            if (type !== 'BUTTONS') continue;
+            const buttons = Array.isArray(component?.buttons) ? component.buttons : [];
+            for (let i = 0; i < buttons.length; i += 1) {
+                const btn = buttons[i] || {};
+                const subType = String(btn?.otp_type || btn?.type || 'copy_code').toLowerCase();
+                const isOtp = String(btn?.type || '').toUpperCase() === 'OTP' || String(btn?.otp_type || '').toUpperCase() === 'COPY_CODE';
+                const paramCount = isOtp ? 1 : this.countTemplatePlaceholders(String(btn?.text || btn?.url || ''));
+                out.push({ index: String(i), subType, paramCount });
+            }
         }
 
-        const examples = body?.example?.body_text;
-        return Array.isArray(examples) && examples.length > 0;
+        return out;
+    }
+
+    private countTemplatePlaceholders(text: string): number {
+        const matches = Array.from(text.matchAll(/\{\{\s*(\d+)\s*\}\}/g));
+        if (!matches.length) return 0;
+        const unique = new Set(matches.map(m => Number(m[1])));
+        return unique.size;
     }
 
     private buildSafeAuthTemplatePayloadForLogging(payload: Record<string, any>) {
@@ -513,13 +587,14 @@ export class WhatsAppService {
 
                 if (res.ok) {
                     const messageId = data?.messages?.[0]?.id ?? null;
-                    return { ok: true, status: 'sent', messageId, error: null };
+                    return { ok: true, status: 'sent', messageId, error: null, metaError: null };
                 }
 
-                lastError = data?.error?.message || raw || `http_${res.status}`;
+                const metaError = data?.error || null;
+                lastError = metaError?.message || raw || `http_${res.status}`;
 
                 if (!this.isRetryableHttpStatus(res.status)) {
-                    return { ok: false, status: 'failed', messageId: null, error: lastError };
+                    return { ok: false, status: 'failed', messageId: null, error: lastError, metaError };
                 }
             } catch (error: any) {
                 lastError = error?.name === 'AbortError'
@@ -536,7 +611,7 @@ export class WhatsAppService {
             }
         }
 
-        return { ok: false, status: 'failed', messageId: null, error: lastError || 'unknown_error' };
+        return { ok: false, status: 'failed', messageId: null, error: lastError || 'unknown_error', metaError: null };
     }
 
     private isRetryableHttpStatus(status: number): boolean {

@@ -18,7 +18,8 @@
     "migrate:revert": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:revert",
     "test:booking-concurrency": "node scripts/test_booking_concurrency.js",
     "test:rate-limit": "ts-node scripts/test-rate-limit.ts",
-    "test:whatsapp-auth-template": "ts-node scripts/test-whatsapp-auth-template.ts"
+    "test:whatsapp-auth-template": "ts-node scripts/test-whatsapp-auth-template.ts",
+    "whatsapp:auth:diagnose": "ts-node scripts/whatsapp-auth-template-diagnose.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

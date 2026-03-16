@@ -52,6 +52,27 @@ class LogRepoStub {
   console.log('Template/payload contract summary:');
   console.log(JSON.stringify(summary, null, 2));
 
+  const expectedFromSpec = {
+    locale: spec.languageCode,
+    components: [
+      ...(spec.bodyParamCount > 0 ? [{ type: 'body', parameterCount: spec.bodyParamCount, parameterType: 'text' }] : []),
+      ...(spec.footerParamCount > 0 ? [{ type: 'footer', parameterCount: spec.footerParamCount, parameterType: 'text' }] : []),
+      ...spec.buttons.map((b: any) => ({ type: 'button', sub_type: b.subType, index: b.index, parameterCount: b.paramCount, parameterType: b.paramType })),
+    ],
+  };
+
+  const actualFromPayload = (payload?.template?.components || []).map((c: any) => ({
+    type: c.type,
+    sub_type: c.sub_type,
+    index: c.index,
+    parameterCount: Array.isArray(c.parameters) ? c.parameters.length : 0,
+    parameterType: Array.isArray(c.parameters) && c.parameters.length ? c.parameters[0].type : null,
+  }));
+
+  console.log('Expected vs actual component contract:');
+  console.log(JSON.stringify({ expected: expectedFromSpec, actual: actualFromPayload }, null, 2));
+
+
   console.log('Final outbound payload (redacted):');
   console.log(JSON.stringify(safePayload, null, 2));
 

@@ -1,7 +1,8 @@
 export const WHATSAPP_TEMPLATES = {
-    login_and_register: {
-        name: 'login_and_register',
+    auth_code: {
+        name: 'auth_code',
         params: ['code'] as const,
+        languageCode: 'en_US',
     },
     appointment_approved: {
         name: 'appointment_approved',
@@ -35,6 +36,10 @@ export const WHATSAPP_TEMPLATES = {
         name: 'delete_fixed',
         params: ['clientName', 'frequency', 'dayOfWeek', 'time'] as const,
     },
-} as const;
+} as const satisfies Record<string, {
+    name: string;
+    params: readonly string[];
+    languageCode?: string;
+}>;
 
 export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;

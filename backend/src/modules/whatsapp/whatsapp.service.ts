@@ -93,7 +93,7 @@ export class WhatsAppService {
 
     async sendAuthCode(toPhone: string, code: string) {
         return this.sendTemplateMessage({
-            templateName: 'login_and_register',
+            templateName: 'auth_code',
             toPhone,
             params: [code],
         });
@@ -190,7 +190,10 @@ export class WhatsAppService {
 
         const normalized = normalizeIsraeliPhoneToE164(params.toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const payload = this.buildTemplatePayload(template.name, recipientForMeta, params.params);
+        const languageCode = 'languageCode' in template ? template.languageCode : undefined;
+        const payload = params.templateName === 'auth_code'
+            ? this.buildAuthCodePayload(template.name, recipientForMeta, params.params[0] ?? '', languageCode)
+            : this.buildTemplatePayload(template.name, recipientForMeta, params.params, languageCode);
 
         if (!normalized) {
             await this.saveLog({
@@ -235,6 +238,7 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
+        this.logger.log(`WhatsApp payload: ${JSON.stringify(payload)}`);
         const result = await this.sendWithRetries(payload);
         await this.saveLog({
             toPhone: normalized,
@@ -253,14 +257,14 @@ export class WhatsAppService {
         return result;
     }
 
-    private buildTemplatePayload(templateName: string, toPhone: string, params: string[]) {
+    private buildTemplatePayload(templateName: string, toPhone: string, params: string[], languageCode?: string) {
         return {
             messaging_product: 'whatsapp',
             to: toPhone,
             type: 'template',
             template: {
                 name: templateName,
-                language: { code: this.defaultLang },
+                language: { code: languageCode || this.defaultLang },
                 components: [
                     {
                         type: 'body',
@@ -268,6 +272,34 @@ export class WhatsAppService {
                             type: 'text',
                             text: value ?? '',
                         })),
+                    },
+                ],
+            },
+        };
+    }
+
+    private buildAuthCodePayload(templateName: string, toPhone: string, code: string, languageCode?: string) {
+        return {
+            messaging_product: 'whatsapp',
+            to: toPhone,
+            type: 'template',
+            template: {
+                name: templateName,
+                language: { code: languageCode || this.defaultLang },
+                components: [
+                    {
+                        type: 'body',
+                        parameters: [
+                            { type: 'text', text: code },
+                        ],
+                    },
+                    {
+                        type: 'button',
+                        sub_type: 'url',
+                        index: '0',
+                        parameters: [
+                            { type: 'text', text: code },
+                        ],
                     },
                 ],
             },
@@ -309,6 +341,7 @@ export class WhatsAppService {
                 }
 
                 lastError = data?.error?.message || raw || `http_${res.status}`;
+                this.logger.warn(`WhatsApp Meta raw error response: ${raw || `http_${res.status}`}`);
 
                 if (!this.isRetryableHttpStatus(res.status)) {
                     return { ok: false, status: 'failed', messageId: null, error: lastError };

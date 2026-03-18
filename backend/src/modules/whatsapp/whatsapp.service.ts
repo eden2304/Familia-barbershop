@@ -238,6 +238,7 @@ export class WhatsAppService {
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
+        this.logger.log(`WhatsApp payload: ${JSON.stringify(payload)}`);
         const result = await this.sendWithRetries(payload);
         await this.saveLog({
             toPhone: normalized,
@@ -294,7 +295,7 @@ export class WhatsAppService {
                     },
                     {
                         type: 'button',
-                        sub_type: 'otp',
+                        sub_type: 'copy_code',
                         index: '0',
                         parameters: [
                             { type: 'text', text: code },

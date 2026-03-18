@@ -109,7 +109,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const redirectToRegisterWithMessage = () => {
     if (!isValidIsraeliMobilePhone(phone)) {
       setInfoMessage("");
-      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
+      setError("יש להזין מספר טלפון תקין");
       setView("loginPhone");
       return;
     }
@@ -220,7 +220,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const handlePhoneSubmit = async (e) => {
     e.preventDefault();
     if (!isValidIsraeliMobilePhone(phone)) {
-      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
+      setError("יש להזין מספר טלפון תקין");
       return;
     }
     setLoading(true);
@@ -327,7 +327,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       return;
     }
     if (!isValidIsraeliMobilePhone(phone)) {
-      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
+      setError("יש להזין מספר טלפון תקין");
       return;
     }
     if (!termsAccepted) {

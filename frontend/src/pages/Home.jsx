@@ -447,33 +447,33 @@ export default function Home() {
               <footer className="bg-white rounded-3xl mx-4 mb-2 py-6 shadow-sm">
                 <div className="max-w-lg mx-auto px-6 text-center">
                   <h3 className="text-lg font-bold text-gray-800 mb-6">הישארו מעודכנים</h3>
-                  <div className="flex justify-center items-center gap-5 sm:gap-6">
+                  <div className="flex justify-center items-center gap-6 sm:gap-7">
                     <a
                         href="https://www.instagram.com/familia.barber8?igsh=d3hpdDFkNTZ5dHRw"
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label="Instagram"
-                        className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
                     >
-                      <Instagram className="h-6 w-6" />
+                      <Instagram className="h-7 w-7" />
                     </a>
                     <a
                         href="https://wa.me/972523767851"
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label="WhatsApp"
-                        className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
                     >
-                      <WhatsAppIcon className="h-6 w-6" />
+                      <WhatsAppIcon className="h-7 w-7" />
                     </a>
                     <a
                         href="https://www.tiktok.com/@familia_barber?_r=1&_t=ZS-94nhhGm7h9V"
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label="TikTok"
-                        className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
                     >
-                      <TikTokIcon className="h-6 w-6" />
+                      <TikTokIcon className="h-7 w-7" />
                     </a>
                   </div>
                 </div>

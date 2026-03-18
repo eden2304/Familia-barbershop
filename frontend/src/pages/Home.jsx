@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Star, ChevronLeft, ChevronRight, Instagram, MessageCircle, X } from "lucide-react";
+import { Star, ChevronLeft, ChevronRight, Instagram, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import VideoGallery from "../components/VideoGallery.jsx";
 import ProductGallery from "../components/ProductGallery.jsx";
@@ -9,6 +9,28 @@ import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
+
+const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M20.52 3.48A11.86 11.86 0 0 0 12.07 0C5.5 0 .16 5.34.16 11.91c0 2.1.55 4.15 1.59 5.96L0 24l6.3-1.65a11.9 11.9 0 0 0 5.77 1.47h.01c6.57 0 11.91-5.34 11.91-11.91 0-3.18-1.24-6.17-3.47-8.43Zm-8.45 18.33h-.01a9.9 9.9 0 0 1-5.04-1.38l-.36-.22-3.74.98 1-3.65-.24-.37a9.88 9.88 0 0 1-1.52-5.26c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.12 1.03 6.98 2.9a9.82 9.82 0 0 1 2.9 6.99c0 5.45-4.44 9.9-9.89 9.9Zm5.43-7.42c-.3-.15-1.78-.88-2.06-.98-.28-.1-.48-.15-.68.15-.2.3-.78.97-.95 1.17-.18.2-.35.23-.65.08-.3-.15-1.27-.47-2.41-1.49-.89-.8-1.49-1.78-1.66-2.08-.18-.3-.02-.46.13-.61.13-.13.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.03-.53-.08-.15-.68-1.65-.94-2.25-.25-.6-.5-.5-.68-.51h-.58c-.2 0-.53.08-.8.38-.28.3-1.05 1.03-1.05 2.5 0 1.48 1.08 2.91 1.23 3.11.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.71.64.72.23 1.37.2 1.89.12.58-.09 1.78-.73 2.03-1.44.25-.7.25-1.3.18-1.43-.08-.13-.28-.2-.58-.35Z" />
+  </svg>
+);
+
+const TikTokIcon = ({ className = "w-7 h-7" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.47V2h-3.11v12.4a2.89 2.89 0 1 1-2-2.75V8.48a6 6 0 1 0 5.14 5.93V8.09a7.92 7.92 0 0 0 4.63 1.49V6.69h-.89Z" />
+  </svg>
+);
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const resolveVideoUrl = (value) => {
@@ -425,22 +447,33 @@ export default function Home() {
               <footer className="bg-white rounded-3xl mx-4 mb-2 py-6 shadow-sm">
                 <div className="max-w-lg mx-auto px-6 text-center">
                   <h3 className="text-lg font-bold text-gray-800 mb-6">הישארו מעודכנים</h3>
-                  <div className="flex justify-center gap-12">
+                  <div className="flex justify-center items-center gap-6 sm:gap-7">
                     <a
                         href="https://www.instagram.com/familia.barber8?igsh=d3hpdDFkNTZ5dHRw"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-gray-500 hover:text-black transition-colors"
+                        aria-label="Instagram"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
                     >
-                      <Instagram className="w-8 h-8" />
+                      <Instagram className="h-7 w-7" />
                     </a>
                     <a
                         href="https://wa.me/972523767851"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-gray-500 hover:text-gray-700 transition-colors"
+                        aria-label="WhatsApp"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
                     >
-                      <MessageCircle className="w-8 h-8" />
+                      <WhatsAppIcon className="h-7 w-7" />
+                    </a>
+                    <a
+                        href="https://www.tiktok.com/@familia_barber?_r=1&_t=ZS-94nhhGm7h9V"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="TikTok"
+                        className="flex h-12 w-12 items-center justify-center text-gray-500 transition-all duration-200 hover:-translate-y-0.5 hover:text-black"
+                    >
+                      <TikTokIcon className="h-7 w-7" />
                     </a>
                   </div>
                 </div>

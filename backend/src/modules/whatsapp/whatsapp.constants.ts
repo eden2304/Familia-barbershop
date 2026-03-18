@@ -2,7 +2,7 @@ export const WHATSAPP_TEMPLATES = {
     auth_code: {
         name: 'auth_code',
         params: ['code'] as const,
-        languageCode: 'en',
+        languageCode: 'en_US',
     },
     appointment_approved: {
         name: 'appointment_approved',

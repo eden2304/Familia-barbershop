@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Shield, UserPlus } from "lucide-react";
+import { Shield, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
@@ -28,6 +28,7 @@ const normalizePhone = (phone) => {
   if (cleaned.length === 10 && cleaned.startsWith("0")) return cleaned;
   return cleaned.startsWith("0") ? cleaned : `0${cleaned}`;
 };
+const isValidIsraeliMobilePhone = (phone) => /^05\d{8}$/.test(String(phone || "").replace(/\D/g, ""));
 
 async function checkPhoneExists(phoneRaw) {
   const p0 = normalizePhone(phoneRaw);
@@ -85,6 +86,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   // control
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
   const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const inputRefs = useRef([]);
@@ -102,6 +104,19 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const isOtpAttemptsExceeded = (err) => {
     const message = err?.payload?.message ?? err?.message;
     return err?.status === 400 && message === "OTP_ATTEMPTS_EXCEEDED";
+  };
+
+  const redirectToRegisterWithMessage = () => {
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setInfoMessage("");
+      setError("יש להזין מספר טלפון תקין");
+      setView("loginPhone");
+      return;
+    }
+
+    setError("");
+    setInfoMessage("נא להירשם קודם כדי להתחבר למערכת.");
+    setView("registerForm");
   };
 
   // חסימת גלילה בזמן מודאל
@@ -142,6 +157,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const setRateLimitError = (retryAfterSeconds) => {
     const nextTimer = Math.max(1, Number.parseInt(retryAfterSeconds, 10) || 0);
     setRateLimitTimer(nextTimer);
+    setInfoMessage("");
     setError("בוצעו יותר מדי בקשות. למען אבטחת המערכת ניתן לבצע בקשות שוב בעוד:");
   };
 
@@ -151,7 +167,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
       return true;
     }
     setRateLimitTimer(0);
-    if (fallbackMessage) setError(fallbackMessage);
+    if (fallbackMessage) {
+      setInfoMessage("");
+      setError(fallbackMessage);
+    }
     return false;
   };
 
@@ -160,6 +179,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (resendTimer > 0 || loading) return;
     try {
       setError("");
+      setInfoMessage("");
       setRateLimitTimer(0);
       const p0 = normalizePhone(phone);
       const p972 = p0.startsWith("0") ? `972${p0.slice(1)}` : p0;
@@ -188,8 +208,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setResendTimer(30);
     } catch (e) {
       if (e?.status === 409) {
-        setError("המספר לא רשום. יש להירשם קודם.");
-        setView("registerForm");
+        redirectToRegisterWithMessage();
       } else {
         handleApiError(e, "שגיאה בשליחת קוד. נסה שוב.");
       }
@@ -200,12 +219,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
   // --- LOGIN FLOW ---
   const handlePhoneSubmit = async (e) => {
     e.preventDefault();
-    if (!/^\d{9,10}$/.test(phone.replace(/\D/g, ""))) {
-      setError("נא להזין מספר טלפון תקין");
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setError("יש להזין מספר טלפון תקין");
       return;
     }
     setLoading(true);
     setError("");
+    setInfoMessage("");
     setRateLimitTimer(0);
 
     const p0 = normalizePhone(phone);                           // 05XXXXXXXX
@@ -222,7 +242,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           setView("loginCode");
         } catch (err2) {
           if (err2?.status === 409) {
-            setError("המספר לא רשום. יש להירשם קודם.");
+            redirectToRegisterWithMessage();
           } else {
             handleApiError(err2, "שגיאה בבקשת קוד. נסה שוב.");
           }
@@ -239,6 +259,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (loading) return;
     setLoading(true);
     setError("");
+    setInfoMessage("");
     setRateLimitTimer(0);
 
     const pin = code.join("");
@@ -277,8 +298,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           await verifyOnce(p972);
         } catch (e2) {
           if (e2?.status === 409 || e2?.message === "UNREGISTERED_CLIENT") {
-            setError("המספר לא רשום. יש להירשם קודם.");
-            setView("registerForm");
+            redirectToRegisterWithMessage();
           } else if (isOtpAttemptsExceeded(e2)) {
             resetToHomeAfterOtpExceeded();
           } else if (e2?.status === 400) {
@@ -306,8 +326,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setError("נא למלא את כל השדות.");
       return;
     }
-    if (!/^\d{9,10}$/.test(phone.replace(/\D/g, ""))) {
-      setError("נא להזין מספר טלפון תקין");
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setError("יש להזין מספר טלפון תקין");
       return;
     }
     if (!termsAccepted) {
@@ -317,6 +337,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
 
     setLoading(true);
     setError("");
+    setInfoMessage("");
     setRateLimitTimer(0);
 
     try {
@@ -354,6 +375,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
     if (loading) return;
     setLoading(true);
     setError("");
+    setInfoMessage("");
     setRateLimitTimer(0);
     try {
       const normalizedPhone = normalizePhone(phone);
@@ -454,7 +476,11 @@ export default function VerificationModal({ onVerify, onCancel }) {
               </Button>
               <Button
                   variant="link"
-                  onClick={() => setView("registerForm")}
+                  onClick={() => {
+                    setError("");
+                    setInfoMessage("");
+                    setView("registerForm");
+                  }}
                   className="mt-4 text-gray-600"
               >
                 לקוח חדש? לחץ להרשמה
@@ -565,7 +591,11 @@ export default function VerificationModal({ onVerify, onCancel }) {
               </Button>
               <Button
                   variant="link"
-                  onClick={() => setView("loginPhone")}
+                  onClick={() => {
+                    setError("");
+                    setInfoMessage("");
+                    setView("loginPhone");
+                  }}
                   className="mt-4 text-gray-600"
               >
                 לקוח קיים? לחץ להתחברות
@@ -585,7 +615,6 @@ export default function VerificationModal({ onVerify, onCancel }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-            onClick={onCancel}
         >
           <motion.div
               initial={{ scale: 0.9, y: 50, opacity: 0 }}
@@ -593,8 +622,18 @@ export default function VerificationModal({ onVerify, onCancel }) {
               exit={{ scale: 0.9, y: 50, opacity: 0 }}
               transition={{ duration: 0.3 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-white rounded-3xl p-6"
+              className="relative w-full max-w-sm bg-white rounded-3xl px-6 pb-6 pt-14"
           >
+            <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onCancel}
+                className="absolute right-3 top-3 z-10 h-9 w-9 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                aria-label="סגירת חלון ההתחברות"
+            >
+              <X className="h-5 w-5" />
+            </Button>
             <AnimatePresence mode="wait">
               <motion.div
                   key={view}
@@ -603,6 +642,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
                   exit={{ opacity: 0, x: -50 }}
                   transition={{ duration: 0.2 }}
               >
+                {infoMessage && (
+                    <Alert className="mb-4 border-blue-200 bg-blue-50 text-center">
+                      <AlertDescription className="text-blue-700">
+                        {infoMessage}
+                      </AlertDescription>
+                    </Alert>
+                )}
                 {error && (
                     <Alert className="mb-4 border-red-200 bg-red-50 text-center">
                       <AlertDescription className="text-red-700">

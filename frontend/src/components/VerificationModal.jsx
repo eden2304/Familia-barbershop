@@ -82,6 +82,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [lastName, setLastName] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [termsFeedbackActive, setTermsFeedbackActive] = useState(false);
 
   // control
   const [loading, setLoading] = useState(false);
@@ -90,6 +91,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [resendTimer, setResendTimer] = useState(0);
   const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const inputRefs = useRef([]);
+  const termsFeedbackTimeoutRef = useRef(null);
 
   const resetToHomeAfterOtpExceeded = () => {
     setCode(new Array(4).fill(""));
@@ -123,6 +125,12 @@ export default function VerificationModal({ onVerify, onCancel }) {
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = "unset"; };
+  }, []);
+
+  useEffect(() => () => {
+    if (termsFeedbackTimeoutRef.current) {
+      clearTimeout(termsFeedbackTimeoutRef.current);
+    }
   }, []);
 
   // מיקוד ושעון ספירה מחדש במסך קוד
@@ -331,6 +339,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       return;
     }
     if (!termsAccepted) {
+      triggerTermsFeedback();
       setError("יש לאשר את התקנון כדי להמשיך.");
       return;
     }
@@ -447,8 +456,38 @@ export default function VerificationModal({ onVerify, onCancel }) {
     }
   };
 
+  const triggerTermsFeedback = () => {
+    if (termsFeedbackTimeoutRef.current) {
+      clearTimeout(termsFeedbackTimeoutRef.current);
+    }
+    setTermsFeedbackActive(false);
+    requestAnimationFrame(() => {
+      setTermsFeedbackActive(true);
+      termsFeedbackTimeoutRef.current = setTimeout(() => {
+        setTermsFeedbackActive(false);
+      }, 700);
+    });
+  };
+
+  const handleTermsAcceptedChange = (checked) => {
+    const accepted = checked === true;
+    setTermsAccepted(accepted);
+    if (accepted) {
+      setTermsFeedbackActive(false);
+      if (termsFeedbackTimeoutRef.current) {
+        clearTimeout(termsFeedbackTimeoutRef.current);
+      }
+    }
+  };
+
+  const handleTermsOpen = () => {
+    setTermsFeedbackActive(false);
+    setShowTerms(true);
+  };
+
   const handleUnderstoodClick = () => {
     setTermsAccepted(true);
+    setTermsFeedbackActive(false);
     setShowTerms(false);
   };
 
@@ -563,24 +602,32 @@ export default function VerificationModal({ onVerify, onCancel }) {
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
                     className="text-right"
                 />
-                <div className="flex items-center space-x-2 space-x-reverse">
+                <motion.div
+                  className="flex items-center space-x-2 space-x-reverse origin-center"
+                  animate={termsFeedbackActive ? { x: [0, -8, 8, -6, 6, -3, 3, 0] } : { x: 0 }}
+                  transition={{ duration: 0.45, ease: "easeInOut" }}
+                >
                   <Checkbox
                       id="terms"
                       checked={termsAccepted}
-                      onCheckedChange={setTermsAccepted}
+                      onCheckedChange={handleTermsAcceptedChange}
+                      className={termsFeedbackActive ? "border-red-500 text-red-500 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500" : ""}
                   />
-                  <label htmlFor="terms" className="text-sm">
+                  <label
+                    htmlFor="terms"
+                    className={`text-sm transition-colors duration-200 ${termsFeedbackActive ? "text-red-500" : "text-gray-700"}`}
+                  >
                     אני מאשר שקראתי את{" "}
                     <Button
                         variant="link"
                         type="button"
-                        onClick={() => setShowTerms(true)}
-                        className="p-0 h-auto"
+                        onClick={handleTermsOpen}
+                        className={`p-0 h-auto font-semibold transition-colors duration-200 ${termsFeedbackActive ? "text-red-500 hover:text-red-600" : "text-black hover:text-gray-700"}`}
                     >
                       התקנון
                     </Button>
                   </label>
-                </div>
+                </motion.div>
               </div>
               <Button
                   type="submit"

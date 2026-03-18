@@ -93,7 +93,7 @@ export class WhatsAppService {
 
     async sendAuthCode(toPhone: string, code: string) {
         return this.sendTemplateMessage({
-            templateName: 'login_and_register',
+            templateName: 'auth_code',
             toPhone,
             params: [code],
         });
@@ -190,7 +190,8 @@ export class WhatsAppService {
 
         const normalized = normalizeIsraeliPhoneToE164(params.toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
-        const payload = this.buildTemplatePayload(template.name, recipientForMeta, params.params);
+        const languageCode = 'languageCode' in template ? template.languageCode : undefined;
+        const payload = this.buildTemplatePayload(template.name, recipientForMeta, params.params, languageCode);
 
         if (!normalized) {
             await this.saveLog({
@@ -253,14 +254,14 @@ export class WhatsAppService {
         return result;
     }
 
-    private buildTemplatePayload(templateName: string, toPhone: string, params: string[]) {
+    private buildTemplatePayload(templateName: string, toPhone: string, params: string[], languageCode?: string) {
         return {
             messaging_product: 'whatsapp',
             to: toPhone,
             type: 'template',
             template: {
                 name: templateName,
-                language: { code: this.defaultLang },
+                language: { code: languageCode || this.defaultLang },
                 components: [
                     {
                         type: 'body',

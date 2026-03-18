@@ -191,7 +191,9 @@ export class WhatsAppService {
         const normalized = normalizeIsraeliPhoneToE164(params.toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
         const languageCode = 'languageCode' in template ? template.languageCode : undefined;
-        const payload = this.buildTemplatePayload(template.name, recipientForMeta, params.params, languageCode);
+        const payload = params.templateName === 'auth_code'
+            ? this.buildAuthCodePayload(template.name, recipientForMeta, params.params[0] ?? '', languageCode)
+            : this.buildTemplatePayload(template.name, recipientForMeta, params.params, languageCode);
 
         if (!normalized) {
             await this.saveLog({
@@ -269,6 +271,34 @@ export class WhatsAppService {
                             type: 'text',
                             text: value ?? '',
                         })),
+                    },
+                ],
+            },
+        };
+    }
+
+    private buildAuthCodePayload(templateName: string, toPhone: string, code: string, languageCode?: string) {
+        return {
+            messaging_product: 'whatsapp',
+            to: toPhone,
+            type: 'template',
+            template: {
+                name: templateName,
+                language: { code: languageCode || this.defaultLang },
+                components: [
+                    {
+                        type: 'body',
+                        parameters: [
+                            { type: 'text', text: code },
+                        ],
+                    },
+                    {
+                        type: 'button',
+                        sub_type: 'otp',
+                        index: '0',
+                        parameters: [
+                            { type: 'text', text: code },
+                        ],
                     },
                 ],
             },

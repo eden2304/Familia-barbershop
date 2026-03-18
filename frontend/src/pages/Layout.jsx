@@ -29,6 +29,37 @@ const hasFutureAppointments = (appointments) => {
     .some((appointment) => appointment.startsAt && isAfter(appointment.endsAt ?? appointment.startsAt, now));
 };
 
+const normalizeComparablePhone = (phone) => String(phone || "").replace(/\D/g, "");
+
+const appointmentBelongsToClient = (appointment, client) => {
+  const clientPhone = normalizeComparablePhone(client?.phone);
+  if (!clientPhone) return false;
+
+  const appointmentPhone = normalizeComparablePhone(
+    appointment?.client_phone
+      ?? appointment?.clientPhone
+      ?? appointment?.phone
+      ?? appointment?.client?.phone
+  );
+
+  if (!appointmentPhone) return false;
+  return appointmentPhone === clientPhone || appointmentPhone.endsWith(clientPhone) || clientPhone.endsWith(appointmentPhone);
+};
+
+const fetchClientAppointments = async (client) => {
+  const mine = await api.Appointment.listMine().catch(() => []);
+  if (Array.isArray(mine) && mine.length > 0) {
+    return mine;
+  }
+
+  const allAppointments = await api.Appointment.list().catch(() => []);
+  if (!Array.isArray(allAppointments) || allAppointments.length === 0) {
+    return [];
+  }
+
+  return allAppointments.filter((appointment) => appointmentBelongsToClient(appointment, client));
+};
+
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -95,10 +126,15 @@ function MainLayout({ children, currentPageName }) {
 
     const syncAppointmentsIndicator = async () => {
       try {
-        const appointments = await api.Appointment.listMine().catch(() => []);
+        const appointments = await fetchClientAppointments(client);
         if (cancelled) return;
 
-        setHasFutureAppointmentsBadge(hasFutureAppointments(appointments));
+        const visibleFutureAppointments = (appointments || []).filter((appointment) => {
+          const status = String(appointment?.status || '').toLowerCase();
+          return status !== 'canceled' && status !== 'blocked';
+        });
+
+        setHasFutureAppointmentsBadge(hasFutureAppointments(visibleFutureAppointments));
       } catch {
         if (!cancelled) {
           setHasFutureAppointmentsBadge(false);

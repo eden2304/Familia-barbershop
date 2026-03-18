@@ -614,14 +614,14 @@ export default function VerificationModal({ onVerify, onCancel }) {
               exit={{ scale: 0.9, y: 50, opacity: 0 }}
               transition={{ duration: 0.3 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm bg-white rounded-3xl p-6"
+              className="relative w-full max-w-sm bg-white rounded-3xl px-6 pb-6 pt-14"
           >
             <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={onCancel}
-                className="absolute right-3 top-3 h-9 w-9 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                className="absolute right-3 top-3 z-10 h-9 w-9 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900"
                 aria-label="סגירת חלון ההתחברות"
             >
               <X className="h-5 w-5" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { User, Home as HomeIcon, History, Navigation, Phone, Menu } from "lucide-react";
@@ -8,8 +8,6 @@ import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
 import AccessibilityWidget from "@/components/AccessibilityWidget";
 import { isAfter } from "date-fns";
-
-const APPOINTMENTS_SEEN_KEY_PREFIX = "familiaSeenFutureAppointments";
 
 const normalizeAppointmentDate = (appointment) => {
   const startsAt = appointment?.startsAt ?? appointment?.starts_at;
@@ -23,15 +21,12 @@ const normalizeAppointmentDate = (appointment) => {
   };
 };
 
-const buildFutureAppointmentsSignature = (appointments) => {
+const hasFutureAppointments = (appointments) => {
   const now = new Date();
 
   return (appointments || [])
     .map(normalizeAppointmentDate)
-    .filter((appointment) => appointment.startsAt && isAfter(appointment.endsAt ?? appointment.startsAt, now))
-    .sort((a, b) => a.startsAt - b.startsAt)
-    .map((appointment) => `${appointment.id ?? "no-id"}:${appointment.startsAt.toISOString()}:${appointment.status ?? "unknown"}`)
-    .join("|");
+    .some((appointment) => appointment.startsAt && isAfter(appointment.endsAt ?? appointment.startsAt, now));
 };
 
 
@@ -40,7 +35,7 @@ function MainLayout({ children, currentPageName }) {
   const { setSidebarOpen } = useSidebar();
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [hasNewAppointments, setHasNewAppointments] = useState(false);
+  const [hasFutureAppointmentsBadge, setHasFutureAppointmentsBadge] = useState(false);
 
   const checkLoginState = useCallback(() => {
     const storedClient = localStorage.getItem('familiaClient');
@@ -90,14 +85,9 @@ function MainLayout({ children, currentPageName }) {
       sessionStorage.setItem('visitTrackedInSession', '1');
     });
   }, [client]);
-  const appointmentsSeenKey = useMemo(() => {
-    if (!client?.id) return null;
-    return `${APPOINTMENTS_SEEN_KEY_PREFIX}:${client.id}`;
-  }, [client?.id]);
-
   useEffect(() => {
-    if (!client || !getStoredAuthToken() || isAdmin || !appointmentsSeenKey) {
-      setHasNewAppointments(false);
+    if (!client || !getStoredAuthToken() || isAdmin) {
+      setHasFutureAppointmentsBadge(false);
       return;
     }
 
@@ -108,25 +98,10 @@ function MainLayout({ children, currentPageName }) {
         const appointments = await api.Appointment.listMine().catch(() => []);
         if (cancelled) return;
 
-        const futureSignature = buildFutureAppointmentsSignature(appointments);
-        const seenSignature = localStorage.getItem(appointmentsSeenKey) || "";
-
-        if (!futureSignature) {
-          setHasNewAppointments(false);
-          localStorage.removeItem(appointmentsSeenKey);
-          return;
-        }
-
-        if (currentPageName === 'MyAppointmentsPage') {
-          localStorage.setItem(appointmentsSeenKey, futureSignature);
-          setHasNewAppointments(false);
-          return;
-        }
-
-        setHasNewAppointments(seenSignature !== futureSignature);
+        setHasFutureAppointmentsBadge(hasFutureAppointments(appointments));
       } catch {
         if (!cancelled) {
-          setHasNewAppointments(false);
+          setHasFutureAppointmentsBadge(false);
         }
       }
     };
@@ -145,7 +120,7 @@ function MainLayout({ children, currentPageName }) {
       window.removeEventListener('familia-appointments-changed', handleIndicatorRefresh);
       window.removeEventListener('storage', handleIndicatorRefresh);
     };
-  }, [appointmentsSeenKey, client, currentPageName, isAdmin]);
+  }, [client, currentPageName, isAdmin]);
   const handleCallClick = (e) => {
     e.preventDefault();
     window.location.href = "tel:+972523767851";
@@ -227,13 +202,15 @@ function MainLayout({ children, currentPageName }) {
           </Link>
           
           <Link to="/MyAppointmentsPage" className={`relative flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
-            {hasNewAppointments && (
-              <span
-                className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"
-                aria-hidden="true"
-              />
-            )}
-            <History className="w-6 h-6"/>
+            <div className="relative">
+              <History className="w-6 h-6"/>
+              {hasFutureAppointmentsBadge && (
+                <span
+                  className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>
           

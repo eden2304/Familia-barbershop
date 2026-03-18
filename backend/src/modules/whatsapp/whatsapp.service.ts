@@ -295,7 +295,7 @@ export class WhatsAppService {
                     },
                     {
                         type: 'button',
-                        sub_type: 'copy_code',
+                        sub_type: 'url',
                         index: '0',
                         parameters: [
                             { type: 'text', text: code },
@@ -341,6 +341,7 @@ export class WhatsAppService {
                 }
 
                 lastError = data?.error?.message || raw || `http_${res.status}`;
+                this.logger.warn(`WhatsApp Meta raw error response: ${raw || `http_${res.status}`}`);
 
                 if (!this.isRetryableHttpStatus(res.status)) {
                     return { ok: false, status: 'failed', messageId: null, error: lastError };

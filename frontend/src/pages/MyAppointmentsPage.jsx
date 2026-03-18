@@ -166,6 +166,7 @@ export default function MyAppointmentsPage() {
       const normalized = (appointmentsData || []).map(normAppt).filter((x) => x.startsAt);
       normalized.sort((a, b) => compareAsc(a.startsAt, b.startsAt)); // מהקרוב לרחוק
       setItems(normalized);
+      window.dispatchEvent(new Event("familia-appointments-changed"));
 
       const waitingNormalized = (waitingData || []).map(normWaiting).filter((x) => x.desiredDateTime);
       waitingNormalized.sort((a, b) => compareAsc(a.desiredDateTime, b.desiredDateTime));

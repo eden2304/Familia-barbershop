@@ -638,6 +638,8 @@ export default function Book() {
     );
   }
 
+  const bookingLockedByBanner = showWelcomeBanner;
+
   if (success) {
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -666,6 +668,13 @@ export default function Book() {
           {showWelcomeBanner && <ClientWelcomeBanner onClose={() => setShowWelcomeBanner(false)} />}
         </AnimatePresence>
 
+        {bookingLockedByBanner && (
+            <div
+                className="fixed inset-x-0 top-0 bottom-24 z-30 bg-black/10 backdrop-blur-[1px]"
+                aria-hidden="true"
+            />
+        )}
+
         {showVerification && (
             <VerificationModal
                 isOpen={showVerification}
@@ -687,7 +696,7 @@ export default function Book() {
             />
         )}
 
-        {showForm && selectedService && selectedDate && selectedTimeSlot && (
+        {!bookingLockedByBanner && showForm && selectedService && selectedDate && selectedTimeSlot && (
             <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
               <motion.div
                   initial={{ opacity: 0, scale: 0.96 }}

@@ -106,6 +106,19 @@ export default function VerificationModal({ onVerify, onCancel }) {
     return err?.status === 400 && message === "OTP_ATTEMPTS_EXCEEDED";
   };
 
+  const redirectToRegisterWithMessage = () => {
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setInfoMessage("");
+      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
+      setView("loginPhone");
+      return;
+    }
+
+    setError("");
+    setInfoMessage("נא להירשם קודם כדי להתחבר למערכת.");
+    setView("registerForm");
+  };
+
   // חסימת גלילה בזמן מודאל
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -195,9 +208,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setResendTimer(30);
     } catch (e) {
       if (e?.status === 409) {
-        setError("");
-        setInfoMessage("נא להירשם קודם כדי להתחבר למערכת.");
-        setView("registerForm");
+        redirectToRegisterWithMessage();
       } else {
         handleApiError(e, "שגיאה בשליחת קוד. נסה שוב.");
       }
@@ -231,9 +242,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           setView("loginCode");
         } catch (err2) {
           if (err2?.status === 409) {
-            setError("");
-            setInfoMessage("נא להירשם קודם כדי להתחבר למערכת.");
-            setView("registerForm");
+            redirectToRegisterWithMessage();
           } else {
             handleApiError(err2, "שגיאה בבקשת קוד. נסה שוב.");
           }
@@ -289,9 +298,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           await verifyOnce(p972);
         } catch (e2) {
           if (e2?.status === 409 || e2?.message === "UNREGISTERED_CLIENT") {
-            setError("");
-            setInfoMessage("נא להירשם קודם כדי להתחבר למערכת.");
-            setView("registerForm");
+            redirectToRegisterWithMessage();
           } else if (isOtpAttemptsExceeded(e2)) {
             resetToHomeAfterOtpExceeded();
           } else if (e2?.status === 400) {

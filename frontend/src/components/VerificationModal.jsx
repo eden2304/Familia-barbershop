@@ -28,6 +28,7 @@ const normalizePhone = (phone) => {
   if (cleaned.length === 10 && cleaned.startsWith("0")) return cleaned;
   return cleaned.startsWith("0") ? cleaned : `0${cleaned}`;
 };
+const isValidIsraeliMobilePhone = (phone) => /^05\d{8}$/.test(String(phone || "").replace(/\D/g, ""));
 
 async function checkPhoneExists(phoneRaw) {
   const p0 = normalizePhone(phoneRaw);
@@ -207,8 +208,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
   // --- LOGIN FLOW ---
   const handlePhoneSubmit = async (e) => {
     e.preventDefault();
-    if (!/^\d{9,10}$/.test(phone.replace(/\D/g, ""))) {
-      setError("נא להזין מספר טלפון תקין");
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
       return;
     }
     setLoading(true);
@@ -318,8 +319,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setError("נא למלא את כל השדות.");
       return;
     }
-    if (!/^\d{9,10}$/.test(phone.replace(/\D/g, ""))) {
-      setError("נא להזין מספר טלפון תקין");
+    if (!isValidIsraeliMobilePhone(phone)) {
+      setError("נא להזין מספר טלפון תקין שמתחיל ב-05 ומכיל 10 ספרות");
       return;
     }
     if (!termsAccepted) {

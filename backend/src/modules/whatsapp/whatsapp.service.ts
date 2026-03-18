@@ -52,12 +52,12 @@ export class WhatsAppService {
 
     async sendAppointmentReminderSameDay(appointment: Appointment) {
         const alreadySent = await this.logRepo.exist({
-            where: { appointmentId: appointment.id, templateName: 'appointment_reminder_same_day' },
+            where: { appointmentId: appointment.id, templateName: 'remainder_same_day' },
         });
         if (alreadySent) {
-            return this.logSkipped('appointment_reminder_same_day', appointment, 'already_sent');
+            return this.logSkipped('remainder_same_day', appointment, 'already_sent');
         }
-        return this.sendAppointmentTemplate('appointment_reminder_same_day', appointment, {
+        return this.sendAppointmentTemplate('remainder_same_day', appointment, {
             appointmentId: appointment.id,
         });
     }
@@ -129,7 +129,7 @@ export class WhatsAppService {
     }
 
     private async sendAppointmentTemplate(
-        templateName: 'appointment_approved' | 'appointment_reminder_same_day' | 'appointment_canceled',
+        templateName: 'appointment_approved' | 'remainder_same_day' | 'appointment_canceled',
         appointment: Appointment,
         opts: { appointmentId?: string } = {},
     ) {

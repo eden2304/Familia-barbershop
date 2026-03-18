@@ -9,7 +9,7 @@ export const WHATSAPP_TEMPLATES = {
         params: ['clientName', 'date', 'time'] as const,
     },
     appointment_reminder_same_day: {
-        name: 'appointment_reminder_same_day',
+        name: 'remainder_same_day',
         params: ['clientName', 'date', 'time'] as const,
     },
     appointment_canceled: {

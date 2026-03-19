@@ -304,14 +304,55 @@ export class AppointmentsService {
         return { bh: effective, offset, jsDow };
     }
 
-    private buildMemberWindowsForDate(dateStr: string, rules: BookingRules, offset: string, jsDow: number) {
+    private buildMemberWindowsForDate(
+        dateStr: string,
+        rules: BookingRules,
+        offset: string,
+        jsDow: number,
+        baseWindow?: { start: Date; end: Date } | null,
+    ) {
         return (rules.memberOnlyWindows || [])
             .filter(win => Number(win.weekday) === Number(jsDow))
             .map(win => ({
                 start: new Date(`${dateStr}T${win.start}:00${offset}`),
                 end: new Date(`${dateStr}T${win.end}:00${offset}`),
             }))
-            .filter(win => Number.isFinite(win.start.getTime()) && Number.isFinite(win.end.getTime()) && win.end > win.start);
+            .map(win => this.intersectWindow(win, baseWindow))
+            .filter((win): win is { start: Date; end: Date } => Boolean(win));
+    }
+
+    private intersectWindow(
+        window: { start: Date; end: Date },
+        baseWindow?: { start: Date; end: Date } | null,
+    ): { start: Date; end: Date } | null {
+        if (
+            !Number.isFinite(window.start.getTime()) ||
+            !Number.isFinite(window.end.getTime()) ||
+            window.end <= window.start
+        ) {
+            return null;
+        }
+
+        if (!baseWindow) {
+            return window;
+        }
+
+        if (
+            !Number.isFinite(baseWindow.start.getTime()) ||
+            !Number.isFinite(baseWindow.end.getTime()) ||
+            baseWindow.end <= baseWindow.start
+        ) {
+            return null;
+        }
+
+        const start = new Date(Math.max(window.start.getTime(), baseWindow.start.getTime()));
+        const end = new Date(Math.min(window.end.getTime(), baseWindow.end.getTime()));
+
+        if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+            return null;
+        }
+
+        return { start, end };
     }
 
     private isSlotWithinWindow(slotStart: Date, slotEnd: Date, window: { start: Date; end: Date }): boolean {
@@ -408,7 +449,7 @@ export class AppointmentsService {
                 end: new Date(`${dateStr}T${closeStr}:00${offset}`),
             }
             : null;
-        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow);
+        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow, baseWindow);
         const isInMemberWindow = memberWindows.some(win => this.isSlotWithinWindow(startAt, endAt, win));
         const isInBaseWindow = baseWindow ? this.isSlotWithinWindow(startAt, endAt, baseWindow) : false;
         const hasBaseWindow = Boolean(
@@ -645,8 +686,9 @@ export class AppointmentsService {
         const hasBaseWindow = Boolean(openStr && closeStr && openStr !== closeStr);
         const workStart = hasBaseWindow ? new Date(`${dateStr}T${openStr}:00${offset}`) : null;
         const workEnd = hasBaseWindow ? new Date(`${dateStr}T${closeStr}:00${offset}`) : null;
-        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow);
-        if (!hasBaseWindow && (!isMember || memberWindows.length === 0)) return [];
+        const baseWindow = hasBaseWindow && workStart && workEnd ? { start: workStart, end: workEnd } : null;
+        const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow, baseWindow);
+        if (!baseWindow) return [];
 
         const appts = await this.apptRepo.find({
             where: {

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Admin } from "@/api/entities";
-import { Ban, CalendarDays, Clock3, Pencil, Trash2, X } from "lucide-react";
+import { Ban, CalendarDays, Clock3, Pencil, Plus, Trash2, X } from "lucide-react";
 import { addDays, eachDayOfInterval, format, isValid as isValidDate, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 
@@ -101,13 +101,27 @@ export default function BlockAppointmentsModal({
   const [dateStr, setDateStr] = useState(() => dateToYmd(new Date()));
   const [rangeStart, setRangeStart] = useState(() => dateToYmd(new Date()));
   const [rangeEnd, setRangeEnd] = useState(() => dateToYmd(addDays(new Date(), 1)));
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [timeRanges, setTimeRanges] = useState([{ id: 1, from: "", to: "" }]);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blocks, setBlocks] = useState([]);
   const [dayAppointments, setDayAppointments] = useState([]);
   const [rangeAppointmentsMap, setRangeAppointmentsMap] = useState({});
   const [submitting, setSubmitting] = useState(false);
+
+  const updateTimeRange = (id, field, value) => {
+    setTimeRanges((current) => current.map((range) => range.id === id ? { ...range, [field]: value } : range));
+  };
+
+  const addTimeRange = () => {
+    setTimeRanges((current) => ([
+      ...current,
+      { id: Date.now() + Math.floor(Math.random() * 1000), from: "", to: "" },
+    ]));
+  };
+
+  const removeTimeRange = (id) => {
+    setTimeRanges((current) => current.length === 1 ? current : current.filter((range) => range.id !== id));
+  };
 
   const dateOptions = useMemo(
     () => Array.from({ length: 21 }, (_, index) => addDays(startOfDay(new Date()), index)),
@@ -157,12 +171,16 @@ export default function BlockAppointmentsModal({
     : `${hoursForDay?.open ?? "--:--"} – ${hoursForDay?.close ?? "--:--"}`;
 
   useEffect(() => {
-    if (!isOpen) return;
-    if (!from && timeOptions.length > 1) {
-      setFrom(timeOptions[0]);
-      setTo(timeOptions[Math.min(2, timeOptions.length - 1)]);
-    }
-  }, [from, isOpen, timeOptions]);
+    if (!isOpen || timeOptions.length <= 1) return;
+    setTimeRanges((current) => current.map((range, index) => {
+      if (range.from && range.to) return range;
+      return {
+        ...range,
+        from: range.from || timeOptions[0],
+        to: range.to || timeOptions[Math.min(index + 2, timeOptions.length - 1)],
+      };
+    }));
+  }, [isOpen, timeOptions]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -275,13 +293,44 @@ export default function BlockAppointmentsModal({
     [normalizedDayAppointments]
   );
 
+  const normalizedTimeRanges = useMemo(() => {
+    if (mode !== "single" || !selectedDate) return [];
+    return timeRanges
+      .map((range) => {
+        const start = parseHHMMOnDate(selectedDate, range.from);
+        const end = parseHHMMOnDate(selectedDate, range.to);
+        return {
+          ...range,
+          start,
+          end,
+          valid: Boolean(start && end && end > start),
+        };
+      });
+  }, [mode, selectedDate, timeRanges]);
+
   const selectedRangeConflicts = useMemo(() => {
-    if (mode !== "single" || !selectedDate || !from || !to) return [];
-    const start = parseHHMMOnDate(selectedDate, from);
-    const end = parseHHMMOnDate(selectedDate, to);
-    if (!start || !end || end <= start) return [];
-    return activeAppointmentsForDay.filter((appointment) => overlaps(appointment.s, appointment.e, start, end));
-  }, [activeAppointmentsForDay, from, mode, selectedDate, to]);
+    if (mode !== "single") return [];
+    return normalizedTimeRanges
+      .filter((range) => range.valid)
+      .map((range) => ({
+        ...range,
+        conflicts: activeAppointmentsForDay.filter((appointment) => overlaps(appointment.s, appointment.e, range.start, range.end)),
+      }))
+      .filter((range) => range.conflicts.length > 0);
+  }, [activeAppointmentsForDay, mode, normalizedTimeRanges]);
+
+  const overlappingSelectedRanges = useMemo(() => {
+    const validRanges = normalizedTimeRanges.filter((range) => range.valid);
+    const collisions = [];
+    for (let i = 0; i < validRanges.length; i += 1) {
+      for (let j = i + 1; j < validRanges.length; j += 1) {
+        if (overlaps(validRanges[i].start, validRanges[i].end, validRanges[j].start, validRanges[j].end)) {
+          collisions.push([validRanges[i].id, validRanges[j].id]);
+        }
+      }
+    }
+    return collisions;
+  }, [normalizedTimeRanges]);
 
   const rangeConflicts = useMemo(() => {
     if (mode !== "range") return [];
@@ -302,7 +351,7 @@ export default function BlockAppointmentsModal({
     });
   }, [daysInRange, mode, rangeAppointmentsMap]);
 
-  const canSubmitSingle = Boolean(selectedDate && from && to && !hoursForDay?.isClosed && selectedRangeConflicts.length === 0);
+  const canSubmitSingle = Boolean(selectedDate && !hoursForDay?.isClosed && normalizedTimeRanges.length > 0 && normalizedTimeRanges.every((range) => range.valid) && selectedRangeConflicts.length === 0 && overlappingSelectedRanges.length === 0);
   const canSubmitRange = Boolean(daysInRange.length > 0 && selectedRangeEnd && selectedRangeStart && selectedRangeEnd >= selectedRangeStart && rangeConflicts.length === 0);
 
   const clearForm = () => {
@@ -311,35 +360,29 @@ export default function BlockAppointmentsModal({
     setDateStr(dateToYmd(new Date()));
     setRangeStart(dateToYmd(new Date()));
     setRangeEnd(dateToYmd(addDays(new Date(), 1)));
-    setFrom(timeOptions[0] || "08:00");
-    setTo(timeOptions[Math.min(2, timeOptions.length - 1)] || "09:00");
+    setTimeRanges([{ id: 1, from: timeOptions[0] || "08:00", to: timeOptions[Math.min(2, timeOptions.length - 1)] || "09:00" }]);
   };
 
   const setFullDay = () => {
     if (!hoursForDay?.isClosed) {
-      setFrom(hoursForDay?.open || "08:00");
-      setTo(hoursForDay?.close || "19:00");
+      setTimeRanges([{ id: 1, from: hoursForDay?.open || "08:00", to: hoursForDay?.close || "19:00" }]);
     }
   };
 
-  const snapNextHour = () => {
-    if (!from) return;
-    const [hours, minutes] = from.split(":").map(Number);
+  const snapNextHour = (id) => {
+    const currentRange = timeRanges.find((range) => range.id === id);
+    if (!currentRange?.from) return;
+    const [hours, minutes] = currentRange.from.split(":").map(Number);
     const targetMinutes = (hours * 60) + minutes + 60;
     const next = `${String(Math.floor(targetMinutes / 60)).padStart(2, "0")}:${String(targetMinutes % 60).padStart(2, "0")}`;
-    if (timeOptions.includes(next)) {
-      setTo(next);
-      return;
-    }
-    setTo(timeOptions[timeOptions.length - 1] || next);
+    updateTimeRange(id, "to", timeOptions.includes(next) ? next : (timeOptions[timeOptions.length - 1] || next));
   };
 
   const beginEdit = (block) => {
     if (!block?.s || !block?.e) return;
     setMode("single");
     setDateStr(format(block.s, "yyyy-MM-dd"));
-    setFrom(format(block.s, "HH:mm"));
-    setTo(format(block.e, "HH:mm"));
+    setTimeRanges([{ id: 1, from: format(block.s, "HH:mm"), to: format(block.e, "HH:mm") }]);
     setEditingBlock(block);
   };
 
@@ -366,18 +409,20 @@ export default function BlockAppointmentsModal({
 
       if (mode === "single") {
         if (!canSubmitSingle) return;
-        const start = parseHHMMOnDate(selectedDate, from);
-        const end = parseHHMMOnDate(selectedDate, to);
 
-        if (!start || !end || end <= start) {
-          alert("בחר טווח שעות תקין.");
+        const validRanges = normalizedTimeRanges.filter((range) => range.valid);
+        if (validRanges.length === 0) {
+          alert("בחר לפחות טווח שעות אחד תקין.");
           return;
         }
 
         if (editingBlock) {
-          await Admin.blocks.update(editingBlock.id, toLocalIsoWithOffset(start), toLocalIsoWithOffset(end), "", false);
+          const [range] = validRanges;
+          await Admin.blocks.update(editingBlock.id, toLocalIsoWithOffset(range.start), toLocalIsoWithOffset(range.end), "", false);
         } else {
-          await Admin.blocks.add(toLocalIsoWithOffset(start), toLocalIsoWithOffset(end), "", false);
+          for (const range of validRanges) {
+            await Admin.blocks.add(toLocalIsoWithOffset(range.start), toLocalIsoWithOffset(range.end), "", false);
+          }
         }
       } else {
         if (!canSubmitRange) return;
@@ -473,7 +518,7 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3 sm:overflow-x-auto sm:pb-1">
+                      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:gap-3">
                         {dateOptions.map((day) => {
                           const ymd = dateToYmd(day);
                           const active = ymd === dateStr;
@@ -482,7 +527,7 @@ export default function BlockAppointmentsModal({
                               key={ymd}
                               type="button"
                               onClick={() => setDateStr(ymd)}
-                              className={`rounded-[18px] border px-2 py-3 text-center transition sm:min-w-[96px] sm:rounded-[22px] sm:px-3 ${active
+                              className={`min-w-[86px] rounded-[18px] border px-2 py-3 text-center transition sm:min-w-[96px] sm:rounded-[22px] sm:px-3 ${active
                                 ? "border-slate-900 bg-slate-900 text-white"
                                 : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
                               }`}
@@ -508,44 +553,78 @@ export default function BlockAppointmentsModal({
                           </div>
                         )}
                       </div>
+                      <div className="space-y-3">
+                        {normalizedTimeRanges.map((range, index) => {
+                          const hasAppointmentConflicts = selectedRangeConflicts.some((entry) => entry.id === range.id);
+                          const hasRangeConflict = overlappingSelectedRanges.some((pair) => pair.includes(range.id));
+                          return (
+                            <div key={range.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <div className="text-sm font-semibold text-slate-800">טווח {index + 1}</div>
+                                <div className="flex items-center gap-2">
+                                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full text-slate-500" onClick={() => snapNextHour(range.id)}>
+                                    <Clock3 className="h-4 w-4" />
+                                  </Button>
+                                  {timeRanges.length > 1 && !editingBlock && (
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full text-rose-500" onClick={() => removeTimeRange(range.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-sm font-semibold text-slate-700">משעה</label>
-                          <Select value={from || ""} onValueChange={setFrom} disabled={hoursForDay?.isClosed} dir="rtl">
-                            <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-slate-50 px-4 text-base sm:h-14 sm:rounded-[20px]">
-                              <SelectValue placeholder="בחר שעה" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[3000]" align="end">
-                              {timeOptions.slice(0, -1).map((time) => (
-                                <SelectItem key={time} value={time}>{time}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <label className="text-sm font-semibold text-slate-700">משעה</label>
+                                  <Select value={range.from || ""} onValueChange={(value) => updateTimeRange(range.id, "from", value)} disabled={hoursForDay?.isClosed} dir="rtl">
+                                    <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
+                                      <SelectValue placeholder="בחר שעה" />
+                                    </SelectTrigger>
+                                    <SelectContent className="z-[3000]" align="end">
+                                      {timeOptions.slice(0, -1).map((time) => (
+                                        <SelectItem key={`${range.id}-${time}-from`} value={time}>{time}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
 
-                        <div className="space-y-2">
-                          <label className="text-sm font-semibold text-slate-700">עד שעה</label>
-                          <Select value={to || ""} onValueChange={setTo} disabled={hoursForDay?.isClosed} dir="rtl">
-                            <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-slate-50 px-4 text-base sm:h-14 sm:rounded-[20px]">
-                              <SelectValue placeholder="בחר שעה" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[3000]" align="end">
-                              {timeOptions.map((time) => (
-                                <SelectItem key={time} value={time}>{time}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm font-semibold text-slate-700">עד שעה</label>
+                                  <Select value={range.to || ""} onValueChange={(value) => updateTimeRange(range.id, "to", value)} disabled={hoursForDay?.isClosed} dir="rtl">
+                                    <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
+                                      <SelectValue placeholder="בחר שעה" />
+                                    </SelectTrigger>
+                                    <SelectContent className="z-[3000]" align="end">
+                                      {timeOptions.map((time) => (
+                                        <SelectItem key={`${range.id}-${time}-to`} value={time}>{time}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              {(hasAppointmentConflicts || hasRangeConflict || !range.valid) && (
+                                <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs text-rose-700">
+                                  {!range.valid && <div>בחר שעות תקינות לטווח הזה.</div>}
+                                  {hasRangeConflict && <div>הטווח הזה חופף לטווח אחר שבחרת.</div>}
+                                  {hasAppointmentConflicts && <div>יש תורים קיימים בטווח הזה.</div>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
 
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <Button type="button" variant="outline" onClick={setFullDay} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
                           חסום את כל היום
                         </Button>
-                        <Button type="button" variant="outline" onClick={snapNextHour} disabled={!from || hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
-                          קבע אוטומטית + שעה
-                        </Button>
+                        {!editingBlock && (
+                          <Button type="button" variant="outline" onClick={addTimeRange} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
+                            <Plus className="ml-1 h-4 w-4" />
+                            הוסף טווח שעות
+                          </Button>
+                        )}
                       </div>
 
                       {hoursForDay?.isClosed && (
@@ -554,16 +633,22 @@ export default function BlockAppointmentsModal({
                         </div>
                       )}
 
-                      {selectedRangeConflicts.length > 0 && (
+                      {(selectedRangeConflicts.length > 0 || overlappingSelectedRanges.length > 0) && (
                         <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                          <div className="font-bold">אי אפשר לחסום כרגע — יש {selectedRangeConflicts.length} תורים פעילים בטווח הזה.</div>
-                          <ul className="mt-2 space-y-1 text-xs sm:text-sm">
-                            {selectedRangeConflicts.slice(0, 5).map((appointment) => (
-                              <li key={appointment.id}>• {safeFormat(appointment.s, "HH:mm")}–{safeFormat(appointment.e, "HH:mm")} · {humanClientName(appointment)}</li>
-                            ))}
-                          </ul>
-                          {selectedRangeConflicts.length > 5 && (
-                            <div className="mt-2 text-xs">ועוד {selectedRangeConflicts.length - 5} תורים נוספים.</div>
+                          {selectedRangeConflicts.length > 0 && (
+                            <>
+                              <div className="font-bold">אי אפשר לחסום כרגע — יש תורים פעילים באחד או יותר מהטווחים שבחרת.</div>
+                              <ul className="mt-2 space-y-1 text-xs sm:text-sm">
+                                {selectedRangeConflicts.slice(0, 3).map((entry) => (
+                                  <li key={entry.id}>• טווח {normalizedTimeRanges.findIndex((range) => range.id === entry.id) + 1}: {entry.conflicts.slice(0, 2).map((appointment) => `${safeFormat(appointment.s, "HH:mm")}–${safeFormat(appointment.e, "HH:mm")} · ${humanClientName(appointment)}`).join(' | ')}</li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                          {overlappingSelectedRanges.length > 0 && (
+                            <div className={`${selectedRangeConflicts.length > 0 ? "mt-3" : ""} text-xs sm:text-sm`}>
+                              חלק מטווחי השעות שבחרת חופפים אחד לשני — צריך להפריד ביניהם לפני השמירה.
+                            </div>
                           )}
                         </div>
                       )}
@@ -591,7 +676,7 @@ export default function BlockAppointmentsModal({
                                   setRangeStart(ymd);
                                   if (ymd > rangeEnd) setRangeEnd(ymd);
                                 }}
-                                className={`rounded-full px-3 py-2 text-sm transition ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                                className={`rounded-[16px] px-2 py-2 text-xs transition sm:rounded-full sm:px-3 sm:text-sm ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                               >
                                 {safeFormat(day, "d/M")}
                               </button>
@@ -613,7 +698,7 @@ export default function BlockAppointmentsModal({
                                 type="button"
                                 disabled={disabled}
                                 onClick={() => setRangeEnd(ymd)}
-                                className={`rounded-full px-3 py-2 text-sm transition ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
+                                className={`rounded-[16px] px-2 py-2 text-xs transition sm:rounded-full sm:px-3 sm:text-sm ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
                               >
                                 {safeFormat(day, "d/M")}
                               </button>

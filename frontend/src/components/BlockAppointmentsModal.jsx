@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Admin } from "@/api/entities";
-import { Ban, CalendarDays, Clock3, Pencil, Sparkles, Trash2, X } from "lucide-react";
+import { Ban, CalendarDays, Clock3, Pencil, Trash2, X } from "lucide-react";
 import { addDays, eachDayOfInterval, format, isValid as isValidDate, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 
@@ -411,31 +411,22 @@ export default function BlockAppointmentsModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center" dir="rtl">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative z-10 mx-4 max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-[32px] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)]">
-        <div className="border-b border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-700 px-6 py-6 text-white sm:px-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-xs font-medium text-white/90">
-                <Sparkles className="h-3.5 w-3.5" />
-                ניהול חסימות בצורה פשוטה וברורה
-              </div>
-              <h3 className="text-2xl font-black">חסימת תורים</h3>
-              <p className="mt-2 max-w-2xl text-sm text-white/80">
-                אפשר לחסום שעות ביום מסוים או כמה ימים שלמים ברצף. אם כבר קיימים תורים בטווח הזה, המערכת תעצור ותציג בדיוק מה צריך לבטל קודם.
-              </p>
-            </div>
-
+      <div className="relative z-10 h-[100dvh] w-full overflow-hidden bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] sm:mx-4 sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-[32px]">
+        <div className="border-b border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-700 px-4 py-4 text-white sm:px-8 sm:py-6">
+          <div className="flex flex-row-reverse items-center justify-between gap-3">
             <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full text-white hover:bg-white/10 hover:text-white">
               <X className="h-5 w-5" />
             </Button>
+            <h3 className="text-xl font-black sm:text-2xl">חסימת תורים</h3>
+            <div className="h-10 w-10" aria-hidden="true" />
           </div>
         </div>
 
-        <div className="max-h-[calc(92vh-128px)] overflow-y-auto px-6 py-6 sm:px-8">
-          <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="space-y-6">
-              <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-3">
-                <div className="grid grid-cols-2 gap-3">
+        <div className="max-h-[calc(100dvh-73px)] overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-88px)] sm:px-8 sm:py-6">
+          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:gap-6">
+            <div className="space-y-4 sm:space-y-6">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-2 sm:rounded-[28px] sm:p-3">
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
                   {[
                     { id: "single", label: "יום מסוים", sublabel: "שעות מדויקות ביום אחד", icon: Clock3 },
                     { id: "range", label: "טווח ימים", sublabel: "חסימה מלאה לכמה ימים", icon: CalendarDays },
@@ -450,29 +441,29 @@ export default function BlockAppointmentsModal({
                           setMode(option.id);
                           setEditingBlock(null);
                         }}
-                        className={`rounded-[24px] border px-4 py-4 text-right transition-all ${active
+                        className={`rounded-[20px] border px-3 py-3 text-right transition-all sm:rounded-[24px] sm:px-4 sm:py-4 ${active
                           ? "border-slate-900 bg-slate-900 text-white shadow-lg"
                           : "border-transparent bg-white text-slate-700 hover:border-slate-200 hover:bg-slate-100"
                         }`}
                       >
-                        <div className="mb-3 flex items-center justify-between">
-                          <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${active ? "bg-white/15" : "bg-slate-100"}`}>
+                        <div className="mb-2 flex items-center justify-between sm:mb-3">
+                          <span className={`inline-flex h-9 w-9 items-center justify-center rounded-2xl sm:h-11 sm:w-11 ${active ? "bg-white/15" : "bg-slate-100"}`}>
                             <ActiveIcon className="h-5 w-5" />
                           </span>
                         </div>
-                        <div className="text-base font-bold">{option.label}</div>
-                        <div className={`mt-1 text-sm ${active ? "text-white/75" : "text-slate-500"}`}>{option.sublabel}</div>
+                        <div className="text-sm font-bold sm:text-base">{option.label}</div>
+                        <div className={`mt-1 text-xs sm:text-sm ${active ? "text-white/75" : "text-slate-500"}`}>{option.sublabel}</div>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
                 {mode === "single" ? (
                   <>
-                    <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                      <div className="mb-4 flex items-center justify-between gap-3">
+                    <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
+                      <div className="mb-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <div>
                           <h4 className="text-lg font-bold text-slate-900">1. בוחרים יום</h4>
                           <p className="text-sm text-slate-500">בחר את היום שבו רוצים לסגור שעות ספציפיות.</p>
@@ -482,7 +473,7 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div className="flex gap-3 overflow-x-auto pb-1">
+                      <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3 sm:overflow-x-auto sm:pb-1">
                         {dateOptions.map((day) => {
                           const ymd = dateToYmd(day);
                           const active = ymd === dateStr;
@@ -491,13 +482,13 @@ export default function BlockAppointmentsModal({
                               key={ymd}
                               type="button"
                               onClick={() => setDateStr(ymd)}
-                              className={`min-w-[96px] rounded-[22px] border px-3 py-3 text-center transition ${active
+                              className={`rounded-[18px] border px-2 py-3 text-center transition sm:min-w-[96px] sm:rounded-[22px] sm:px-3 ${active
                                 ? "border-slate-900 bg-slate-900 text-white"
                                 : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
                               }`}
                             >
-                              <div className="text-xs font-medium uppercase tracking-wide opacity-80">{safeFormat(day, "EEE")}</div>
-                              <div className="mt-1 text-lg font-black">{safeFormat(day, "d")}</div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide opacity-80 sm:text-xs">{safeFormat(day, "EEE")}</div>
+                              <div className="mt-1 text-base font-black sm:text-lg">{safeFormat(day, "d")}</div>
                               <div className="text-xs opacity-80">{safeFormat(day, "MMM")}</div>
                             </button>
                           );
@@ -505,8 +496,8 @@ export default function BlockAppointmentsModal({
                       </div>
                     </section>
 
-                    <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                      <div className="mb-4 flex items-center justify-between gap-3">
+                    <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
+                      <div className="mb-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                         <div>
                           <h4 className="text-lg font-bold text-slate-900">2. בוחרים שעות</h4>
                           <p className="text-sm text-slate-500">ללא שעון מסובך — פשוט בוחרים מהרשימה.</p>
@@ -518,11 +509,11 @@ export default function BlockAppointmentsModal({
                         )}
                       </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                           <label className="text-sm font-semibold text-slate-700">משעה</label>
                           <Select value={from || ""} onValueChange={setFrom} disabled={hoursForDay?.isClosed} dir="rtl">
-                            <SelectTrigger className="h-14 rounded-[20px] border-slate-200 bg-slate-50 px-4 text-base">
+                            <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-slate-50 px-4 text-base sm:h-14 sm:rounded-[20px]">
                               <SelectValue placeholder="בחר שעה" />
                             </SelectTrigger>
                             <SelectContent className="z-[3000]" align="end">
@@ -536,7 +527,7 @@ export default function BlockAppointmentsModal({
                         <div className="space-y-2">
                           <label className="text-sm font-semibold text-slate-700">עד שעה</label>
                           <Select value={to || ""} onValueChange={setTo} disabled={hoursForDay?.isClosed} dir="rtl">
-                            <SelectTrigger className="h-14 rounded-[20px] border-slate-200 bg-slate-50 px-4 text-base">
+                            <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-slate-50 px-4 text-base sm:h-14 sm:rounded-[20px]">
                               <SelectValue placeholder="בחר שעה" />
                             </SelectTrigger>
                             <SelectContent className="z-[3000]" align="end">
@@ -548,7 +539,7 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <Button type="button" variant="outline" onClick={setFullDay} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
                           חסום את כל היום
                         </Button>
@@ -579,16 +570,16 @@ export default function BlockAppointmentsModal({
                     </section>
                   </>
                 ) : (
-                  <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:rounded-[28px] sm:p-5">
                     <div className="mb-4">
                       <h4 className="text-lg font-bold text-slate-900">בחר טווח ימים מלא</h4>
                       <p className="text-sm text-slate-500">מתאים לחופשה, מילואים, שיפוץ או כל תקופה שבה לא רוצים לקבל תורים בכלל.</p>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="mb-2 text-sm font-semibold text-slate-700">מיום</div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
                           {dateOptions.slice(0, 10).map((day) => {
                             const ymd = dateToYmd(day);
                             const active = ymd === rangeStart;
@@ -611,7 +602,7 @@ export default function BlockAppointmentsModal({
 
                       <div>
                         <div className="mb-2 text-sm font-semibold text-slate-700">עד יום</div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
                           {dateOptions.slice(0, 14).map((day) => {
                             const ymd = dateToYmd(day);
                             const active = ymd === rangeEnd;
@@ -662,7 +653,7 @@ export default function BlockAppointmentsModal({
                   </section>
                 )}
 
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-slate-100 bg-white/95 pt-4 backdrop-blur sm:static sm:flex-row sm:justify-end sm:border-t-0 sm:bg-transparent sm:pt-0">
                   {editingBlock && (
                     <Button type="button" variant="ghost" onClick={clearForm} className="rounded-full text-slate-500 hover:text-slate-900">
                       בטל עריכה
@@ -682,8 +673,8 @@ export default function BlockAppointmentsModal({
               </form>
             </div>
 
-            <div className="space-y-4">
-              <section className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+            <div className="space-y-3 sm:space-y-4">
+              <section className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
                 <div className="mb-3 flex items-center gap-2 text-slate-900">
                   <Clock3 className="h-4 w-4" />
                   <h4 className="font-bold">תורים שכבר קיימים ביום הנבחר</h4>
@@ -705,7 +696,7 @@ export default function BlockAppointmentsModal({
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-amber-200 bg-amber-50/70 p-5">
+              <section className="rounded-[24px] border border-amber-200 bg-amber-50/70 p-4 sm:rounded-[28px] sm:p-5">
                 <div className="mb-3 flex items-center gap-2 text-amber-900">
                   <Ban className="h-4 w-4" />
                   <h4 className="font-bold">חסימות שכבר הוגדרו ליום הנבחר</h4>

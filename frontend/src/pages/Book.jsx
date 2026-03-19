@@ -477,6 +477,16 @@ export default function Book() {
     }
   }, [step]);
 
+  useEffect(() => {
+    if (!success) return undefined;
+
+    const successTimer = setTimeout(() => {
+      navigate("/");
+      setSuccess(false);
+    }, 20000);
+
+    return () => clearTimeout(successTimer);
+  }, [navigate, success]);
 
 
   /* -------- handlers -------- */
@@ -639,17 +649,6 @@ export default function Book() {
   }
 
   const bookingLockedByBanner = showWelcomeBanner;
-
-  useEffect(() => {
-    if (!success) return undefined;
-
-    const successTimer = setTimeout(() => {
-      navigate("/");
-      setSuccess(false);
-    }, 20000);
-
-    return () => clearTimeout(successTimer);
-  }, [navigate, success]);
 
   if (success) {
     return (

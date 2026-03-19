@@ -65,16 +65,24 @@ export function findNextFutureRecurringAppointment(appointments, client = null) 
   }
 
   const countsByService = new Map();
-  for (const appointment of futureAppointments) {
+  for (const appointment of list) {
     const key = normalizeServiceKey(appointment);
-    if (!key) continue;
+    const status = String(appointment?.status ?? '').toLowerCase();
+    if (!key || status === 'canceled') continue;
     countsByService.set(key, (countsByService.get(key) || 0) + 1);
   }
 
-  return futureAppointments.find((appointment) => {
+  const repeatedServiceMatch = futureAppointments.find((appointment) => {
     const key = normalizeServiceKey(appointment);
     return key ? (countsByService.get(key) || 0) >= 2 : false;
-  }) || null;
+  });
+  if (repeatedServiceMatch) return repeatedServiceMatch;
+
+  if (futureAppointments.length === 1) {
+    return futureAppointments[0];
+  }
+
+  return null;
 }
 
 export function hasFutureRecurringAppointment(appointments, client = null) {

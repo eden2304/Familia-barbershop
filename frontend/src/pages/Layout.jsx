@@ -13,6 +13,7 @@ function MainLayout({ children, currentPageName }) {
   const { setSidebarOpen } = useSidebar();
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [hasFutureRecurringAppointment, setHasFutureRecurringAppointment] = useState(false);
 
   const checkLoginState = useCallback(() => {
     const storedClient = localStorage.getItem('familiaClient');
@@ -61,6 +62,49 @@ function MainLayout({ children, currentPageName }) {
     api.post('/auth/track-visit', {}).catch(() => undefined).finally(() => {
       sessionStorage.setItem('visitTrackedInSession', '1');
     });
+  }, [client]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadFutureRecurringIndicator = async () => {
+      const token = getStoredAuthToken();
+      if (!client?.phone || !token) {
+        if (!ignore) setHasFutureRecurringAppointment(false);
+        return;
+      }
+
+      try {
+        const appointments = await api.Appointment.listMine().catch(() => []);
+        const hasFutureRecurring = Array.isArray(appointments) && appointments.some((appointment) => {
+          const startsAtValue = appointment?.startsAt ?? appointment?.starts_at ?? appointment?.startAt ?? appointment?.start_at;
+          const startsAt = startsAtValue ? new Date(startsAtValue) : null;
+          const recurringId = appointment?.recurringId ?? appointment?.recurring_id ?? appointment?.recurringScheduleId ?? appointment?.recurring_schedule_id;
+          const status = String(appointment?.status ?? '').toLowerCase();
+          return Boolean(
+            startsAt
+            && !Number.isNaN(startsAt.getTime())
+            && startsAt.getTime() > Date.now()
+            && recurringId
+            && status !== 'canceled'
+          );
+        });
+
+        if (!ignore) setHasFutureRecurringAppointment(hasFutureRecurring);
+      } catch {
+        if (!ignore) setHasFutureRecurringAppointment(false);
+      }
+    };
+
+    loadFutureRecurringIndicator();
+    window.addEventListener('familia-auth-changed', loadFutureRecurringIndicator);
+    window.addEventListener('focus', loadFutureRecurringIndicator);
+
+    return () => {
+      ignore = true;
+      window.removeEventListener('familia-auth-changed', loadFutureRecurringIndicator);
+      window.removeEventListener('focus', loadFutureRecurringIndicator);
+    };
   }, [client]);
   const handleCallClick = (e) => {
     e.preventDefault();
@@ -142,7 +186,10 @@ function MainLayout({ children, currentPageName }) {
             <span className="text-xs font-medium">בית</span>
           </Link>
           
-          <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+          <Link to="/MyAppointmentsPage" className={`relative flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+            {hasFutureRecurringAppointment && (
+              <span className="absolute right-2 top-1 h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.16)]" aria-hidden="true" />
+            )}
             <History className="w-6 h-6"/>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>

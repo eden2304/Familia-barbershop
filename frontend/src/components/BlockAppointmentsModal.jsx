@@ -466,18 +466,17 @@ export default function BlockAppointmentsModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center" dir="rtl">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative z-10 h-[100dvh] w-full overflow-hidden bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] sm:mx-4 sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-[32px]">
-        <div className="border-b border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-700 px-4 py-4 text-white sm:px-8 sm:py-6">
-          <div className="flex flex-row-reverse items-center justify-between gap-3">
-            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full text-white hover:bg-white/10 hover:text-white">
-              <X className="h-5 w-5" />
-            </Button>
+      <div className="relative z-10 mx-3 max-h-[88vh] w-[min(100%-24px,28rem)] overflow-hidden rounded-[28px] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] sm:mx-4 sm:max-h-[90vh] sm:w-full sm:max-w-3xl sm:rounded-[32px]">
+        <div className="relative border-b border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-700 px-4 py-4 text-white sm:px-8 sm:py-6">
+          <Button variant="ghost" size="icon" onClick={onClose} className="absolute right-3 top-3 rounded-full text-white hover:bg-white/10 hover:text-white sm:right-5 sm:top-5">
+            <X className="h-5 w-5" />
+          </Button>
+          <div className="flex items-center justify-center">
             <h3 className="text-xl font-black sm:text-2xl">חסימת תורים</h3>
-            <div className="h-10 w-10" aria-hidden="true" />
           </div>
         </div>
 
-        <div className="max-h-[calc(100dvh-73px)] overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-88px)] sm:px-8 sm:py-6">
+        <div className="max-h-[calc(88vh-72px)] overflow-y-auto px-4 py-4 sm:max-h-[calc(90vh-88px)] sm:px-8 sm:py-6">
           <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-2 sm:rounded-[28px] sm:p-3">

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
-import { hasFutureRecurringAppointment } from '@/lib/recurring-indicators';
 import AccessibilityWidget from "@/components/AccessibilityWidget";
 
 // Internal component to consume context and render the layout
@@ -14,7 +13,6 @@ function MainLayout({ children, currentPageName }) {
   const { setSidebarOpen } = useSidebar();
   const [client, setClient] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [hasFutureRecurringAppointment, setHasFutureRecurringAppointment] = useState(false);
 
   const checkLoginState = useCallback(() => {
     const storedClient = localStorage.getItem('familiaClient');
@@ -65,34 +63,7 @@ function MainLayout({ children, currentPageName }) {
     });
   }, [client]);
 
-  useEffect(() => {
-    let ignore = false;
 
-    const loadFutureRecurringIndicator = async () => {
-      const token = getStoredAuthToken();
-      if (!client?.phone || !token) {
-        if (!ignore) setHasFutureRecurringAppointment(false);
-        return;
-      }
-
-      try {
-        const appointments = await api.Appointment.listMine().catch(() => []);
-        if (!ignore) setHasFutureRecurringAppointment(hasFutureRecurringAppointment(appointments, client));
-      } catch {
-        if (!ignore) setHasFutureRecurringAppointment(false);
-      }
-    };
-
-    loadFutureRecurringIndicator();
-    window.addEventListener('familia-auth-changed', loadFutureRecurringIndicator);
-    window.addEventListener('focus', loadFutureRecurringIndicator);
-
-    return () => {
-      ignore = true;
-      window.removeEventListener('familia-auth-changed', loadFutureRecurringIndicator);
-      window.removeEventListener('focus', loadFutureRecurringIndicator);
-    };
-  }, [client]);
   const handleCallClick = (e) => {
     e.preventDefault();
     window.location.href = "tel:+972523767851";
@@ -174,12 +145,7 @@ function MainLayout({ children, currentPageName }) {
           </Link>
           
           <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
-            <span className="relative inline-flex h-6 w-6 items-center justify-center">
-              <History className="h-6 w-6"/>
-              {hasFutureRecurringAppointment && (
-                <span className="absolute -right-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.16)]" aria-hidden="true" />
-              )}
-            </span>
+            <History className="h-6 w-6"/>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>
           

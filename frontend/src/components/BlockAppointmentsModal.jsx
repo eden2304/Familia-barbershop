@@ -748,6 +748,17 @@ export default function BlockAppointmentsModal({
                   </section>
                 )}
 
+                <div className="grid grid-cols-2 gap-3 xl:hidden">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center">
+                    <div className="text-lg font-black text-slate-900">{activeAppointmentsForDay.length}</div>
+                    <div className="text-xs text-slate-500">תורים ביום הזה</div>
+                  </div>
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-3 text-center">
+                    <div className="text-lg font-black text-amber-900">{blocks.length}</div>
+                    <div className="text-xs text-amber-700">חסימות קיימות</div>
+                  </div>
+                </div>
+
                 <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-slate-100 bg-white/95 pt-4 backdrop-blur sm:static sm:flex-row sm:justify-end sm:border-t-0 sm:bg-transparent sm:pt-0">
                   {editingBlock && (
                     <Button type="button" variant="ghost" onClick={clearForm} className="rounded-full text-slate-500 hover:text-slate-900">
@@ -768,7 +779,7 @@ export default function BlockAppointmentsModal({
               </form>
             </div>
 
-            <div className="space-y-3 sm:space-y-4">
+            <div className="hidden space-y-3 sm:space-y-4 xl:block">
               <section className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 sm:rounded-[28px] sm:p-5">
                 <div className="mb-3 flex items-center gap-2 text-slate-900">
                   <Clock3 className="h-4 w-4" />

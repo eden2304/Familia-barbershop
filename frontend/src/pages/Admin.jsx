@@ -59,7 +59,6 @@ import {
   X,
   BarChart3,
   Ban,
-  Send,
   MoreVertical,
   Replace,
   Repeat,
@@ -413,9 +412,6 @@ export default function Admin() { // Removed props
   const [showAddAppointmentForm, setShowAddAppointmentForm] = useState(false);
   const [showBlockingForm, setShowBlockingForm] = useState(false);
 
-  const [showMessageModal, setShowMessageModal] = useState(false);
-  const [messageText, setMessageText] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
   const [recurringConflictModal, setRecurringConflictModal] = useState({ isOpen: false, message: '', conflicts: [], hasMore: false });
 
@@ -1770,32 +1766,6 @@ const extractRecurringSchedules = (client) => {
     setRecurringSuccessModal({ isOpen: false, message: '', skippedDates: [] });
   };
 
-  const closeMessageModal = () => {
-    setShowMessageModal(false);
-    setMessageText('');
-    setSendingMessage(false);
-  };
-
-  const handleSendGeneralWhatsApp = async () => {
-    if (sendingMessage) return;
-    const text = messageText.trim();
-    if (!text) {
-      toast({ title: 'נא למלא תוכן הודעה', variant: 'destructive' });
-      return;
-    }
-    try {
-      setSendingMessage(true);
-      await AdminApi.whatsappBroadcast({ messageText: text });
-      toast({ title: 'ההודעה נשלחה בהצלחה' });
-      setShowMessageModal(false);
-      setMessageText('');
-    } catch (error) {
-      const description = error?.message || 'שליחת ההודעה נכשלה';
-      toast({ title: 'שגיאה בשליחת הודעה', description, variant: 'destructive' });
-    } finally {
-      setSendingMessage(false);
-    }
-  };
 
   const closeRecurringConflictModal = () => {
     setRecurringConflictModal({ isOpen: false, message: '', conflicts: [], hasMore: false });
@@ -4270,7 +4240,10 @@ const extractRecurringSchedules = (client) => {
                         { label: "הוספת תור", icon: Plus, action: () => { setShowQuickActionsModal(false); setShowAddAppointmentForm(true); } },
                         { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                         { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
-                        { label: "הודעה ללקוחות", icon: MessageSquare, action: () => { setShowQuickActionsModal(false); setShowMessageModal(true); } },
+                        { label: "הודעה ללקוחות", icon: MessageSquare, action: () => {
+                            setShowQuickActionsModal(false);
+                            alert("האפשרות לשלוח הודעה ללקוחות תתווסף בקרוב למערכת!");
+                          } },
                         { label: "בקשות לביטול", icon: XCircle, action: () => {
                             setShowQuickActionsModal(false);
                             alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
@@ -4292,62 +4265,6 @@ const extractRecurringSchedules = (client) => {
                 >
                   סגור
                 </Button>
-              </motion.div>
-            </div>
-        )}
-
-        {showMessageModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" onClick={closeMessageModal}>
-              <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl mx-auto"
-              >
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-gray-900">הודעה ללקוחות</h3>
-                  <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={closeMessageModal}
-                      className="rounded-full"
-                  >
-                    <X className="w-5 h-5" />
-                  </Button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label className="block text-sm font-medium text-gray-700 mb-2">
-                      תוכן ההודעה
-                    </Label>
-                    <textarea
-                        value={messageText}
-                        onChange={(e) => setMessageText(e.target.value)}
-                        placeholder="כתוב כאן את ההודעה שתרצה לשלוח לכל הלקוחות..."
-                        className="w-full h-32 p-3 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-black focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="flex gap-3">
-                    <Button
-                        onClick={closeMessageModal}
-                        variant="outline"
-                        className="flex-1 rounded-full py-3"
-                    >
-                      ביטול
-                    </Button>
-                    <Button
-                        onClick={handleSendGeneralWhatsApp}
-                        className="flex-1 bg-black text-white rounded-full py-3"
-                        disabled={!messageText.trim() || sendingMessage}
-                    >
-                      <Send className="w-4 h-4 ml-2" />
-                      {sendingMessage ? 'שולח...' : 'שלח הודעה'}
-                    </Button>
-                  </div>
-                </div>
               </motion.div>
             </div>
         )}

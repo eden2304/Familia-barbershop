@@ -122,6 +122,7 @@ export class BlockedTimesController {
             .createQueryBuilder('a')
             .leftJoinAndSelect('a.client', 'c')
             .where('a.startsAt < :end AND a.endsAt > :start', { start: startsAt, end: endsAt })
+            .andWhere("COALESCE(a.status, 'booked') != :canceled", { canceled: 'canceled' })
             .orderBy('a.startsAt', 'ASC')
             .getMany();
 
@@ -164,6 +165,7 @@ export class BlockedTimesController {
             .createQueryBuilder('a')
             .leftJoinAndSelect('a.client', 'c')
             .where('a.startsAt < :end AND a.endsAt > :start', { start: startsAt, end: endsAt })
+            .andWhere("COALESCE(a.status, 'booked') != :canceled", { canceled: 'canceled' })
             .orderBy('a.startsAt', 'ASC')
             .getMany();
 

@@ -480,7 +480,7 @@ export default function BlockAppointmentsModal({
           <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-2 sm:rounded-[28px] sm:p-3">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
                   {[
                     { id: "single", label: "יום מסוים", sublabel: "שעות מדויקות ביום אחד", icon: Clock3 },
                     { id: "range", label: "טווח ימים", sublabel: "חסימה מלאה לכמה ימים", icon: CalendarDays },
@@ -527,7 +527,7 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div className="w-full max-w-full overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 px-2 py-2">
+                      <div className="mx-auto w-full max-w-[312px] overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 px-2 py-2 sm:max-w-full">
                         <div ref={singleDayStripRef} dir="rtl" className="flex max-w-full overflow-x-auto gap-3 px-1 pb-1 scrollbar-hide snap-x snap-mandatory scroll-smooth">
                           {dateOptions.map((day, index) => {
                             const ymd = dateToYmd(day);

@@ -527,25 +527,27 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div ref={singleDayStripRef} dir="rtl" className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
-                        {dateOptions.map((day, index) => {
-                          const ymd = dateToYmd(day);
-                          const active = ymd === dateStr;
-                          return (
-                            <div key={ymd} data-day-index={index} className="flex-shrink-0 snap-center">
-                              <button
-                                type="button"
-                                onClick={() => setDateStr(ymd)}
-                                className={`flex h-16 w-14 flex-col items-center justify-center rounded-2xl transition-all duration-200 ${
-                                  active ? "bg-black text-white shadow-md" : "bg-white text-gray-700 hover:bg-gray-50"
-                                }`}
-                              >
-                                <span className="text-xs font-medium">{safeFormat(day, "E")}</span>
-                                <span className="text-lg font-bold">{safeFormat(day, "d")}</span>
-                              </button>
-                            </div>
-                          );
-                        })}
+                      <div className="w-full max-w-full overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 px-2 py-2">
+                        <div ref={singleDayStripRef} dir="rtl" className="flex max-w-full overflow-x-auto gap-3 px-1 pb-1 scrollbar-hide snap-x snap-mandatory scroll-smooth">
+                          {dateOptions.map((day, index) => {
+                            const ymd = dateToYmd(day);
+                            const active = ymd === dateStr;
+                            return (
+                              <div key={ymd} data-day-index={index} className="flex-shrink-0 snap-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setDateStr(ymd)}
+                                  className={`flex h-16 w-14 flex-col items-center justify-center rounded-2xl transition-all duration-200 ${
+                                    active ? "bg-black text-white shadow-md" : "bg-white text-gray-700 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <span className="text-xs font-medium">{safeFormat(day, "E")}</span>
+                                  <span className="text-lg font-bold">{safeFormat(day, "d")}</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </section>
 

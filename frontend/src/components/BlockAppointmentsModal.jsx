@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Admin } from "@/api/entities";
@@ -107,6 +107,7 @@ export default function BlockAppointmentsModal({
   const [dayAppointments, setDayAppointments] = useState([]);
   const [rangeAppointmentsMap, setRangeAppointmentsMap] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const singleDayStripRef = useRef(null);
 
   const updateTimeRange = (id, field, value) => {
     setTimeRanges((current) => current.map((range) => range.id === id ? { ...range, [field]: value } : range));
@@ -279,6 +280,15 @@ export default function BlockAppointmentsModal({
       stop = true;
     };
   }, [appointments, daysInRange, isOpen, mode]);
+
+
+  useEffect(() => {
+    if (mode !== "single" || !singleDayStripRef.current) return;
+    const index = dateOptions.findIndex((day) => dateToYmd(day) === dateStr);
+    if (index < 0) return;
+    const target = singleDayStripRef.current.querySelector(`[data-day-index="${index}"]`);
+    target?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [dateOptions, dateStr, mode]);
 
   const normalizedDayAppointments = useMemo(
     () => (dayAppointments || [])
@@ -468,7 +478,7 @@ export default function BlockAppointmentsModal({
         </div>
 
         <div className="max-h-[calc(100dvh-73px)] overflow-y-auto px-4 py-4 sm:max-h-[calc(92vh-88px)] sm:px-8 sm:py-6">
-          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:gap-6">
+          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
             <div className="space-y-4 sm:space-y-6">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-2 sm:rounded-[28px] sm:p-3">
                 <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -518,24 +528,23 @@ export default function BlockAppointmentsModal({
                         </div>
                       </div>
 
-                      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:gap-3">
-                        {dateOptions.map((day) => {
+                      <div ref={singleDayStripRef} dir="rtl" className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide snap-x snap-mandatory scroll-smooth">
+                        {dateOptions.map((day, index) => {
                           const ymd = dateToYmd(day);
                           const active = ymd === dateStr;
                           return (
-                            <button
-                              key={ymd}
-                              type="button"
-                              onClick={() => setDateStr(ymd)}
-                              className={`min-w-[86px] rounded-[18px] border px-2 py-3 text-center transition sm:min-w-[96px] sm:rounded-[22px] sm:px-3 ${active
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white"
-                              }`}
-                            >
-                              <div className="text-[11px] font-medium uppercase tracking-wide opacity-80 sm:text-xs">{safeFormat(day, "EEE")}</div>
-                              <div className="mt-1 text-base font-black sm:text-lg">{safeFormat(day, "d")}</div>
-                              <div className="text-xs opacity-80">{safeFormat(day, "MMM")}</div>
-                            </button>
+                            <div key={ymd} data-day-index={index} className="flex-shrink-0 snap-center">
+                              <button
+                                type="button"
+                                onClick={() => setDateStr(ymd)}
+                                className={`flex h-16 w-14 flex-col items-center justify-center rounded-2xl transition-all duration-200 ${
+                                  active ? "bg-black text-white shadow-md" : "bg-white text-gray-700 hover:bg-gray-50"
+                                }`}
+                              >
+                                <span className="text-xs font-medium">{safeFormat(day, "E")}</span>
+                                <span className="text-lg font-bold">{safeFormat(day, "d")}</span>
+                              </button>
+                            </div>
                           );
                         })}
                       </div>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
+import { hasFutureRecurringAppointment } from '@/lib/recurring-indicators';
 import AccessibilityWidget from "@/components/AccessibilityWidget";
 
 // Internal component to consume context and render the layout
@@ -76,21 +77,7 @@ function MainLayout({ children, currentPageName }) {
 
       try {
         const appointments = await api.Appointment.listMine().catch(() => []);
-        const hasFutureRecurring = Array.isArray(appointments) && appointments.some((appointment) => {
-          const startsAtValue = appointment?.startsAt ?? appointment?.starts_at ?? appointment?.startAt ?? appointment?.start_at;
-          const startsAt = startsAtValue ? new Date(startsAtValue) : null;
-          const recurringId = appointment?.recurringId ?? appointment?.recurring_id ?? appointment?.recurringScheduleId ?? appointment?.recurring_schedule_id;
-          const status = String(appointment?.status ?? '').toLowerCase();
-          return Boolean(
-            startsAt
-            && !Number.isNaN(startsAt.getTime())
-            && startsAt.getTime() > Date.now()
-            && recurringId
-            && status !== 'canceled'
-          );
-        });
-
-        if (!ignore) setHasFutureRecurringAppointment(hasFutureRecurring);
+        if (!ignore) setHasFutureRecurringAppointment(hasFutureRecurringAppointment(appointments, client));
       } catch {
         if (!ignore) setHasFutureRecurringAppointment(false);
       }

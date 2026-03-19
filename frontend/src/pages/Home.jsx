@@ -11,6 +11,7 @@ import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
+import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -36,19 +37,6 @@ const TikTokIcon = ({ className = "w-7 h-7" }) => (
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
-const getAppointmentDate = (appointment) => {
-  const value = appointment?.startsAt ?? appointment?.starts_at ?? appointment?.startAt ?? appointment?.start_at;
-  const parsed = value ? new Date(value) : null;
-  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
-};
-
-const getRecurringAppointmentId = (appointment) => (
-  appointment?.recurringId
-  ?? appointment?.recurring_id
-  ?? appointment?.recurringScheduleId
-  ?? appointment?.recurring_schedule_id
-  ?? null
-);
 const resolveVideoUrl = (value) => {
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
@@ -145,16 +133,13 @@ export default function Home() {
         || "";
       if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
 
-      const nextRecurring = Array.isArray(myAppointments)
-        ? myAppointments
-            .filter((appointment) => {
-              const startsAt = getAppointmentDate(appointment);
-              const recurringId = getRecurringAppointmentId(appointment);
-              const status = String(appointment?.status ?? '').toLowerCase();
-              return Boolean(startsAt && recurringId && startsAt.getTime() > Date.now() && status !== 'canceled');
-            })
-            .sort((a, b) => getAppointmentDate(a) - getAppointmentDate(b))[0] ?? null
-        : null;
+      const nextRecurring = findNextFutureRecurringAppointment(myAppointments, client ?? (() => {
+        try {
+          return JSON.parse(localStorage.getItem('familiaClient') || 'null');
+        } catch {
+          return null;
+        }
+      })());
       if (!signal?.aborted) setFutureRecurringAppointment(nextRecurring);
     } catch (err) {
       if (err?.name !== 'AbortError') {

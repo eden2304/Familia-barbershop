@@ -477,6 +477,16 @@ export default function Book() {
     }
   }, [step]);
 
+  useEffect(() => {
+    if (!success) return undefined;
+
+    const successTimer = setTimeout(() => {
+      navigate("/");
+      setSuccess(false);
+    }, 20000);
+
+    return () => clearTimeout(successTimer);
+  }, [navigate, success]);
 
 
   /* -------- handlers -------- */
@@ -653,7 +663,11 @@ export default function Book() {
               <CheckCircle2 className="w-10 h-10 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">התור נקבע בהצלחה!</h2>
-            <p className="text-gray-600 mb-8">נתראה בקרוב בפמיליה</p>
+            <div className="text-gray-600 mb-8 space-y-3">
+              <p>נתראה בקרוב בפמיליה</p>
+              <p>לכל שינוי בשעה או במועד התור יש ליצור קשר עם חן ב-WhatsApp או בטלפון.</p>
+              <p className="text-sm text-gray-500">החלון ייסגר אוטומטית בעוד 20 שניות.</p>
+            </div>
             <Button onClick={() => navigate("/")} className="bg-black text-white hover:bg-gray-800 rounded-full px-8 py-3 font-medium w-full">
               חזור למסך הבית
             </Button>

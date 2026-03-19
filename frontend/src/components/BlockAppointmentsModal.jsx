@@ -101,7 +101,7 @@ export default function BlockAppointmentsModal({
   const [dateStr, setDateStr] = useState(() => dateToYmd(new Date()));
   const [rangeStart, setRangeStart] = useState(() => dateToYmd(new Date()));
   const [rangeEnd, setRangeEnd] = useState(() => dateToYmd(addDays(new Date(), 1)));
-  const [timeRanges, setTimeRanges] = useState([{ id: 1, from: "", to: "" }]);
+  const [timeRanges, setTimeRanges] = useState([{ id: 1, from: "", to: "", saved: false }]);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blocks, setBlocks] = useState([]);
   const [dayAppointments, setDayAppointments] = useState([]);
@@ -113,15 +113,14 @@ export default function BlockAppointmentsModal({
     setTimeRanges((current) => current.map((range) => range.id === id ? { ...range, [field]: value } : range));
   };
 
-  const addTimeRange = () => {
-    setTimeRanges((current) => ([
-      ...current,
-      { id: Date.now() + Math.floor(Math.random() * 1000), from: "", to: "" },
-    ]));
-  };
+  const addEmptyDraftRange = () => ({ id: Date.now() + Math.floor(Math.random() * 1000), from: "", to: "", saved: false });
 
   const removeTimeRange = (id) => {
-    setTimeRanges((current) => current.length === 1 ? current : current.filter((range) => range.id !== id));
+    setTimeRanges((current) => {
+      const next = current.filter((range) => range.id !== id);
+      if (next.some((range) => !range.saved)) return next;
+      return [...next, addEmptyDraftRange()];
+    });
   };
 
   const dateOptions = useMemo(
@@ -314,9 +313,36 @@ export default function BlockAppointmentsModal({
           start,
           end,
           valid: Boolean(start && end && end > start),
+          saved: Boolean(range.saved),
         };
       });
   }, [mode, selectedDate, timeRanges]);
+
+  const committedTimeRanges = useMemo(() => normalizedTimeRanges.filter((range) => range.saved), [normalizedTimeRanges]);
+  const draftTimeRange = useMemo(() => normalizedTimeRanges.find((range) => !range.saved) || null, [normalizedTimeRanges]);
+
+  const handleAddTimeRange = () => {
+    if (editingBlock || !draftTimeRange) return;
+    if (!draftTimeRange.valid) {
+      alert("בחר טווח שעות תקין לפני שמוסיפים.");
+      return;
+    }
+    const duplicate = committedTimeRanges.some((range) => range.start?.getTime() === draftTimeRange.start?.getTime() && range.end?.getTime() === draftTimeRange.end?.getTime());
+    if (duplicate) {
+      alert("הטווח הזה כבר נוסף למטה.");
+      return;
+    }
+    const overlapsExisting = committedTimeRanges.some((range) => overlaps(range.start, range.end, draftTimeRange.start, draftTimeRange.end));
+    if (overlapsExisting) {
+      alert("הטווח הזה חופף לטווח שכבר הוספת.");
+      return;
+    }
+
+    setTimeRanges((current) => current.flatMap((range) => {
+      if (range.id !== draftTimeRange.id) return range;
+      return [{ ...range, saved: true }, addEmptyDraftRange()];
+    }));
+  };
 
   const selectedRangeConflicts = useMemo(() => {
     if (mode !== "single") return [];
@@ -370,12 +396,12 @@ export default function BlockAppointmentsModal({
     setDateStr(dateToYmd(new Date()));
     setRangeStart(dateToYmd(new Date()));
     setRangeEnd(dateToYmd(addDays(new Date(), 1)));
-    setTimeRanges([{ id: 1, from: timeOptions[0] || "08:00", to: timeOptions[Math.min(2, timeOptions.length - 1)] || "09:00" }]);
+    setTimeRanges([{ id: 1, from: timeOptions[0] || "08:00", to: timeOptions[Math.min(2, timeOptions.length - 1)] || "09:00", saved: false }]);
   };
 
   const setFullDay = () => {
     if (!hoursForDay?.isClosed) {
-      setTimeRanges([{ id: 1, from: hoursForDay?.open || "08:00", to: hoursForDay?.close || "19:00" }]);
+      setTimeRanges([{ id: 1, from: hoursForDay?.open || "08:00", to: hoursForDay?.close || "19:00", saved: false }]);
     }
   };
 
@@ -392,7 +418,7 @@ export default function BlockAppointmentsModal({
     if (!block?.s || !block?.e) return;
     setMode("single");
     setDateStr(format(block.s, "yyyy-MM-dd"));
-    setTimeRanges([{ id: 1, from: format(block.s, "HH:mm"), to: format(block.e, "HH:mm") }]);
+    setTimeRanges([{ id: 1, from: format(block.s, "HH:mm"), to: format(block.e, "HH:mm"), saved: false }]);
     setEditingBlock(block);
   };
 
@@ -420,7 +446,7 @@ export default function BlockAppointmentsModal({
       if (mode === "single") {
         if (!canSubmitSingle) return;
 
-        const validRanges = normalizedTimeRanges.filter((range) => range.valid);
+        const validRanges = normalizedTimeRanges.filter((range) => range.valid && (range.saved || range.from || range.to));
         if (validRanges.length === 0) {
           alert("בחר לפחות טווח שעות אחד תקין.");
           return;
@@ -564,77 +590,72 @@ export default function BlockAppointmentsModal({
                         )}
                       </div>
                       <div className="space-y-3">
-                        {normalizedTimeRanges.map((range, index) => {
-                          const hasAppointmentConflicts = selectedRangeConflicts.some((entry) => entry.id === range.id);
-                          const hasRangeConflict = overlappingSelectedRanges.some((pair) => pair.includes(range.id));
-                          return (
-                            <div key={range.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                              <div className="mb-3 flex items-center justify-between gap-2">
-                                <div className="text-sm font-semibold text-slate-800">טווח {index + 1}</div>
-                                <div className="flex items-center gap-2">
-                                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full text-slate-500" onClick={() => snapNextHour(range.id)}>
-                                    <Clock3 className="h-4 w-4" />
-                                  </Button>
-                                  {timeRanges.length > 1 && !editingBlock && (
-                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full text-rose-500" onClick={() => removeTimeRange(range.id)}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                  <label className="text-sm font-semibold text-slate-700">משעה</label>
-                                  <Select value={range.from || ""} onValueChange={(value) => updateTimeRange(range.id, "from", value)} disabled={hoursForDay?.isClosed} dir="rtl">
-                                    <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
-                                      <SelectValue placeholder="בחר שעה" />
-                                    </SelectTrigger>
-                                    <SelectContent className="z-[3000]" align="end">
-                                      {timeOptions.slice(0, -1).map((time) => (
-                                        <SelectItem key={`${range.id}-${time}-from`} value={time}>{time}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <label className="text-sm font-semibold text-slate-700">עד שעה</label>
-                                  <Select value={range.to || ""} onValueChange={(value) => updateTimeRange(range.id, "to", value)} disabled={hoursForDay?.isClosed} dir="rtl">
-                                    <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
-                                      <SelectValue placeholder="בחר שעה" />
-                                    </SelectTrigger>
-                                    <SelectContent className="z-[3000]" align="end">
-                                      {timeOptions.map((time) => (
-                                        <SelectItem key={`${range.id}-${time}-to`} value={time}>{time}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-
-                              {(hasAppointmentConflicts || hasRangeConflict || !range.valid) && (
-                                <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs text-rose-700">
-                                  {!range.valid && <div>בחר שעות תקינות לטווח הזה.</div>}
-                                  {hasRangeConflict && <div>הטווח הזה חופף לטווח אחר שבחרת.</div>}
-                                  {hasAppointmentConflicts && <div>יש תורים קיימים בטווח הזה.</div>}
-                                </div>
-                              )}
+                        {draftTimeRange && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <div className="text-sm font-semibold text-slate-800">טווח חדש</div>
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full text-slate-500" onClick={() => snapNextHour(draftTimeRange.id)}>
+                                <Clock3 className="h-4 w-4" />
+                              </Button>
                             </div>
-                          );
-                        })}
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-2">
+                                <label className="text-sm font-semibold text-slate-700">משעה</label>
+                                <Select value={draftTimeRange.from || ""} onValueChange={(value) => updateTimeRange(draftTimeRange.id, "from", value)} disabled={hoursForDay?.isClosed} dir="rtl">
+                                  <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
+                                    <SelectValue placeholder="בחר שעה" />
+                                  </SelectTrigger>
+                                  <SelectContent className="z-[3000]" align="end">
+                                    {timeOptions.slice(0, -1).map((time) => (
+                                      <SelectItem key={`${draftTimeRange.id}-${time}-from`} value={time}>{time}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <label className="text-sm font-semibold text-slate-700">עד שעה</label>
+                                <Select value={draftTimeRange.to || ""} onValueChange={(value) => updateTimeRange(draftTimeRange.id, "to", value)} disabled={hoursForDay?.isClosed} dir="rtl">
+                                  <SelectTrigger className="h-12 rounded-[18px] border-slate-200 bg-white px-4 text-base sm:h-14 sm:rounded-[20px]">
+                                    <SelectValue placeholder="בחר שעה" />
+                                  </SelectTrigger>
+                                  <SelectContent className="z-[3000]" align="end">
+                                    {timeOptions.map((time) => (
+                                      <SelectItem key={`${draftTimeRange.id}-${time}-to`} value={time}>{time}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {committedTimeRanges.length > 0 && !editingBlock && (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-3">
+                            <div className="mb-2 text-sm font-semibold text-slate-800">טווחים שהוספת</div>
+                            <div className="flex flex-wrap gap-2">
+                              {committedTimeRanges.map((range, index) => (
+                                <div key={range.id} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-medium text-white">
+                                  <span>טווח {index + 1}: {safeFormat(range.start, "HH:mm")}–{safeFormat(range.end, "HH:mm")}</span>
+                                  <button type="button" onClick={() => removeTimeRange(range.id)} className="rounded-full bg-white/10 px-1 text-white hover:bg-white/20">×</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <Button type="button" variant="outline" onClick={setFullDay} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
-                          חסום את כל היום
-                        </Button>
                         {!editingBlock && (
-                          <Button type="button" variant="outline" onClick={addTimeRange} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
+                          <Button type="button" variant="outline" onClick={handleAddTimeRange} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
                             <Plus className="ml-1 h-4 w-4" />
                             הוסף טווח שעות
                           </Button>
                         )}
+                        <Button type="button" variant="outline" onClick={setFullDay} disabled={hoursForDay?.isClosed} className="rounded-full border-slate-200 bg-white px-4">
+                          חסום את כל היום
+                        </Button>
                       </div>
 
                       {hoursForDay?.isClosed && (

@@ -2047,7 +2047,7 @@ async function router(req, res) {
         if (!p0 && !p972) return json(res, 200, []);
 
         const q = await pool.query(`
-          select a.id, a.starts_at, a.ends_at, a.status, a.note,
+          select a.id, a.starts_at, a.ends_at, a.status, a.note, a.recurring_id,
                  s.id as service_id, s.name as service_name, s.duration_minutes,
                  c.id as client_id, c.first_name, c.last_name, c.phone
           from appointments a
@@ -2865,13 +2865,17 @@ function compatAppointmentRow(r) {
         client_first_name: r.first_name,
         client_last_name: r.last_name,
         client_phone: r.phone,
+        recurring_id: r.recurring_id ?? null,
+        recurringId: r.recurring_id ?? null,
 
         // שדות חדשים ונוחים לשימוש ב-UI
         service,
         client,
 
         starts_at: r.starts_at,
+        startsAt: r.starts_at,
         ends_at: r.ends_at,
+        endsAt: r.ends_at,
         status: r.status,
         note: r.note || '',
     };

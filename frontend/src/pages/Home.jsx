@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -289,13 +289,13 @@ export default function Home() {
                         </div>
 
                         {futureRecurringLabel && (
-                          <div className="inline-flex max-w-full items-start gap-3 rounded-2xl border border-red-100 bg-gradient-to-l from-red-50 via-white to-red-50 px-4 py-3 shadow-sm">
-                            <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.14)]" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי קבוע ב־{futureRecurringLabel}</p>
-                              <p className="mt-1 text-xs text-gray-600">הוא כבר שמור עבורך במערכת ותוכל לראות אותו גם במסך התורים שלי.</p>
-                            </div>
-                          </div>
+                          <Link
+                            to="/MyAppointmentsPage"
+                            className="block max-w-full rounded-2xl bg-gray-100 px-4 py-3 transition-colors hover:bg-gray-200"
+                          >
+                            <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
+                            <p className="mt-1 text-sm text-gray-600">{futureRecurringLabel}</p>
+                          </Link>
                         )}
                       </div>
                       <div className="flex flex-col gap-2">

@@ -173,11 +173,13 @@ function MainLayout({ children, currentPageName }) {
             <span className="text-xs font-medium">בית</span>
           </Link>
           
-          <Link to="/MyAppointmentsPage" className={`relative flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
-            {hasFutureRecurringAppointment && (
-              <span className="absolute right-2 top-1 h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.16)]" aria-hidden="true" />
-            )}
-            <History className="w-6 h-6"/>
+          <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+            <span className="relative inline-flex">
+              <History className="w-6 h-6"/>
+              {hasFutureRecurringAppointment && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.16)]" aria-hidden="true" />
+              )}
+            </span>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>
           

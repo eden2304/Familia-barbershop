@@ -124,7 +124,7 @@ export default function BlockAppointmentsModal({
   };
 
   const dateOptions = useMemo(
-    () => Array.from({ length: 21 }, (_, index) => addDays(startOfDay(new Date()), index)),
+    () => Array.from({ length: 60 }, (_, index) => addDays(startOfDay(new Date()), index)),
     []
   );
 
@@ -695,46 +695,50 @@ export default function BlockAppointmentsModal({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="mb-2 text-sm font-semibold text-slate-700">מיום</div>
-                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-                          {dateOptions.slice(0, 10).map((day) => {
-                            const ymd = dateToYmd(day);
-                            const active = ymd === rangeStart;
-                            return (
-                              <button
-                                key={`start-${ymd}`}
-                                type="button"
-                                onClick={() => {
-                                  setRangeStart(ymd);
-                                  if (ymd > rangeEnd) setRangeEnd(ymd);
-                                }}
-                                className={`rounded-[16px] px-2 py-2 text-xs transition sm:rounded-full sm:px-3 sm:text-sm ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-                              >
-                                {safeFormat(day, "d/M")}
-                              </button>
-                            );
-                          })}
+                        <div className="w-full overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 px-2 py-2">
+                          <div className="flex max-w-full overflow-x-auto gap-2 px-1 pb-1 scrollbar-hide snap-x snap-mandatory scroll-smooth" dir="rtl">
+                            {dateOptions.map((day) => {
+                              const ymd = dateToYmd(day);
+                              const active = ymd === rangeStart;
+                              return (
+                                <button
+                                  key={`start-${ymd}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setRangeStart(ymd);
+                                    if (ymd > rangeEnd) setRangeEnd(ymd);
+                                  }}
+                                  className={`flex h-12 min-w-[72px] snap-center flex-shrink-0 items-center justify-center rounded-full px-3 text-sm transition ${active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                                >
+                                  {safeFormat(day, "d/M")}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
                       <div>
                         <div className="mb-2 text-sm font-semibold text-slate-700">עד יום</div>
-                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-                          {dateOptions.slice(0, 14).map((day) => {
-                            const ymd = dateToYmd(day);
-                            const active = ymd === rangeEnd;
-                            const disabled = ymd < rangeStart;
-                            return (
-                              <button
-                                key={`end-${ymd}`}
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => setRangeEnd(ymd)}
-                                className={`rounded-[16px] px-2 py-2 text-xs transition sm:rounded-full sm:px-3 sm:text-sm ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
-                              >
-                                {safeFormat(day, "d/M")}
-                              </button>
-                            );
-                          })}
+                        <div className="w-full overflow-hidden rounded-[22px] border border-slate-100 bg-slate-50 px-2 py-2">
+                          <div className="flex max-w-full overflow-x-auto gap-2 px-1 pb-1 scrollbar-hide snap-x snap-mandatory scroll-smooth" dir="rtl">
+                            {dateOptions.map((day) => {
+                              const ymd = dateToYmd(day);
+                              const active = ymd === rangeEnd;
+                              const disabled = ymd < rangeStart;
+                              return (
+                                <button
+                                  key={`end-${ymd}`}
+                                  type="button"
+                                  disabled={disabled}
+                                  onClick={() => setRangeEnd(ymd)}
+                                  className={`flex h-12 min-w-[72px] snap-center flex-shrink-0 items-center justify-center rounded-full px-3 text-sm transition ${active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-100"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
+                                >
+                                  {safeFormat(day, "d/M")}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     </div>

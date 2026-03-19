@@ -62,6 +62,8 @@ function MainLayout({ children, currentPageName }) {
       sessionStorage.setItem('visitTrackedInSession', '1');
     });
   }, [client]);
+
+
   const handleCallClick = (e) => {
     e.preventDefault();
     window.location.href = "tel:+972523767851";
@@ -143,7 +145,7 @@ function MainLayout({ children, currentPageName }) {
           </Link>
           
           <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
-            <History className="w-6 h-6"/>
+            <History className="h-6 w-6"/>
             <span className="text-xs font-medium">התורים שלי</span>
           </Link>
           

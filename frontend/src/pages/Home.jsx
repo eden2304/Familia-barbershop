@@ -1,14 +1,17 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { format } from "date-fns";
+import { he } from "date-fns/locale";
 import VideoGallery from "../components/VideoGallery.jsx";
 import ProductGallery from "../components/ProductGallery.jsx";
 import VerificationModal from "../components/VerificationModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
+import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -33,6 +36,7 @@ const TikTokIcon = ({ className = "w-7 h-7" }) => (
 );
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
 const resolveVideoUrl = (value) => {
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
@@ -51,6 +55,7 @@ export default function Home() {
   const [backgroundVideoUrl, setBackgroundVideoUrl] = useState("");
   const [showAboutText, setShowAboutText] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+  const [futureRecurringAppointment, setFutureRecurringAppointment] = useState(null);
 
   const hasLoadedRef = useRef(false);
 
@@ -88,8 +93,22 @@ export default function Home() {
   const loadData = async (signal) => {
     setLoading(true);
     try {
-      // Testimonials דרך REST
-      const raw = await api.get('/testimonials', { signal }).catch(() => []);
+      const token = getStoredAuthToken();
+      const storedClientPhone = client?.phone || (() => {
+        try {
+          const stored = JSON.parse(localStorage.getItem('familiaClient') || 'null');
+          return stored?.phone || null;
+        } catch {
+          return null;
+        }
+      })();
+      const shouldLoadFutureRecurring = Boolean(token && storedClientPhone);
+
+      const [raw, bg, myAppointments] = await Promise.all([
+        api.get('/testimonials', { signal }).catch(() => []),
+        api.get('/background-videos', { signal }).catch(() => []),
+        shouldLoadFutureRecurring ? api.Appointment.listMine().catch(() => []) : Promise.resolve([]),
+      ]);
 
       const testiFromApi = Array.isArray(raw)
           ? raw.map((t, idx) => ({
@@ -103,8 +122,6 @@ export default function Home() {
 
       if (!signal?.aborted) setTestimonials(testiFromApi);
 
-      // Background videos
-      const bg = await api.get('/background-videos', { signal }).catch(() => []);
       const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
       const rawUrl = active?.imageUrl
         || active?.image_url
@@ -115,6 +132,15 @@ export default function Home() {
         || active?.url
         || "";
       if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
+
+      const nextRecurring = findNextFutureRecurringAppointment(myAppointments, client ?? (() => {
+        try {
+          return JSON.parse(localStorage.getItem('familiaClient') || 'null');
+        } catch {
+          return null;
+        }
+      })());
+      if (!signal?.aborted) setFutureRecurringAppointment(nextRecurring);
     } catch (err) {
       if (err?.name !== 'AbortError') {
         console.error("Error loading data:", err);
@@ -182,6 +208,11 @@ export default function Home() {
 
   const totalTestimonialPages = testimonials.length > 0 ? Math.ceil(testimonials.length / 3) : 1;
   const testimonialsToShow = testimonials.slice(testimonialPage * 3, testimonialPage * 3 + 3);
+  const futureRecurringLabel = useMemo(() => {
+    const startsAt = getAppointmentDate(futureRecurringAppointment);
+    if (!startsAt) return '';
+    return `${format(startsAt, 'EEEE, d בMMMM', { locale: he })} בשעה ${format(startsAt, 'HH:mm')}`;
+  }, [futureRecurringAppointment]);
 
   return (
       <>
@@ -248,12 +279,24 @@ export default function Home() {
                       transition={{ duration: 0.5 }}
                   >
                     <div className="flex justify-between items-center">
-                      <div>
-                        {/* תמיכה גם firstName וגם first_name */}
-                        <h2 className="text-lg font-bold text-gray-900">
-                          שלום {((client.firstName || client.first_name || '').trim()).toString()},
-                        </h2>
-                        <p className="text-sm text-gray-600">שמחים לראות אותך</p>
+                      <div className="space-y-3">
+                        <div>
+                          {/* תמיכה גם firstName וגם first_name */}
+                          <h2 className="text-lg font-bold text-gray-900">
+                            שלום {((client.firstName || client.first_name || '').trim()).toString()},
+                          </h2>
+                          <p className="text-sm text-gray-600">שמחים לראות אותך</p>
+                        </div>
+
+                        {futureRecurringLabel && (
+                          <Link
+                            to="/MyAppointmentsPage"
+                            className="block max-w-full rounded-2xl bg-gray-100 px-4 py-3 transition-colors hover:bg-gray-200"
+                          >
+                            <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
+                            <p className="mt-1 text-sm text-gray-600">{futureRecurringLabel}</p>
+                          </Link>
+                        )}
                       </div>
                       <div className="flex flex-col gap-2">
                         <Button

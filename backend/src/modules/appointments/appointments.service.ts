@@ -834,6 +834,10 @@ export class AppointmentsService {
         const norm = this.normalizePhone(phoneRaw);
         return this.apptRepo.find({
             where: { client: { phone: norm } as any },
+            relations: {
+                client: true,
+                service: true,
+            },
             order: { startsAt: 'DESC' },
         });
     }

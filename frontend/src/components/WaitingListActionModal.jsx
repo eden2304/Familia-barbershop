@@ -5,8 +5,11 @@ import { Scissors, Calendar, Clock, Phone, Check, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { WaitingList } from '@/api/entities';
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 
 export default function WaitingListActionModal({ isOpen, onClose, entry, service, onBooked, onRemoved }) {
+  const { showAlert } = useSystemPopup();
+
   if (!entry) return null;
 
   const desiredDate = entry.desired_date ?? entry.desiredDate;
@@ -30,7 +33,7 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
     } catch (error) {
       console.error("Error booking appointment:", error);
       const message = error?.payload?.message || error?.message || "שגיאה בקביעת התור";
-      alert(message);
+      await showAlert(message);
     }
   };
 
@@ -42,7 +45,7 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
     } catch (error) {
       console.error("Error removing waiting list entry:", error);
       const message = error?.payload?.message || error?.message || "שגיאה במחיקה";
-      alert(message);
+      await showAlert(message);
     }
   };
 

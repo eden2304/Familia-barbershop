@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UploadFile } from "@/api/integrations";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 
 export default function ProductForm({ product, onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
@@ -11,12 +12,13 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
   });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const { showAlert } = useSystemPopup();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!product && !file) {
-      alert("נא לבחור תמונה עבור מוצר חדש.");
+      await showAlert("נא לבחור תמונה עבור מוצר חדש.");
       return;
     }
 
@@ -37,7 +39,7 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
 
     } catch (error) {
       console.error("Error saving product:", error);
-      alert("שגיאה בשמירת המוצר");
+      await showAlert("שגיאה בשמירת המוצר");
     } finally {
       setUploading(false);
     }

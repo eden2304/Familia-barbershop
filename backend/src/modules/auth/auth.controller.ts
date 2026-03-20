@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, ConflictException, Res, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, ConflictException, Res, Req, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { RequestCodeDto } from './dto/request-code.dto';
@@ -25,6 +25,9 @@ export class AuthController {
     @Post('auth/request-code')
     @HttpCode(200)
     async requestCode(@Body() body: RequestCodeDto) {
+        if (await this.svc.isBlocked(body.phone)) {
+            throw new ForbiddenException('CLIENT_BLOCKED');
+        }
         const exists = await this.svc.isRegistered(body.phone);
         if (exists) {
             throw new ConflictException('ALREADY_REGISTERED');
@@ -38,6 +41,9 @@ export class AuthController {
     @Post('auth/request-code-login')
     @HttpCode(200)
     async requestCodeLogin(@Body() body: RequestCodeDto) {
+        if (await this.svc.isBlocked(body.phone)) {
+            throw new ForbiddenException('CLIENT_BLOCKED');
+        }
         const exists = await this.svc.isRegistered(body.phone);
         if (!exists) {
             throw new ConflictException('UNREGISTERED_CLIENT');
@@ -134,7 +140,8 @@ export class AuthController {
     @HttpCode(200)
     async checkPhone(@Body() body: RequestCodeDto) {
         const exists = await this.svc.isRegistered(body.phone);
-        return { ok: true, exists };
+        const isBlocked = await this.svc.isBlocked(body.phone);
+        return { ok: true, exists, isBlocked };
     }
 
     @Public()

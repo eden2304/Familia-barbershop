@@ -18,6 +18,7 @@ export class PublicClientsController {
             firstName: (client as any).firstName ?? (client as any).first_name ?? '',
             lastName: (client as any).lastName ?? (client as any).last_name ?? '',
             isMember: Boolean((client as any).isMember ?? (client as any).is_member ?? false),
+            isBlocked: Boolean((client as any).isBlocked ?? (client as any).is_blocked ?? false),
         };
     }
 }

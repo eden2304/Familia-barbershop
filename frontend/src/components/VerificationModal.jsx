@@ -9,6 +9,7 @@ import { setStoredAuthToken } from '@/utils/authStorage';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const BLOCKED_CLIENT_MESSAGE = "כדי לקבוע תור חדש בFamilia, יש ליצור קשר עם חן בWhatsApp או בטלפון";
 
 const notifyAuthChange = () => {
   if (typeof window === "undefined") return;
@@ -90,8 +91,20 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [infoMessage, setInfoMessage] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
   const [rateLimitTimer, setRateLimitTimer] = useState(0);
+  const [showBlockedPopup, setShowBlockedPopup] = useState(false);
   const inputRefs = useRef([]);
   const termsFeedbackTimeoutRef = useRef(null);
+
+  const showBlockedClientPopup = () => {
+    setCode(new Array(4).fill(""));
+    setLoading(false);
+    setError("");
+    setInfoMessage("");
+    setRateLimitTimer(0);
+    setResendTimer(0);
+    setView("loginPhone");
+    setShowBlockedPopup(true);
+  };
 
   const resetToHomeAfterOtpExceeded = () => {
     setCode(new Array(4).fill(""));
@@ -170,6 +183,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
   };
 
   const handleApiError = (e, fallbackMessage) => {
+    if (e?.status === 403 && (e?.payload?.message === "CLIENT_BLOCKED" || e?.message === "CLIENT_BLOCKED")) {
+      showBlockedClientPopup();
+      return true;
+    }
     if (e?.status === 429) {
       setRateLimitError(e?.retryAfterSeconds ?? e?.payload?.retryAfterSeconds);
       return true;
@@ -713,6 +730,41 @@ export default function VerificationModal({ onVerify, onCancel }) {
             </AnimatePresence>
           </motion.div>
         </motion.div>
+
+        <AnimatePresence>
+          {showBlockedPopup && (
+              <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
+              >
+                <motion.div
+                    initial={{ scale: 0.92, y: 24, opacity: 0 }}
+                    animate={{ scale: 1, y: 0, opacity: 1 }}
+                    exit={{ scale: 0.96, y: 12, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    onClick={(event) => event.stopPropagation()}
+                    className="w-full max-w-sm rounded-[28px] bg-zinc-900 px-6 py-7 text-center text-white shadow-2xl"
+                >
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500/15">
+                    <Shield className="h-7 w-7 text-red-300" />
+                  </div>
+                  <h3 className="mb-2 text-xl font-bold">לא ניתן להתחבר</h3>
+                  <p className="mb-6 text-sm leading-7 text-zinc-200">
+                    {BLOCKED_CLIENT_MESSAGE}
+                  </p>
+                  <Button
+                      type="button"
+                      onClick={() => setShowBlockedPopup(false)}
+                      className="w-full rounded-full bg-white text-zinc-900 hover:bg-zinc-100"
+                  >
+                    אישור
+                  </Button>
+                </motion.div>
+              </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* תקנון */}
         {showTerms && (

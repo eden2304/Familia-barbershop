@@ -84,40 +84,40 @@ export function SystemPopupProvider({ children }) {
           className="w-[min(calc(100vw-32px),22rem)] rounded-[24px] border-0 bg-white p-0 text-right shadow-2xl"
           dir="rtl"
         >
-          <div className="relative space-y-4 px-5 pb-5 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
+          <div className="relative space-y-3 px-5 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
             <button
               type="button"
               onClick={() => closePopup(dismissValue)}
-              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="absolute right-3 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               aria-label="סגור חלון"
             >
               <X className="h-4 w-4" />
             </button>
 
-            <AlertDialogHeader className="space-y-1.5 pt-6 text-center sm:text-center">
+            <AlertDialogHeader className="space-y-1 pt-4 text-center sm:text-center">
               <AlertDialogTitle className="text-xl font-black text-slate-900 sm:text-[1.35rem]">
                 {popupState?.title}
               </AlertDialogTitle>
-              <AlertDialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-sm leading-6 text-slate-600 sm:text-[0.95rem]">
+              <AlertDialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-sm leading-5.5 text-slate-600 sm:text-[0.95rem]">
                 {popupState?.description}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <AlertDialogFooter className="flex-col-reverse items-center gap-2 pt-1 sm:flex-col-reverse sm:space-x-0">
-              {popupState?.mode === "confirm" && (
-                <AlertDialogCancel className="mt-0 h-10 min-w-24 rounded-xl border-slate-200 px-5 text-sm font-medium">
-                  {popupState?.cancelText}
-                </AlertDialogCancel>
-              )}
+            <AlertDialogFooter className={`pt-1 ${popupState?.mode === "confirm" ? "grid grid-cols-2 gap-2 sm:grid-cols-2" : "flex items-center justify-center"}`}>
               <AlertDialogAction
                 onClick={(event) => {
                   event.preventDefault();
                   closePopup(true);
                 }}
-                className="h-10 min-w-28 rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800"
+                className={`h-10 rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800 ${popupState?.mode === "confirm" ? "w-full" : "min-w-28"}`}
               >
                 {popupState?.confirmText}
               </AlertDialogAction>
+              {popupState?.mode === "confirm" && (
+                <AlertDialogCancel className="mt-0 h-10 w-full rounded-xl border-slate-200 px-5 text-sm font-medium">
+                  {popupState?.cancelText}
+                </AlertDialogCancel>
+              )}
             </AlertDialogFooter>
           </div>
         </AlertDialogContent>

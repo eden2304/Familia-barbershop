@@ -8,7 +8,7 @@ import { BusinessHours } from "@/api/entities";
 import { Testimonial } from "@/api/entities";
 import { GalleryImage } from "@/api/entities";
 import { WaitingList } from "@/api/entities";
-import { Client } from "@/api/entities";
+import { Client, LocalClient } from "@/api/entities";
 import { BackgroundVideo } from "@/api/entities";
 import { Product } from "@/api/entities";
 import { Setting } from "@/api/entities";
@@ -350,6 +350,9 @@ export default function Admin() { // Removed props
   const [clientDetailsAppointmentsLoading, setClientDetailsAppointmentsLoading] = useState(false);
   const [clientDetailsAppointmentsError, setClientDetailsAppointmentsError] = useState(null);
   const [cancelingAppointmentId, setCancelingAppointmentId] = useState(null);
+  const [clientNameEditDraft, setClientNameEditDraft] = useState({ first_name: "", last_name: "" });
+  const [isEditingClientName, setIsEditingClientName] = useState(false);
+  const [isSavingClientName, setIsSavingClientName] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointment, setSelectedAppointment] = useState(null);
@@ -374,6 +377,75 @@ export default function Admin() { // Removed props
     const last = client.last_name ?? client.lastName ?? '';
     const full = `${first} ${last}`.trim();
     return full || client.name?.trim() || '';
+  };
+
+  const buildClientNameParts = (client) => ({
+    first_name: String(client?.first_name ?? client?.firstName ?? '').trim(),
+    last_name: String(client?.last_name ?? client?.lastName ?? '').trim(),
+  });
+
+  const buildClientRecord = (client, overrides = {}) => {
+    const firstName = String(overrides.first_name ?? overrides.firstName ?? client?.first_name ?? client?.firstName ?? '').trim();
+    const lastName = String(overrides.last_name ?? overrides.lastName ?? client?.last_name ?? client?.lastName ?? '').trim();
+    const phoneValue = overrides.phone ?? overrides.client_phone ?? client?.phone ?? client?.client_phone ?? '';
+    const memberFlag = Boolean(overrides.isMember ?? overrides.is_member ?? client?.isMember ?? client?.is_member ?? false);
+    return {
+      ...client,
+      ...overrides,
+      first_name: firstName,
+      last_name: lastName,
+      firstName,
+      lastName,
+      name: `${firstName} ${lastName}`.trim(),
+      phone: phoneValue,
+      client_phone: phoneValue,
+      isMember: memberFlag,
+      is_member: memberFlag,
+    };
+  };
+
+  const syncEditedClientAcrossState = (updatedClient) => {
+    if (!updatedClient) return;
+    setAllClients((prev) => (prev || []).map((client) => (
+      String(client.id) === String(updatedClient.id) ? buildClientRecord(client, updatedClient) : client
+    )));
+    setClientDetailsModal((prev) => {
+      if (!prev?.client || String(prev.client.id) !== String(updatedClient.id)) return prev;
+      return { ...prev, client: buildClientRecord(prev.client, updatedClient) };
+    });
+    setAppointments((prev) => (prev || []).map((appointment) => {
+      const appointmentClientId = appointment?.client_id ?? appointment?.clientId ?? appointment?.client?.id;
+      if (String(appointmentClientId) !== String(updatedClient.id)) return appointment;
+      return {
+        ...appointment,
+        client_first_name: updatedClient.first_name,
+        client_last_name: updatedClient.last_name,
+        first_name: updatedClient.first_name,
+        last_name: updatedClient.last_name,
+        client_name: `${updatedClient.first_name} ${updatedClient.last_name}`.trim(),
+        client: appointment?.client ? buildClientRecord(appointment.client, updatedClient) : appointment?.client,
+      };
+    }));
+    setWeeklyAppointmentsData((prev) => (prev || []).map((appointment) => {
+      const appointmentClientId = appointment?.client_id ?? appointment?.clientId ?? appointment?.client?.id;
+      if (String(appointmentClientId) !== String(updatedClient.id)) return appointment;
+      return {
+        ...appointment,
+        client_first_name: updatedClient.first_name,
+        client_last_name: updatedClient.last_name,
+        first_name: updatedClient.first_name,
+        last_name: updatedClient.last_name,
+        client_name: `${updatedClient.first_name} ${updatedClient.last_name}`.trim(),
+        client: appointment?.client ? buildClientRecord(appointment.client, updatedClient) : appointment?.client,
+      };
+    }));
+
+    const currentLocalClient = LocalClient?.get?.();
+    const updatedPhone = normalizePhone(updatedClient.phone ?? updatedClient.client_phone ?? "");
+    const localPhone = normalizePhone(currentLocalClient?.phone ?? currentLocalClient?.client_phone ?? "");
+    if (currentLocalClient && updatedPhone && localPhone === updatedPhone) {
+      LocalClient.save(buildClientRecord(currentLocalClient, updatedClient));
+    }
   };
 
   const findClientForAppointment = (apt) => {
@@ -2184,10 +2256,17 @@ const extractRecurringSchedules = (client) => {
 
   const openClientDetails = (client) => {
     if (!client) return;
-    setClientDetailsModal({ isOpen: true, client });
+    const normalizedClient = buildClientRecord(client);
+    setClientNameEditDraft(buildClientNameParts(normalizedClient));
+    setIsEditingClientName(false);
+    setIsSavingClientName(false);
+    setClientDetailsModal({ isOpen: true, client: normalizedClient });
   };
 
   const closeClientDetailsModal = () => {
+    setClientNameEditDraft({ first_name: "", last_name: "" });
+    setIsEditingClientName(false);
+    setIsSavingClientName(false);
     setClientDetailsModal({ isOpen: false, client: null });
   };
 
@@ -2229,6 +2308,51 @@ const extractRecurringSchedules = (client) => {
       toast({ title: 'שגיאה בביטול התור', description, variant: 'destructive' });
     } finally {
       setCancelingAppointmentId(null);
+    }
+  };
+
+  const handleStartClientNameEdit = () => {
+    if (!clientDetailsModal?.client) return;
+    setClientNameEditDraft(buildClientNameParts(clientDetailsModal.client));
+    setIsEditingClientName(true);
+  };
+
+  const handleClientNameDraftChange = (field, value) => {
+    setClientNameEditDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveClientName = async () => {
+    const currentClient = clientDetailsModal?.client;
+    if (!currentClient?.id || isSavingClientName) return;
+    const nextFirst = String(clientNameEditDraft.first_name ?? '').trim();
+    const nextLast = String(clientNameEditDraft.last_name ?? '').trim();
+    const currentNames = buildClientNameParts(currentClient);
+    if (nextFirst === currentNames.first_name && nextLast === currentNames.last_name) {
+      setIsEditingClientName(false);
+      return;
+    }
+    try {
+      setIsSavingClientName(true);
+      const payload = {
+        first_name: nextFirst,
+        last_name: nextLast,
+        phone: normalizePhone(currentClient.phone ?? currentClient.client_phone ?? ""),
+        is_member: Boolean(currentClient.isMember ?? currentClient.is_member),
+      };
+      const response = Client?.update
+        ? await Client.update(currentClient.id, payload)
+        : await api.put(`/clients/${currentClient.id}`, payload);
+      const updatedClient = buildClientRecord(currentClient, response ?? payload);
+      syncEditedClientAcrossState(updatedClient);
+      setClientNameEditDraft(buildClientNameParts(updatedClient));
+      setIsEditingClientName(false);
+      toast({ title: 'שם הלקוח עודכן', description: 'השם נשמר ועודכן בכל המערכת.' });
+    } catch (error) {
+      console.error('Failed to update client name', error);
+      const description = error?.payload?.message || error?.payload?.error || error?.message || 'עדכון שם הלקוח נכשל. נסה שוב.';
+      toast({ title: 'שגיאה בעדכון שם הלקוח', description, variant: 'destructive' });
+    } finally {
+      setIsSavingClientName(false);
     }
   };
 
@@ -4293,14 +4417,72 @@ const extractRecurringSchedules = (client) => {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="rounded-[28px] bg-gray-50 p-5 space-y-3">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="text-xl font-semibold text-gray-900">{clientDisplayName}</p>
-                        {memberFlag && (
-                            <Badge variant="secondary" className="flex items-center gap-1 bg-amber-100 text-amber-700">
-                              <Crown className="w-4 h-4" />
-                              <span>חבר מועדון</span>
-                            </Badge>
-                        )}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-3">
+                          {isEditingClientName ? (
+                              <div className="space-y-3">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-1">
+                                    <Label htmlFor="client-first-name">שם פרטי</Label>
+                                    <Input
+                                        id="client-first-name"
+                                        value={clientNameEditDraft.first_name}
+                                        onChange={(event) => handleClientNameDraftChange('first_name', event.target.value)}
+                                        placeholder="שם פרטי"
+                                        disabled={isSavingClientName}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label htmlFor="client-last-name">שם משפחה</Label>
+                                    <Input
+                                        id="client-last-name"
+                                        value={clientNameEditDraft.last_name}
+                                        onChange={(event) => handleClientNameDraftChange('last_name', event.target.value)}
+                                        placeholder="שם משפחה"
+                                        disabled={isSavingClientName}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                      type="button"
+                                      onClick={handleSaveClientName}
+                                      disabled={isSavingClientName}
+                                      className="gap-2"
+                                  >
+                                    {isSavingClientName && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    {isSavingClientName ? 'שומר…' : 'אישור'}
+                                  </Button>
+                                  <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setClientNameEditDraft(buildClientNameParts(client));
+                                        setIsEditingClientName(false);
+                                      }}
+                                      disabled={isSavingClientName}
+                                  >
+                                    ביטול
+                                  </Button>
+                                </div>
+                              </div>
+                          ) : (
+                              <button
+                                  type="button"
+                                  onClick={handleStartClientNameEdit}
+                                  className="group inline-flex items-center gap-2 rounded-full px-1 py-1 text-right transition hover:bg-white"
+                              >
+                                <span className="text-xl font-semibold text-gray-900">{clientDisplayName}</span>
+                                <Edit className="w-4 h-4 text-gray-400 transition group-hover:text-gray-700" />
+                              </button>
+                          )}
+                          {memberFlag && (
+                              <Badge variant="secondary" className="flex items-center gap-1 bg-amber-100 text-amber-700 w-fit">
+                                <Crown className="w-4 h-4" />
+                                <span>חבר מועדון</span>
+                              </Badge>
+                          )}
+                        </div>
                       </div>
                       <p className="flex items-center gap-2 text-sm text-gray-600">
                         <Phone className="w-4 h-4 text-gray-400" />

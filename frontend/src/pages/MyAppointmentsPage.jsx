@@ -11,6 +11,7 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { clearStoredClient, readStoredClient, writeStoredClient } from '@/utils/clientStorage';
 
 /* ---------------- utils ---------------- */
 const normalizeClientObject = (raw) => {
@@ -133,26 +134,45 @@ export default function MyAppointmentsPage() {
   }
 
   useEffect(() => {
-    const raw = localStorage.getItem("familiaClient");
     const token = getStoredAuthToken();
-    if (!raw || !token) {
-      localStorage.removeItem("familiaClient");
+    const storedClient = readStoredClient();
+    if (!storedClient || !token) {
+      clearStoredClient({ dispatch: false });
       clearStoredAuth();
       setClient(null);
       setLoading(false);
       return;
     }
     try {
-      const parsed = normalizeClientObject(JSON.parse(raw));
+      const parsed = normalizeClientObject(storedClient);
       setClient(parsed);
       fetchMine();
     } catch (e) {
       console.error("bad client in storage", e);
-      localStorage.removeItem("familiaClient");
+      clearStoredClient({ dispatch: false });
       clearStoredAuth();
       setClient(null);
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const syncClientFromStorage = () => {
+      const token = getStoredAuthToken();
+      const storedClient = readStoredClient();
+      if (!storedClient || !token) {
+        setClient(null);
+        return;
+      }
+      setClient(normalizeClientObject(storedClient));
+    };
+
+    window.addEventListener('familia-client-updated', syncClientFromStorage);
+    window.addEventListener('storage', syncClientFromStorage);
+    return () => {
+      window.removeEventListener('familia-client-updated', syncClientFromStorage);
+      window.removeEventListener('storage', syncClientFromStorage);
+    };
   }, []);
 
   const fetchMine = async () => {
@@ -197,7 +217,7 @@ export default function MyAppointmentsPage() {
   const handleLoginSuccess = (loggedInClient) => {
     // לתאימות לשני פורמטים
     const norm = normalizeClientObject(loggedInClient);
-    localStorage.setItem("familiaClient", JSON.stringify(norm));
+    writeStoredClient(norm);
     setClient(norm);
     setShowVerification(false);
     setShowPostLoginLoading(true);

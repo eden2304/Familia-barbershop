@@ -390,6 +390,7 @@ export default function Admin() { // Removed props
     const lastName = String(overrides.last_name ?? overrides.lastName ?? client?.last_name ?? client?.lastName ?? '').trim();
     const phoneValue = overrides.phone ?? overrides.client_phone ?? client?.phone ?? client?.client_phone ?? '';
     const memberFlag = Boolean(overrides.isMember ?? overrides.is_member ?? client?.isMember ?? client?.is_member ?? false);
+    const blockedFlag = Boolean(overrides.isBlocked ?? overrides.is_blocked ?? client?.isBlocked ?? client?.is_blocked ?? false);
     return {
       ...client,
       ...overrides,
@@ -402,6 +403,8 @@ export default function Admin() { // Removed props
       client_phone: phoneValue,
       isMember: memberFlag,
       is_member: memberFlag,
+      isBlocked: blockedFlag,
+      is_blocked: blockedFlag,
     };
   };
 
@@ -502,6 +505,7 @@ export default function Admin() { // Removed props
   const [editingClient, setEditingClient] = useState(null);
   const [clientSearchTerm, setClientSearchTerm] = useState("");
   const [showMembersOnlyClients, setShowMembersOnlyClients] = useState(false);
+  const [showBlockedClients, setShowBlockedClients] = useState(false);
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
@@ -2242,6 +2246,7 @@ const extractRecurringSchedules = (client) => {
       first_name: client.first_name ?? client.firstName ?? "",
       last_name: client.last_name ?? client.lastName ?? "",
       phone: normalizePhone(client.phone ?? client.client_phone ?? ""),
+      is_blocked: Boolean(client.isBlocked ?? client.is_blocked),
     };
     try {
       if (Client?.update) {
@@ -2253,6 +2258,49 @@ const extractRecurringSchedules = (client) => {
     } catch (error) {
       console.error("Error updating membership:", error);
       alert("שגיאה בעדכון סטטוס המועדון.");
+    }
+  };
+
+  const toggleClientBlockedStatus = async (client) => {
+    if (!client?.id) return;
+    const isBlocked = Boolean(client.isBlocked ?? client.is_blocked);
+    const confirmed = window.confirm(
+      isBlocked
+        ? 'להחזיר את הלקוח לרשימת הלקוחות הרגילה?'
+        : 'לחסום את הלקוח? הוא לא יופיע ברשימת הלקוחות הרגילה ולא יוכל להתחבר.'
+    );
+    if (!confirmed) return;
+
+    const payload = {
+      first_name: client.first_name ?? client.firstName ?? "",
+      last_name: client.last_name ?? client.lastName ?? "",
+      phone: normalizePhone(client.phone ?? client.client_phone ?? ""),
+      is_member: Boolean(client.isMember ?? client.is_member),
+      is_blocked: !isBlocked,
+    };
+
+    try {
+      const response = Client?.update
+        ? await Client.update(client.id, payload)
+        : await api.put(`/clients/${client.id}`, payload);
+      const updatedClient = buildClientRecord(client, response ?? payload);
+      syncEditedClientAcrossState(updatedClient);
+      toast({
+        title: isBlocked ? 'החסימה בוטלה' : 'הלקוח נחסם',
+        description: isBlocked
+          ? 'הלקוח חזר לרשימת הלקוחות הרגילה.'
+          : 'הלקוח עבר לרשימת הלקוחות החסומים ולא יוכל להתחבר.',
+      });
+      if (!isBlocked) {
+        setShowBlockedClients(true);
+      }
+    } catch (error) {
+      console.error("Error updating blocked status:", error);
+      toast({
+        title: 'שגיאה בעדכון החסימה',
+        description: error?.payload?.message || error?.payload?.error || error?.message || 'עדכון סטטוס חסימה נכשל.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -2340,6 +2388,7 @@ const extractRecurringSchedules = (client) => {
         last_name: nextLast,
         phone: normalizePhone(currentClient.phone ?? currentClient.client_phone ?? ""),
         is_member: Boolean(currentClient.isMember ?? currentClient.is_member),
+        is_blocked: Boolean(currentClient.isBlocked ?? currentClient.is_blocked),
       };
       const response = Client?.update
         ? await Client.update(currentClient.id, payload)
@@ -2587,6 +2636,8 @@ const extractRecurringSchedules = (client) => {
     const term = clientSearchTerm.trim().toLowerCase();
     return clientDataWithAppointments.filter((client) => {
       const memberFlag = Boolean(client.isMember ?? client.is_member);
+      const blockedFlag = Boolean(client.isBlocked ?? client.is_blocked);
+      if (showBlockedClients !== blockedFlag) return false;
       if (showMembersOnlyClients && !memberFlag) return false;
       if (!term) return true;
       const nameParts = [
@@ -2598,7 +2649,7 @@ const extractRecurringSchedules = (client) => {
           .replace(/\D/g, '');
       return displayName.includes(term) || phoneDigits.includes(term);
     });
-  }, [clientDataWithAppointments, clientSearchTerm, showMembersOnlyClients]);
+  }, [clientDataWithAppointments, clientSearchTerm, showBlockedClients, showMembersOnlyClients]);
 
   const businessHoursByDay = useMemo(() => {
     const arr = Array.from({ length: 7 }, () => null);
@@ -3403,20 +3454,33 @@ const extractRecurringSchedules = (client) => {
                                 onChange={(e) => setClientSearchTerm(e.target.value)}
                                 className="md:max-w-sm"
                             />
-                            <label className="flex items-center gap-2 text-sm text-gray-600">
-                              <Switch
-                                  checked={showMembersOnlyClients}
-                                  onCheckedChange={(val) => setShowMembersOnlyClients(Boolean(val))}
-                              />
-                              <span>הצג רק חברי מועדון</span>
-                            </label>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Button
+                                  type="button"
+                                  variant={showBlockedClients ? "default" : "outline"}
+                                  onClick={() => setShowBlockedClients((prev) => !prev)}
+                                  className={showBlockedClients ? "bg-red-600 text-white hover:bg-red-700" : "border-red-200 text-red-700 hover:bg-red-50"}
+                              >
+                                {showBlockedClients ? 'הצג לקוחות רגילים' : 'הצג לקוחות חסומים'}
+                              </Button>
+                              <label className="flex items-center gap-2 text-sm text-gray-600">
+                                <Switch
+                                    checked={showMembersOnlyClients}
+                                    onCheckedChange={(val) => setShowMembersOnlyClients(Boolean(val))}
+                                />
+                                <span>הצג רק חברי מועדון</span>
+                              </label>
+                            </div>
                           </div>
                           {filteredClients.length === 0 ? (
-                              <p className="text-sm text-gray-500">לא נמצאו לקוחות תואמים.</p>
+                              <p className="text-sm text-gray-500">
+                                {showBlockedClients ? 'לא נמצאו לקוחות חסומים תואמים.' : 'לא נמצאו לקוחות תואמים.'}
+                              </p>
                           ) : (
                               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                 {filteredClients.map((client) => {
                                   const memberFlag = Boolean(client.isMember ?? client.is_member);
+                                  const blockedFlag = Boolean(client.isBlocked ?? client.is_blocked);
                                   const first = client.first_name ?? client.firstName ?? (client.name?.split(' ')[0] ?? '');
                                   const last  = client.last_name  ?? client.lastName  ?? (client.name?.split(' ').slice(1).join(' ') ?? '');
                                   const phoneDisplay = client.phone ?? client.client_phone ?? '';
@@ -3452,6 +3516,12 @@ const extractRecurringSchedules = (client) => {
                                                     >
                                                       <Crown className="w-3.5 h-3.5" />
                                                       <span>חבר מועדון</span>
+                                                    </Badge>
+                                                )}
+                                                {blockedFlag && (
+                                                    <Badge variant="destructive" className="flex items-center gap-1">
+                                                      <Ban className="w-3.5 h-3.5" />
+                                                      <span>לקוח חסום</span>
                                                     </Badge>
                                                 )}
                                                 {primaryRecurring && (
@@ -3523,19 +3593,32 @@ const extractRecurringSchedules = (client) => {
 
                                           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
                                             <p className="text-xs text-gray-600">
-                                              {memberFlag ? 'הלקוח חבר במועדון' : 'הלקוח אינו חבר מועדון'}
+                                              {blockedFlag ? 'הלקוח חסום ולא יכול להתחבר למערכת' : memberFlag ? 'הלקוח חבר במועדון' : 'הלקוח אינו חבר מועדון'}
                                             </p>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={(event) => {
-                                                  event.stopPropagation();
-                                                  toggleClientMembership(client);
-                                                }}
-                                                className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
-                                            >
-                                              {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
-                                            </Button>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    toggleClientMembership(client);
+                                                  }}
+                                                  className={memberFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : ''}
+                                              >
+                                                {memberFlag ? 'הסר ממועדון' : 'הפוך לחבר'}
+                                              </Button>
+                                              <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    toggleClientBlockedStatus(client);
+                                                  }}
+                                                  className={blockedFlag ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : 'border-red-300 text-red-700 hover:bg-red-50'}
+                                              >
+                                                {blockedFlag ? 'בטל חסימה' : 'חסום לקוח'}
+                                              </Button>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
@@ -4484,6 +4567,12 @@ const extractRecurringSchedules = (client) => {
                                 <span>חבר מועדון</span>
                               </Badge>
                           )}
+                          {Boolean(client.isBlocked ?? client.is_blocked) && (
+                              <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                                <Ban className="w-4 h-4" />
+                                <span>לקוח חסום</span>
+                              </Badge>
+                          )}
                         </div>
                       </div>
                       <p className="flex items-center gap-2 text-sm text-gray-600">
@@ -4492,7 +4581,20 @@ const extractRecurringSchedules = (client) => {
                       </p>
                       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                         <span>סה"כ תורים עתידיים: {upcomingCount}</span>
+                        {Boolean(client.isBlocked ?? client.is_blocked) && (
+                          <span className="text-red-600">לקוח חסום לא יכול לקבל קוד אימות או להתחבר לאתר</span>
+                        )}
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => toggleClientBlockedStatus(client)}
+                          className={Boolean(client.isBlocked ?? client.is_blocked) ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50' : 'border-red-300 text-red-700 hover:bg-red-50'}
+                      >
+                        {Boolean(client.isBlocked ?? client.is_blocked) ? 'בטל חסימת לקוח' : 'חסום לקוח'}
+                      </Button>
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">

@@ -6,6 +6,7 @@ function normalizeClientPayload(raw) {
   const lastName = String(raw.lastName ?? raw.last_name ?? "").trim();
   const phone = String(raw.phone ?? raw.client_phone ?? "").trim();
   const isMember = Boolean(raw.isMember ?? raw.is_member ?? false);
+  const isBlocked = Boolean(raw.isBlocked ?? raw.is_blocked ?? false);
   const isAdmin = Boolean(raw.isAdmin ?? raw.is_admin ?? false);
   const fullName = `${firstName} ${lastName}`.trim();
   return {
@@ -18,6 +19,8 @@ function normalizeClientPayload(raw) {
     last_name: lastName,
     isMember,
     is_member: isMember,
+    isBlocked,
+    is_blocked: isBlocked,
     isAdmin,
     is_admin: isAdmin,
     client_name: raw.client_name ?? fullName,

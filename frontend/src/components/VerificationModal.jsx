@@ -9,6 +9,7 @@ import { setStoredAuthToken } from '@/utils/authStorage';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const BLOCKED_CLIENT_MESSAGE = "כדי לקבוע תור חדש בFamilia, יש ליצור קשר עם חן בWhatsApp או בטלפון";
 
 const notifyAuthChange = () => {
   if (typeof window === "undefined") return;
@@ -93,6 +94,17 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const inputRefs = useRef([]);
   const termsFeedbackTimeoutRef = useRef(null);
 
+  const showBlockedClientPopup = () => {
+    setCode(new Array(4).fill(""));
+    setLoading(false);
+    setError("");
+    setInfoMessage("");
+    setRateLimitTimer(0);
+    setResendTimer(0);
+    setView("loginPhone");
+    window.alert(BLOCKED_CLIENT_MESSAGE);
+  };
+
   const resetToHomeAfterOtpExceeded = () => {
     setCode(new Array(4).fill(""));
     setError("בוצעו 3 ניסיונות שגויים. יש להתחיל התחברות מחדש.");
@@ -170,6 +182,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
   };
 
   const handleApiError = (e, fallbackMessage) => {
+    if (e?.status === 403 && (e?.payload?.message === "CLIENT_BLOCKED" || e?.message === "CLIENT_BLOCKED")) {
+      showBlockedClientPopup();
+      return true;
+    }
     if (e?.status === 429) {
       setRateLimitError(e?.retryAfterSeconds ?? e?.payload?.retryAfterSeconds);
       return true;

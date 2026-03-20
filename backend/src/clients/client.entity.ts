@@ -26,6 +26,17 @@ export class Client {
         this.is_member = value;
     }
 
+    @Column({ type: 'boolean', name: 'is_blocked', default: false })
+    is_blocked: boolean;
+
+    get isBlocked(): boolean {
+        return this.is_blocked;
+    }
+
+    set isBlocked(value: boolean) {
+        this.is_blocked = value;
+    }
+
     @CreateDateColumn({type: 'timestamp with time zone'})
     created_at: Date;
 }

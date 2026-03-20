@@ -489,6 +489,7 @@ export default function Admin() { // Removed props
   };
 
   const [showAddAppointmentForm, setShowAddAppointmentForm] = useState(false);
+  const [calendarQuickAddSlot, setCalendarQuickAddSlot] = useState(null);
   const [showBlockingForm, setShowBlockingForm] = useState(false);
 
   const [recurringSuccessModal, setRecurringSuccessModal] = useState({ isOpen: false, message: '', skippedDates: [] });
@@ -2436,20 +2437,37 @@ const extractRecurringSchedules = (client) => {
     try {
       const normalizedPhone = normalizePhone(appointmentData.phone);
 
-      // אין יצירת לקוח! רק יצירת תור.
       await Appointment.create({
         ...appointmentData,
         phone: normalizedPhone,
-        // רמז לאחוריים: לא ליצור לקוח
         createClient: false,
         is_guest: true,
       });
 
-      loadData();
+      await Promise.all([loadData(), loadAppointmentsForWeek(new Date(appointmentData.starts_at))]);
     } catch (error) {
       console.error("Error adding appointment:", error);
       await showAlert("שגיאה בהוספת התור: " + (error.message || "נסה שוב."));
+      throw error;
     }
+  };
+
+  const handleWeeklyCalendarQuickAdd = (day, slotMinute) => {
+    if (!(day instanceof Date) || !Number.isFinite(slotMinute)) return;
+    const slotTime = new Date(day);
+    slotTime.setHours(Math.floor(slotMinute / 60), slotMinute % 60, 0, 0);
+    if (slotTime.getTime() < Date.now()) {
+      toast({ title: 'אי אפשר לקבוע תור בעבר', description: 'בחרו משבצת עתידית ביומן השבועי.', variant: 'destructive' });
+      return;
+    }
+    setCalendarQuickAddSlot({
+      day: new Date(day),
+      slot: {
+        date: new Date(day),
+        time: slotTime,
+        formatted: format(slotTime, 'HH:mm'),
+      },
+    });
   };
 
 
@@ -3296,11 +3314,22 @@ const extractRecurringSchedules = (client) => {
                                             handleCalendarDrop(draggedAppointmentId, day, slotMinute);
                                             setDraggedAppointmentId(null);
                                           }}
+                                          onClick={() => {
+                                            if (draggedAppointmentId || apt) return;
+                                            handleWeeklyCalendarQuickAdd(day, slotMinute);
+                                          }}
                                         >
                                           {!apt ? (
-                                            <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
-                                              {toTimeString(slotMinute)}
-                                            </div>
+                                            <button
+                                              type="button"
+                                              className="flex w-full items-start justify-between gap-2 rounded-md px-1 py-1 text-right transition hover:bg-amber-50"
+                                              onClick={() => handleWeeklyCalendarQuickAdd(day, slotMinute)}
+                                            >
+                                              <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                                              <div className="pointer-events-none mb-0.5 text-[10px] leading-none text-gray-400">
+                                                {toTimeString(slotMinute)}
+                                              </div>
+                                            </button>
                                           ) : null}
                                           {apt ? (
                                             <button
@@ -4804,24 +4833,31 @@ const extractRecurringSchedules = (client) => {
             </div>
         )}
 
-        {showAddAppointmentForm && (
+        {(showAddAppointmentForm || calendarQuickAddSlot) && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
               <motion.div
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.9, opacity: 0 }}
-                  className="bg-white p-6 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+                  className="bg-transparent max-w-md w-full max-h-[90vh] overflow-y-auto"
               >
                 <AdminAppointmentForm
                     onSubmit={async (appointmentData) => {
                       await handleAddAppointment(appointmentData);
                       setShowAddAppointmentForm(false);
+                      setCalendarQuickAddSlot(null);
                     }}
-                    onCancel={() => setShowAddAppointmentForm(false)}
+                    onCancel={() => {
+                      setShowAddAppointmentForm(false);
+                      setCalendarQuickAddSlot(null);
+                    }}
                     services={services}
                     appointments={appointments}
                     businessHours={businessHours}
                     clients={allClients}
+                    initialDate={calendarQuickAddSlot?.day ?? null}
+                    initialSlot={calendarQuickAddSlot?.slot ?? null}
+                    lockDateTime={Boolean(calendarQuickAddSlot)}
                 />
               </motion.div>
             </div>

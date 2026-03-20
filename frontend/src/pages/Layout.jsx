@@ -7,6 +7,7 @@ import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from '@/api/base44Client';
 import AccessibilityWidget from "@/components/AccessibilityWidget";
+import { clearStoredClient, readStoredClient } from '@/utils/clientStorage';
 
 // Internal component to consume context and render the layout
 function MainLayout({ children, currentPageName }) {
@@ -15,30 +16,27 @@ function MainLayout({ children, currentPageName }) {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const checkLoginState = useCallback(() => {
-    const storedClient = localStorage.getItem('familiaClient');
-    let parsedClient = null;
     try {
-      if (storedClient && storedClient !== "undefined") {
-        parsedClient = JSON.parse(storedClient);
-      }
-      else if (storedClient === "undefined") {
-        localStorage.removeItem('familiaClient');
-        clearStoredAuth();
+      const parsedClient = readStoredClient();
+      const token = getStoredAuthToken();
+      if (parsedClient && token) {
+        setClient(parsedClient);
+        const adminFlag = Boolean(parsedClient.isAdmin || parsedClient.is_admin || parsedClient.roles?.includes('admin'));
+        setIsAdmin(adminFlag);
+      } else {
+        setClient(null);
+        setIsAdmin(false);
+        sessionStorage.removeItem('visitTrackedInSession');
+        if (!token) {
+          clearStoredClient({ dispatch: false });
+          clearStoredAuth();
+        }
       }
     } catch {
-      localStorage.removeItem('familiaClient');
+      clearStoredClient({ dispatch: false });
       clearStoredAuth();
-    }
-    const token = getStoredAuthToken();
-    if (parsedClient && token) {
-      setClient(parsedClient);
-      const adminFlag = Boolean(parsedClient.isAdmin || parsedClient.is_admin || parsedClient.roles?.includes('admin'));
-      setIsAdmin(adminFlag);
-    } else {
       setClient(null);
       setIsAdmin(false);
-      sessionStorage.removeItem('visitTrackedInSession');
-      if (!token) clearStoredAuth();
     }
   }, []);
 
@@ -46,9 +44,11 @@ function MainLayout({ children, currentPageName }) {
     checkLoginState();
     window.addEventListener('storage', checkLoginState);
     window.addEventListener('familia-auth-changed', checkLoginState);
+    window.addEventListener('familia-client-updated', checkLoginState);
     return () => {
       window.removeEventListener('storage', checkLoginState);
       window.removeEventListener('familia-auth-changed', checkLoginState);
+      window.removeEventListener('familia-client-updated', checkLoginState);
     };
   }, [checkLoginState]);
 

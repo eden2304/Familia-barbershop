@@ -12,6 +12,7 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
 import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
+import { clearStoredClient, readStoredClient, writeStoredClient } from "@/utils/clientStorage";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -65,19 +66,18 @@ export default function Home() {
     const t = setTimeout(() => setShowLoadingScreen(false), 2200);
     const controller = new AbortController();
 
-    const storedClient = localStorage.getItem("familiaClient");
     const token = getStoredAuthToken();
     try {
-      if (storedClient && storedClient !== "undefined" && token) {
-        const parsed = JSON.parse(storedClient);
-        if (parsed && typeof parsed === "object") setClient(parsed);
+      const storedClient = readStoredClient();
+      if (storedClient && token) {
+        setClient(storedClient);
       } else {
-        localStorage.removeItem("familiaClient");
+        clearStoredClient({ dispatch: false });
         clearStoredAuth();
         setClient(null);
       }
     } catch {
-      localStorage.removeItem("familiaClient");
+      clearStoredClient({ dispatch: false });
       clearStoredAuth();
       setClient(null);
     }
@@ -90,14 +90,32 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    const syncClientFromStorage = () => {
+      const token = getStoredAuthToken();
+      const storedClient = readStoredClient();
+      if (storedClient && token) {
+        setClient(storedClient);
+        return;
+      }
+      setClient(null);
+    };
+
+    window.addEventListener('familia-client-updated', syncClientFromStorage);
+    window.addEventListener('storage', syncClientFromStorage);
+    return () => {
+      window.removeEventListener('familia-client-updated', syncClientFromStorage);
+      window.removeEventListener('storage', syncClientFromStorage);
+    };
+  }, []);
+
   const loadData = async (signal) => {
     setLoading(true);
     try {
       const token = getStoredAuthToken();
       const storedClientPhone = client?.phone || (() => {
         try {
-          const stored = JSON.parse(localStorage.getItem('familiaClient') || 'null');
-          return stored?.phone || null;
+          return readStoredClient()?.phone || null;
         } catch {
           return null;
         }
@@ -135,7 +153,7 @@ export default function Home() {
 
       const nextRecurring = findNextFutureRecurringAppointment(myAppointments, client ?? (() => {
         try {
-          return JSON.parse(localStorage.getItem('familiaClient') || 'null');
+          return readStoredClient();
         } catch {
           return null;
         }
@@ -180,8 +198,8 @@ export default function Home() {
         client_name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || ""),
         name: `${fn.trim()} ${ln.trim()}`.trim() || (c.phone || "")
       };
-      localStorage.setItem("familiaClient", JSON.stringify(payload));
-      setClient(payload);
+      const storedPayload = writeStoredClient(payload);
+      setClient(storedPayload);
       setShowVerification(false);
       setShowLoadingScreen(true);
 
@@ -195,14 +213,9 @@ export default function Home() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("familiaClient");
+    clearStoredClient();
     clearStoredAuth();
     setClient(null);
-    try {
-      window.dispatchEvent(new Event('familia-auth-changed'));
-    } catch {
-      // ignore
-    }
     window.location.reload();
   };
 

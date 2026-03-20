@@ -18,6 +18,7 @@ import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rule
 // ✅ API החדש
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { clearStoredClient, readStoredClient, writeStoredClient } from '@/utils/clientStorage';
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
 
@@ -267,11 +268,7 @@ export default function Book() {
       const res = await api.get(`/clients/lookup?phone=${encodeURIComponent(normalizedPhone)}`);
       if (res && (res.phone || res.client_phone)) {
         const stored = (() => {
-          try {
-            return JSON.parse(localStorage.getItem("familiaClient") || "null");
-          } catch {
-            return null;
-          }
+          try { return readStoredClient(); } catch { return null; }
         })();
         const normalized = normalizeClientObject({
           ...res,
@@ -280,7 +277,7 @@ export default function Book() {
         });
         if (normalized) {
           setClient(normalized);
-          localStorage.setItem("familiaClient", JSON.stringify(normalized));
+          writeStoredClient(normalized);
         }
       }
     } catch (error) {
@@ -337,22 +334,22 @@ export default function Book() {
 
   /* -------- init: client + services -------- */
   useEffect(() => {
-    const stored = localStorage.getItem("familiaClient");
     const token = getStoredAuthToken();
+    const stored = readStoredClient();
     if (stored && token) {
       try {
-        const parsed = normalizeClientObject(JSON.parse(stored));
+        const parsed = normalizeClientObject(stored);
         setClient(parsed);
         refreshClientFromServer(parsed?.phone);
       } catch {
-        localStorage.removeItem("familiaClient");
+        clearStoredClient({ dispatch: false });
         clearStoredAuth();
         setClient(null);
         navigate("/");
         return;
       }
     } else {
-      localStorage.removeItem("familiaClient");
+      clearStoredClient({ dispatch: false });
       clearStoredAuth();
       setClient(null);
       navigate("/");
@@ -360,6 +357,25 @@ export default function Book() {
     }
     loadInitialData();
   }, [navigate, refreshClientFromServer]);
+
+  useEffect(() => {
+    const syncClientFromStorage = () => {
+      const token = getStoredAuthToken();
+      const storedClient = readStoredClient();
+      if (!storedClient || !token) {
+        setClient(null);
+        return;
+      }
+      setClient(normalizeClientObject(storedClient));
+    };
+
+    window.addEventListener('familia-client-updated', syncClientFromStorage);
+    window.addEventListener('storage', syncClientFromStorage);
+    return () => {
+      window.removeEventListener('familia-client-updated', syncClientFromStorage);
+      window.removeEventListener('storage', syncClientFromStorage);
+    };
+  }, []);
 
   const loadInitialData = async () => {
     setLoading(true);
@@ -543,6 +559,7 @@ export default function Book() {
   const handleLoginSuccess = (loggedInClient) => {
     const norm = normalizeClientObject(loggedInClient);
     setClient(norm);
+    writeStoredClient(norm);
     setShowVerification(false);
     setShowPostLoginLoading(true);
     setTimeout(() => {

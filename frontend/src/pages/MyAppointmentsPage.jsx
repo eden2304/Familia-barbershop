@@ -7,6 +7,7 @@ import { Calendar, Clock, Check, X, PlusCircle, History, User, AlertCircle } fro
 import { format, isAfter, compareAsc } from "date-fns";
 import { he } from "date-fns/locale";
 import VerificationModal from "../components/VerificationModal.jsx";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
 import api from "@/api/base44Client";
@@ -128,6 +129,7 @@ export default function MyAppointmentsPage() {
   const [showVerification, setShowVerification] = useState(false);
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
   const [cancelLockByEntry, setCancelLockByEntry] = useState({});
+  const { showAlert } = useSystemPopup();
 
   if (showPostLoginLoading) {
     return <LoadingScreen />;
@@ -254,10 +256,10 @@ export default function MyAppointmentsPage() {
         if (remainingSeconds > 0) {
           setCancelLockByEntry((prev) => ({ ...prev, [entry.id]: remainingSeconds }));
         }
-        alert(`אפשר לבטל את ההרשמה בעוד ${formatCountdown(remainingSeconds)}.`);
+        await showAlert(`אפשר לבטל את ההרשמה בעוד ${formatCountdown(remainingSeconds)}.`);
         return;
       }
-      alert("לא ניתן לבטל את ההרשמה לרשימת ההמתנה. נסה שוב.");
+      await showAlert("לא ניתן לבטל את ההרשמה לרשימת ההמתנה. נסה שוב.");
     }
   };
 

@@ -70,6 +70,7 @@ import {
   LayoutGrid,
   List,
 } from "lucide-react";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -303,6 +304,7 @@ const normalizePhone = (phone) => {
 
 
 export default function Admin() { // Removed props
+  const { showAlert, showConfirm } = useSystemPopup();
   const { sidebarOpen, setSidebarOpen } = useSidebar(); // Consume context
   const navigate = useNavigate();
   // --- Admin access & auth ---
@@ -741,14 +743,14 @@ export default function Admin() { // Removed props
 
   const handleRemoveBlock = async (id) => {
     if (!id) return;
-    if (!confirm("לבטל את החסימה הזו?")) return;
+    if (!await showConfirm("לבטל את החסימה הזו?")) return;
     try {
       await AdminApi.blocks.remove(id);
       await reloadBlocks();
       await loadData(); // נרענן גם תורים/זמינות
     } catch (e) {
       console.error(e);
-      alert("נכשלה מחיקת החסימה");
+      await showAlert("נכשלה מחיקת החסימה");
     }
   };
 
@@ -1083,7 +1085,7 @@ export default function Admin() { // Removed props
 
   const handleClearAdminUpdates = async () => {
     if (isClearingUpdates || isRefreshingUpdates) return;
-    const ok = window.confirm('למחוק את כל העדכונים?');
+    const ok = await showConfirm('למחוק את כל העדכונים?');
     if (!ok) return;
     setIsClearingUpdates(true);
     try {
@@ -1928,7 +1930,7 @@ const extractRecurringSchedules = (client) => {
         });
       } else {
         const message = payload?.message || payload?.error || error?.message || 'יצירת התור הקבוע נכשלה. נסה שוב.';
-        alert(message);
+        await showAlert(message);
       }
       throw error;
     }
@@ -1939,7 +1941,7 @@ const extractRecurringSchedules = (client) => {
       if (!appointment?.id || !newStartTime) return;
       const startAt = new Date(newStartTime);
       if (Number.isNaN(startAt.getTime())) {
-        alert("שעה לא תקינה. נסה לבחור שעה מחדש.");
+        await showAlert("שעה לא תקינה. נסה לבחור שעה מחדש.");
         return;
       }
       const durationMinutes =
@@ -1964,14 +1966,14 @@ const extractRecurringSchedules = (client) => {
       await loadData();
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
-      alert("שגיאה בהחלפת התור.");
+      await showAlert("שגיאה בהחלפת התור.");
     }
   };
 
 
   const handleDelete = async (entity, id, entityName) => {
     if (!id) return;
-    if (!confirm(`האם אתה בטוח שברצונך למחוק ${entityName}?`)) return;
+    if (!await showConfirm(`האם אתה בטוח שברצונך למחוק ${entityName}?`)) return;
 
     try {
       const status = (e) => e?.status || e?.response?.status;
@@ -1993,7 +1995,7 @@ const extractRecurringSchedules = (client) => {
         await loadData();
       } else {
         console.error(`Error deleting ${entityName}:`, error);
-        alert("שגיאה במחיקת הפריט.");
+        await showAlert("שגיאה במחיקת הפריט.");
       }
     }
   };
@@ -2022,7 +2024,7 @@ const extractRecurringSchedules = (client) => {
       await Promise.all(updatePromises);
     } catch (error) {
       console.error("Failed to update order:", error);
-      alert("שגיאה בעדכון הסדר. נסה לרענן את העמוד.");
+      await showAlert("שגיאה בעדכון הסדר. נסה לרענן את העמוד.");
       setList(list);
     }
   };
@@ -2086,7 +2088,7 @@ const extractRecurringSchedules = (client) => {
       const existingClient = allClients.find(c => normalizePhone(c.phone) === normalizedPhone);
 
       if (existingClient) {
-        alert("לקוח עם מספר טלפון זה כבר קיים.");
+        await showAlert("לקוח עם מספר טלפון זה כבר קיים.");
         return;
       }
 
@@ -2101,7 +2103,7 @@ const extractRecurringSchedules = (client) => {
       setShowClientForm(false);
     } catch (error) {
       console.error("Error saving client:", error);
-      alert("שגיאה בהוספת הלקוח.");
+      await showAlert("שגיאה בהוספת הלקוח.");
     }
   };
 
@@ -2257,14 +2259,14 @@ const extractRecurringSchedules = (client) => {
       loadData();
     } catch (error) {
       console.error("Error updating membership:", error);
-      alert("שגיאה בעדכון סטטוס המועדון.");
+      await showAlert("שגיאה בעדכון סטטוס המועדון.");
     }
   };
 
   const toggleClientBlockedStatus = async (client) => {
     if (!client?.id) return;
     const isBlocked = Boolean(client.isBlocked ?? client.is_blocked);
-    const confirmed = window.confirm(
+    const confirmed = await showConfirm(
       isBlocked
         ? 'להחזיר את הלקוח לרשימת הלקוחות הרגילה?'
         : 'לחסום את הלקוח? הוא לא יופיע ברשימת הלקוחות הרגילה ולא יוכל להתחבר.'
@@ -2340,7 +2342,7 @@ const extractRecurringSchedules = (client) => {
       }
     })();
     const confirmMessage = `האם לבטל את התור${startsLabel ? ` ב-${startsLabel}` : ''}${serviceLabel ? ` (${serviceLabel})` : ''}?`;
-    if (!window.confirm(confirmMessage)) return;
+    if (!await showConfirm(confirmMessage)) return;
     try {
       setCancelingAppointmentId(appointment.id);
       await AdminApi.appointments.delete(appointment.id);
@@ -2446,7 +2448,7 @@ const extractRecurringSchedules = (client) => {
       loadData();
     } catch (error) {
       console.error("Error adding appointment:", error);
-      alert("שגיאה בהוספת התור: " + (error.message || "נסה שוב."));
+      await showAlert("שגיאה בהוספת התור: " + (error.message || "נסה שוב."));
     }
   };
 
@@ -3223,13 +3225,13 @@ const extractRecurringSchedules = (client) => {
                                               size="icon"
                                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                               onClick={async () => {
-                                                if (!confirm("לבטל את החסימה הזו?")) return;
+                                                if (!await showConfirm("לבטל את החסימה הזו?")) return;
                                                 try {
                                                   await AdminApi.blocks.remove(blk.id);
                                                   await reloadBlocks();
                                                 } catch (err) {
                                                   console.error("failed to remove block", err);
-                                                  alert("שגיאה בביטול החסימה");
+                                                  await showAlert("שגיאה בביטול החסימה");
                                                 }
                                               }}
                                           >
@@ -4378,7 +4380,7 @@ const extractRecurringSchedules = (client) => {
                                       variant="outline"
                                       size="sm"
                                       onClick={async () => {
-                                        if (confirm("האם להפוך לסרטון הרקע הפעיל?")) {
+                                        if (await showConfirm("האם להפוך לסרטון הרקע הפעיל?")) {
                                           try {
                                             await Promise.all(
                                                 backgroundVideos.map(v =>
@@ -4451,11 +4453,11 @@ const extractRecurringSchedules = (client) => {
                         { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
                         { label: "הודעה ללקוחות", icon: MessageSquare, action: () => {
                             setShowQuickActionsModal(false);
-                            alert("האפשרות לשלוח הודעה ללקוחות תתווסף בקרוב למערכת!");
+                            showAlert("האפשרות לשלוח הודעה ללקוחות תתווסף בקרוב למערכת!");
                           } },
                         { label: "בקשות לביטול", icon: XCircle, action: () => {
                             setShowQuickActionsModal(false);
-                            alert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
+                            showAlert("בקשות לביטול יתווסף בעדכון הבא למערכת!");
                           } },
                       ]
                       : []
@@ -4840,21 +4842,35 @@ const extractRecurringSchedules = (client) => {
         <Dialog open={Boolean(pendingCalendarMove)} onOpenChange={(open) => {
           if (!open && !isSavingCalendarMove) setPendingCalendarMove(null);
         }}>
-          <DialogContent className="max-w-[320px] rounded-2xl" aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle className="text-base">אישור שינוי תור</DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed">
-                התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex-row justify-center gap-2">
-              <Button size="sm" className="w-auto min-w-24" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
-                ביטול
+          <DialogContent className="w-[min(calc(100vw-32px),22rem)] rounded-[24px] border-0 bg-white p-0 text-right shadow-2xl" aria-describedby={undefined} dir="rtl">
+            <div className="relative space-y-3 px-5 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setPendingCalendarMove(null)}
+                disabled={isSavingCalendarMove}
+                className="absolute right-3 top-2.5 h-7 w-7 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
               </Button>
-              <Button size="sm" className="w-auto min-w-24" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
-                {isSavingCalendarMove ? 'שומר…' : 'אישור'}
-              </Button>
-            </DialogFooter>
+
+              <DialogHeader className="space-y-1 pt-4 text-center sm:text-center">
+                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">אישור שינוי תור</DialogTitle>
+                <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
+                  התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+                </DialogDescription>
+              </DialogHeader>
+
+              <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-2">
+                <Button size="sm" className="h-10 w-full rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+                  {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+                </Button>
+                <Button size="sm" className="mt-0 h-10 w-full rounded-xl border-slate-200 px-5 text-sm font-medium" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+                  ביטול
+                </Button>
+              </DialogFooter>
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -5175,7 +5191,7 @@ const extractRecurringSchedules = (client) => {
                         setShowBackgroundVideoForm(false);
                       } catch (error) {
                         console.error("Error adding background video:", error);
-                        alert("שגיאה בהוספת סרטון רקע: " + error.message);
+                        await showAlert("שגיאה בהוספת סרטון רקע: " + error.message);
                       }
                     }}
                     onCancel={() => setShowBackgroundVideoForm(false)}
@@ -5422,11 +5438,12 @@ function GalleryForm({ onSubmit, onCancel }) {
   });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const { showAlert } = useSystemPopup();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
-      alert("נא לבחור קובץ וידאו");
+      await showAlert("נא לבחור קובץ וידאו");
       return;
     }
 
@@ -5456,7 +5473,7 @@ function GalleryForm({ onSubmit, onCancel }) {
       });
     } catch (error) {
       console.error("Error uploading file:", error);
-      alert("שגיאה בהעלאת הקובץ");
+      await showAlert("שגיאה בהעלאת הקובץ");
     } finally {
       setUploading(false);
     }
@@ -5508,10 +5525,11 @@ function GalleryForm({ onSubmit, onCancel }) {
 function BackgroundVideoForm({ onSubmit, onCancel }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const { showAlert } = useSystemPopup();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!file) return alert("נא לבחור קובץ וידאו");
+    if (!file) return await showAlert("נא לבחור קובץ וידאו");
     setUploading(true);
     try {
       const { previewUrl, fullUrl, url } = await UploadFile.upload(file);
@@ -5527,7 +5545,7 @@ function BackgroundVideoForm({ onSubmit, onCancel }) {
       });
     } catch (err) {
       console.error("Error uploading file:", err);
-      alert("שגיאה בהעלאת הקובץ");
+      await showAlert("שגיאה בהעלאת הקובץ");
     } finally {
       setUploading(false);
     }

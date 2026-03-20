@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -164,6 +165,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
   };
 
   const availableSlotsForSelectedDay = selectedDay ? getAvailableSlotsForDay(selectedDay) : [];
+  const { showAlert } = useSystemPopup();
 
   const handleBack = () => {
     if (selectedSlot) {
@@ -184,7 +186,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedService || !selectedSlot || !formData.client_name || !formData.phone) {
-      alert("נא למלא את כל השדות");
+      await showAlert("נא למלא את כל השדות");
       return;
     }
 
@@ -216,7 +218,7 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
       setSelectedSlot(null);
     } catch (error) {
       console.error("Error creating appointment:", error);
-      alert("שגיאה ביצירת התור. אנא נסה שוב."); // User-friendly error message
+      await showAlert("שגיאה ביצירת התור. אנא נסה שוב."); // User-friendly error message
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Admin } from "@/api/entities";
 import { Ban, CalendarDays, Clock3, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -107,6 +108,7 @@ export default function BlockAppointmentsModal({
   const [dayAppointments, setDayAppointments] = useState([]);
   const [rangeAppointmentsMap, setRangeAppointmentsMap] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const { showAlert, showConfirm } = useSystemPopup();
   const singleDayStripRef = useRef(null);
 
   const updateTimeRange = (id, field, value) => {
@@ -321,20 +323,20 @@ export default function BlockAppointmentsModal({
   const committedTimeRanges = useMemo(() => normalizedTimeRanges.filter((range) => range.saved), [normalizedTimeRanges]);
   const draftTimeRange = useMemo(() => normalizedTimeRanges.find((range) => !range.saved) || null, [normalizedTimeRanges]);
 
-  const handleAddTimeRange = () => {
+  const handleAddTimeRange = async () => {
     if (editingBlock || !draftTimeRange) return;
     if (!draftTimeRange.valid) {
-      alert("בחר טווח שעות תקין לפני שמוסיפים.");
+      await showAlert("בחר טווח שעות תקין לפני שמוסיפים.");
       return;
     }
     const duplicate = committedTimeRanges.some((range) => range.start?.getTime() === draftTimeRange.start?.getTime() && range.end?.getTime() === draftTimeRange.end?.getTime());
     if (duplicate) {
-      alert("הטווח הזה כבר נוסף למטה.");
+      await showAlert("הטווח הזה כבר נוסף למטה.");
       return;
     }
     const overlapsExisting = committedTimeRanges.some((range) => overlaps(range.start, range.end, draftTimeRange.start, draftTimeRange.end));
     if (overlapsExisting) {
-      alert("הטווח הזה חופף לטווח שכבר הוספת.");
+      await showAlert("הטווח הזה חופף לטווח שכבר הוספת.");
       return;
     }
 
@@ -448,7 +450,7 @@ export default function BlockAppointmentsModal({
 
         const validRanges = normalizedTimeRanges.filter((range) => range.valid && (range.saved || range.from || range.to));
         if (validRanges.length === 0) {
-          alert("בחר לפחות טווח שעות אחד תקין.");
+          await showAlert("בחר לפחות טווח שעות אחד תקין.");
           return;
         }
 
@@ -480,7 +482,7 @@ export default function BlockAppointmentsModal({
       const details = Array.isArray(payload.conflicts)
         ? `\n${payload.conflicts.map((item) => `${safeFormat(item.starts_at, "dd/MM HH:mm")}-${safeFormat(item.ends_at, "HH:mm")} · ${humanClientName(item)}`).join("\n")}`
         : "";
-      alert(`${message}${details}`);
+      await showAlert(`${message}${details}`);
     } finally {
       setSubmitting(false);
     }
@@ -857,14 +859,14 @@ export default function BlockAppointmentsModal({
                               size="icon"
                               className="h-8 w-8 rounded-full text-rose-500 hover:text-rose-700"
                               onClick={async () => {
-                                if (!confirm("לבטל את החסימה הזו?")) return;
+                                if (!await showConfirm("לבטל את החסימה הזו?")) return;
                                 try {
                                   await Admin.blocks.remove(block.id);
                                   if (editingBlock?.id === block.id) clearForm();
                                   await refreshBlocks(dateStr);
                                 } catch (error) {
                                   console.error("Error deleting block:", error);
-                                  alert("לא הצלחנו לבטל את החסימה.");
+                                  await showAlert("לא הצלחנו לבטל את החסימה.");
                                 }
                               }}
                             >

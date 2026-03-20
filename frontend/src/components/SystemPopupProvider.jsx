@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +67,7 @@ export function SystemPopupProvider({ children }) {
   }), []);
 
   const contextValue = useMemo(() => ({ showAlert, showConfirm }), [showAlert, showConfirm]);
+  const dismissValue = popupState?.mode === "confirm" ? false : true;
 
   return (
     <SystemPopupContext.Provider value={contextValue}>
@@ -74,24 +76,36 @@ export function SystemPopupProvider({ children }) {
         open={Boolean(popupState)}
         onOpenChange={(open) => {
           if (!open) {
-            closePopup(popupState?.mode === "confirm" ? false : true);
+            closePopup(dismissValue);
           }
         }}
       >
-        <AlertDialogContent className="max-w-md rounded-3xl border-0 bg-white p-0 text-right shadow-2xl" dir="rtl">
-          <div className="space-y-5 p-6">
-            <AlertDialogHeader className="space-y-2 text-center sm:text-center">
-              <AlertDialogTitle className="text-2xl font-black text-slate-900">
+        <AlertDialogContent
+          className="w-[min(calc(100vw-32px),22rem)] rounded-[24px] border-0 bg-white p-0 text-right shadow-2xl"
+          dir="rtl"
+        >
+          <div className="relative space-y-4 px-5 pb-5 pt-4 sm:px-6 sm:pb-6 sm:pt-5">
+            <button
+              type="button"
+              onClick={() => closePopup(dismissValue)}
+              className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label="סגור חלון"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <AlertDialogHeader className="space-y-1.5 pt-6 text-center sm:text-center">
+              <AlertDialogTitle className="text-xl font-black text-slate-900 sm:text-[1.35rem]">
                 {popupState?.title}
               </AlertDialogTitle>
-              <AlertDialogDescription className="whitespace-pre-line text-base leading-7 text-slate-600">
+              <AlertDialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-sm leading-6 text-slate-600 sm:text-[0.95rem]">
                 {popupState?.description}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <AlertDialogFooter className="flex-col-reverse gap-3 sm:flex-col-reverse sm:space-x-0">
+            <AlertDialogFooter className="flex-col-reverse items-center gap-2 pt-1 sm:flex-col-reverse sm:space-x-0">
               {popupState?.mode === "confirm" && (
-                <AlertDialogCancel className="mt-0 h-12 rounded-2xl border-slate-200 text-base font-semibold">
+                <AlertDialogCancel className="mt-0 h-10 min-w-24 rounded-xl border-slate-200 px-5 text-sm font-medium">
                   {popupState?.cancelText}
                 </AlertDialogCancel>
               )}
@@ -100,7 +114,7 @@ export function SystemPopupProvider({ children }) {
                   event.preventDefault();
                   closePopup(true);
                 }}
-                className="h-12 rounded-2xl bg-slate-950 text-base font-semibold text-white hover:bg-slate-800"
+                className="h-10 min-w-28 rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 {popupState?.confirmText}
               </AlertDialogAction>

@@ -95,10 +95,10 @@ export function SystemPopupProvider({ children }) {
             </button>
 
             <AlertDialogHeader className="space-y-1 pt-4 text-center sm:text-center">
-              <AlertDialogTitle className="text-xl font-black text-slate-900 sm:text-[1.35rem]">
+              <AlertDialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">
                 {popupState?.title}
               </AlertDialogTitle>
-              <AlertDialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-sm leading-5.5 text-slate-600 sm:text-[0.95rem]">
+              <AlertDialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
                 {popupState?.description}
               </AlertDialogDescription>
             </AlertDialogHeader>

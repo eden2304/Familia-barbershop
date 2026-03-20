@@ -112,6 +112,16 @@ export class ClientsService {
         return { value: parseBool(raw), provided: true };
     }
 
+    private extractIsBlocked(source: any, fallback: boolean): { value: boolean; provided: boolean } {
+        const has = Object.prototype.hasOwnProperty.call(source, 'is_blocked') ||
+            Object.prototype.hasOwnProperty.call(source, 'isBlocked');
+        if (!has) {
+            return { value: fallback, provided: false };
+        }
+        const raw = source.is_blocked ?? source.isBlocked;
+        return { value: parseBool(raw), provided: true };
+    }
+
     // אם אין לך createdAt ב-Entity – תישאר עם id:
     async findAll(): Promise<Client[]> {
         return this.repo.find({ order: { id: 'DESC' } });
@@ -130,11 +140,13 @@ export class ClientsService {
         if (exists) throw new BadRequestException('PHONE_EXISTS');
 
         const isMember = parseBool(body.is_member ?? body.isMember);
+        const isBlocked = parseBool(body.is_blocked ?? body.isBlocked);
         const entity = this.repo.create({
             first_name: firstName,
             last_name: lastName,
             phone,
             is_member: isMember,
+            is_blocked: isBlocked,
         });
         return this.repo.save(entity);
     }
@@ -167,6 +179,7 @@ export class ClientsService {
         const nextLast = this.extractName(body, 'last', current.last_name ?? '');
         const phoneInfo = this.extractPhone(body, current.phone ?? '');
         const memberInfo = this.extractIsMember(body, Boolean(current.is_member));
+        const blockedInfo = this.extractIsBlocked(body, Boolean(current.is_blocked));
 
         if (phoneInfo.provided && !phoneInfo.value) {
             throw new BadRequestException('PHONE_REQUIRED');
@@ -180,12 +193,14 @@ export class ClientsService {
         }
 
         const desiredMember = memberInfo.provided ? memberInfo.value : current.is_member;
+        const desiredBlocked = blockedInfo.provided ? blockedInfo.value : current.is_blocked;
 
         await this.repo.update({ id: current.id }, {
             first_name: nextFirst,
             last_name: nextLast,
             phone: desiredPhone,
             is_member: desiredMember,
+            is_blocked: desiredBlocked,
         });
 
         return this.repo.findOneByOrFail({ id: current.id });
@@ -207,6 +222,7 @@ export class ClientsService {
                    c.last_name,
                    c.phone,
                    coalesce(c.is_member,false) as is_member,
+                   coalesce(c.is_blocked,false) as is_blocked,
                    (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
                    coalesce(json_agg(
                        json_build_object(
@@ -236,6 +252,8 @@ export class ClientsService {
             last_name: r.last_name || '',
             isMember: Boolean(r.is_member),
             is_member: Boolean(r.is_member),
+            isBlocked: Boolean(r.is_blocked),
+            is_blocked: Boolean(r.is_blocked),
             lastAppointmentAt: r.last_appointment_at || null,
             recurringAppointments: Array.isArray(r.recurring) ? r.recurring : [],
             recurring_appointments: Array.isArray(r.recurring) ? r.recurring : [],

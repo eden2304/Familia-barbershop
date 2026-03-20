@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DeepPartial } from 'typeorm';
 import { sign, verify, type Secret, type SignOptions, type JwtPayload } from 'jsonwebtoken';
@@ -136,6 +136,13 @@ export class AuthService {
         const variants = phoneVariants(phone);
         if (variants.length === 0) return false;
         const c = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
+        return !!c;
+    }
+
+    async isBlocked(phone: string): Promise<boolean> {
+        const variants = phoneVariants(phone);
+        if (variants.length === 0) return false;
+        const c = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p, is_blocked: true })) });
         return !!c;
     }
 
@@ -298,6 +305,7 @@ export class AuthService {
         const variants = phoneVariants(norm);
         const client = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
         if (!client) throw new BadRequestException('Invalid code');
+        if (client.is_blocked) throw new ForbiddenException('CLIENT_BLOCKED');
         return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
@@ -531,8 +539,9 @@ export class AuthService {
         const firstName = (client as any).firstName ?? client.first_name ?? '';
         const lastName = (client as any).lastName ?? client.last_name ?? '';
         const isMember = Boolean((client as any).isMember ?? client.is_member ?? false);
+        const isBlocked = Boolean((client as any).isBlocked ?? client.is_blocked ?? false);
         const phone = client.phone;
-        return { id: client.id, phone, firstName, lastName, isMember, is_member: isMember } as any;
+        return { id: client.id, phone, firstName, lastName, isMember, is_member: isMember, isBlocked, is_blocked: isBlocked } as any;
     }
 
     private async resolveRolesForPhone(phone: string): Promise<AuthRole[]> {

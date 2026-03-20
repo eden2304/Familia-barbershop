@@ -13,4 +13,7 @@ export class CreateClientDto {
 
     @IsOptional() @IsBoolean()
     is_member?: boolean;
+
+    @IsOptional() @IsBoolean()
+    is_blocked?: boolean;
 }

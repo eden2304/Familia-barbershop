@@ -4842,21 +4842,35 @@ const extractRecurringSchedules = (client) => {
         <Dialog open={Boolean(pendingCalendarMove)} onOpenChange={(open) => {
           if (!open && !isSavingCalendarMove) setPendingCalendarMove(null);
         }}>
-          <DialogContent className="max-w-[320px] rounded-2xl" aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle className="text-base">אישור שינוי תור</DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed">
-                התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="flex-row justify-center gap-2">
-              <Button size="sm" className="w-auto min-w-24" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
-                ביטול
+          <DialogContent className="w-[min(calc(100vw-32px),22rem)] rounded-[24px] border-0 bg-white p-0 text-right shadow-2xl" aria-describedby={undefined} dir="rtl">
+            <div className="relative space-y-3 px-5 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setPendingCalendarMove(null)}
+                disabled={isSavingCalendarMove}
+                className="absolute right-3 top-2.5 h-7 w-7 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
               </Button>
-              <Button size="sm" className="w-auto min-w-24" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
-                {isSavingCalendarMove ? 'שומר…' : 'אישור'}
-              </Button>
-            </DialogFooter>
+
+              <DialogHeader className="space-y-1 pt-4 text-center sm:text-center">
+                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">אישור שינוי תור</DialogTitle>
+                <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
+                  התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+                </DialogDescription>
+              </DialogHeader>
+
+              <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-2">
+                <Button size="sm" className="h-10 w-full rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
+                  {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+                </Button>
+                <Button size="sm" className="mt-0 h-10 w-full rounded-xl border-slate-200 px-5 text-sm font-medium" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
+                  ביטול
+                </Button>
+              </DialogFooter>
+            </div>
           </DialogContent>
         </Dialog>
 

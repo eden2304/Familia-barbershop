@@ -8,7 +8,7 @@ import { BusinessHours } from "@/api/entities";
 import { Testimonial } from "@/api/entities";
 import { GalleryImage } from "@/api/entities";
 import { WaitingList } from "@/api/entities";
-import { Client, LocalClient } from "@/api/entities";
+import { Client } from "@/api/entities";
 import { BackgroundVideo } from "@/api/entities";
 import { Product } from "@/api/entities";
 import { Setting } from "@/api/entities";
@@ -84,7 +84,7 @@ import { Admin as AdminApi } from "@/api/entities";
 import api, { API_ROOT } from "@/api/base44Client";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
 import { getStoredAuthToken, clearStoredAuth, setStoredAuthToken } from '../utils/authStorage';
-import { writeStoredClient } from '../utils/clientStorage';
+import { readStoredClient, writeStoredClient } from '../utils/clientStorage';
 
 const resolveMediaUrl = (value) => {
   if (!value) return "";
@@ -441,12 +441,11 @@ export default function Admin() { // Removed props
       };
     }));
 
-    const currentLocalClient = LocalClient?.get?.();
+    const currentLocalClient = readStoredClient();
     const updatedPhone = normalizePhone(updatedClient.phone ?? updatedClient.client_phone ?? "");
     const localPhone = normalizePhone(currentLocalClient?.phone ?? currentLocalClient?.client_phone ?? "");
     if (currentLocalClient && updatedPhone && localPhone === updatedPhone) {
       const nextLocalClient = buildClientRecord(currentLocalClient, updatedClient);
-      LocalClient.save(nextLocalClient);
       writeStoredClient(nextLocalClient);
     }
   };

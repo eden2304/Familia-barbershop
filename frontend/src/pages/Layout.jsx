@@ -139,7 +139,11 @@ function MainLayout({ children, currentPageName }) {
 
       <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 z-50">
         <div className="flex justify-around items-center py-4 px-4">
-          <Link to="/" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+          <Link
+            to="/"
+            state={{ allowAdminHome: true }}
+            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+          >
             <HomeIcon className="w-6 h-6"/>
             <span className="text-xs font-medium">בית</span>
           </Link>

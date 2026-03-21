@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { Client } from '../../clients/client.entity';
 import { Setting } from '../../entities/setting.entity';
 import { AdminPhone } from '../../entities/admin-phone.entity';
+import { Appointment } from '../../entities/appointment.entity';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RefreshToken } from '../../entities/refresh-token.entity';
 import { APP_GUARD } from '@nestjs/core';
@@ -17,7 +18,7 @@ import { AdminPushModule } from '../push/admin-push.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Client, Setting, AdminPhone, RefreshToken]),
+        TypeOrmModule.forFeature([Client, Setting, AdminPhone, Appointment, RefreshToken]),
         WhatsAppModule,
         AdminPushModule,
         JwtModule.register({

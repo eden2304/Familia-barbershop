@@ -3558,24 +3558,26 @@ const extractRecurringSchedules = (client) => {
                                 className="md:max-w-sm"
                             />
                             <div className="flex flex-wrap items-center gap-3">
-                              <select
-                                  value={lastAppointmentFilter}
-                                  onChange={(e) => setLastAppointmentFilter(e.target.value)}
-                                  className="h-10 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                              >
-                                <option value="all">כל התאריכים</option>
-                                <option value="last_month">בחודש האחרון</option>
-                                <option value="last_two_months">בחודשיים האחרונים</option>
-                                <option value="over_three_months">מעל שלושה חודשים</option>
-                              </select>
-                              <Button
-                                  type="button"
-                                  variant={showBlockedClients ? "default" : "outline"}
-                                  onClick={() => setShowBlockedClients((prev) => !prev)}
-                                  className={showBlockedClients ? "bg-red-600 text-white hover:bg-red-700" : "border-red-200 text-red-700 hover:bg-red-50"}
-                              >
-                                {showBlockedClients ? 'הצג לקוחות רגילים' : 'הצג לקוחות חסומים'}
-                              </Button>
+                              <label className="flex items-center gap-2 text-sm text-gray-600">
+                                <span className="whitespace-nowrap">סינון לפי היסטוריה</span>
+                                <select
+                                    value={lastAppointmentFilter}
+                                    onChange={(e) => setLastAppointmentFilter(e.target.value)}
+                                    className="h-10 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                >
+                                  <option value="all">כל התאריכים</option>
+                                  <option value="last_month">בחודש האחרון</option>
+                                  <option value="last_two_months">בחודשיים האחרונים</option>
+                                  <option value="over_three_months">מעל שלושה חודשים</option>
+                                </select>
+                              </label>
+                              <label className="flex items-center gap-2 text-sm text-gray-600">
+                                <Switch
+                                    checked={showBlockedClients}
+                                    onCheckedChange={(val) => setShowBlockedClients(Boolean(val))}
+                                />
+                                <span>הצג לקוחות חסומים</span>
+                              </label>
                               <label className="flex items-center gap-2 text-sm text-gray-600">
                                 <Switch
                                     checked={showMembersOnlyClients}

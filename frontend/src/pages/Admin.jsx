@@ -5424,14 +5424,6 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           />
         </AdminField>
 
-        <AdminField label="תיאור">
-          <Textarea
-              className="min-h-[108px] rounded-2xl border-slate-200 bg-white text-base"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          />
-        </AdminField>
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <AdminField label="משך (דקות)">
             <Input

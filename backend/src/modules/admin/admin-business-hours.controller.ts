@@ -9,7 +9,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
@@ -51,6 +51,7 @@ function timeToMinutes(value: string | null) {
 @Roles('admin')
 export class AdminBusinessHoursController {
     constructor(
+        private readonly dataSource: DataSource,
         @InjectRepository(BusinessHour) private readonly businessHoursRepo: Repository<BusinessHour>,
         @InjectRepository(BusinessHoursOverride) private readonly businessHoursOverrideRepo: Repository<BusinessHoursOverride>,
         @InjectRepository(Appointment) private readonly appointmentsRepo: Repository<Appointment>,
@@ -66,6 +67,14 @@ export class AdminBusinessHoursController {
 
     private sanitizeTime(value: any) {
         return sanitizeTime(value);
+    }
+
+    private async withDateLock<T>(dateStr: string, task: () => Promise<T>): Promise<T> {
+        const lockKey = `booking-day:${dateStr}`;
+        return this.dataSource.transaction(async (manager) => {
+            await manager.query('select pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+            return task();
+        });
     }
 
     private async findConflictingAppointmentsForDay(
@@ -135,83 +144,84 @@ export class AdminBusinessHoursController {
         if (!this.isValidDate(dateStr)) {
             throw new BadRequestException('INVALID_DATE');
         }
+        return this.withDateLock(dateStr, async () => {
+            const weekday = this.weekdayForDate(dateStr);
+            const base = await this.businessHoursRepo.findOne({ where: { weekday } });
+            const openCandidate = this.sanitizeTime(body?.open ?? body?.open_time ?? body?.openTime);
+            const closeCandidate = this.sanitizeTime(body?.close ?? body?.close_time ?? body?.closeTime);
+            const isOpenFlag = body?.isOpen ?? body?.is_open ?? (body?.isClosed !== undefined ? !body?.isClosed : undefined);
+            const resolvedIsOpen = isOpenFlag !== undefined
+                ? Boolean(isOpenFlag)
+                : Boolean(openCandidate && closeCandidate && openCandidate !== closeCandidate);
 
-        const weekday = this.weekdayForDate(dateStr);
-        const base = await this.businessHoursRepo.findOne({ where: { weekday } });
-        const openCandidate = this.sanitizeTime(body?.open ?? body?.open_time ?? body?.openTime);
-        const closeCandidate = this.sanitizeTime(body?.close ?? body?.close_time ?? body?.closeTime);
-        const isOpenFlag = body?.isOpen ?? body?.is_open ?? (body?.isClosed !== undefined ? !body?.isClosed : undefined);
-        const resolvedIsOpen = isOpenFlag !== undefined
-            ? Boolean(isOpenFlag)
-            : Boolean(openCandidate && closeCandidate && openCandidate !== closeCandidate);
+            const slotIntervalMinutes = Number(
+                body?.slotIntervalMinutes ??
+                body?.slot_interval_minutes ??
+                base?.slotIntervalMinutes ??
+                30,
+            ) || 30;
 
-        const slotIntervalMinutes = Number(
-            body?.slotIntervalMinutes ??
-            body?.slot_interval_minutes ??
-            base?.slotIntervalMinutes ??
-            30,
-        ) || 30;
+            const fallback = DEFAULT_HOURS.find((h) => h.weekday === weekday);
+            const open = resolvedIsOpen ? (openCandidate ?? base?.open ?? fallback?.open ?? '00:00') : '00:00';
+            const close = resolvedIsOpen ? (closeCandidate ?? base?.close ?? fallback?.close ?? '00:00') : '00:00';
 
-        const fallback = DEFAULT_HOURS.find((h) => h.weekday === weekday);
-        const open = resolvedIsOpen ? (openCandidate ?? base?.open ?? fallback?.open ?? '00:00') : '00:00';
-        const close = resolvedIsOpen ? (closeCandidate ?? base?.close ?? fallback?.close ?? '00:00') : '00:00';
-
-        if (resolvedIsOpen) {
-            const openMin = timeToMinutes(open);
-            const closeMin = timeToMinutes(close);
-            if (openMin === null || closeMin === null) {
-                throw new BadRequestException('INVALID_HOUR_VALUE');
+            if (resolvedIsOpen) {
+                const openMin = timeToMinutes(open);
+                const closeMin = timeToMinutes(close);
+                if (openMin === null || closeMin === null) {
+                    throw new BadRequestException('INVALID_HOUR_VALUE');
+                }
+                if (closeMin <= openMin) {
+                    throw new BadRequestException('INVALID_HOUR_RANGE');
+                }
             }
-            if (closeMin <= openMin) {
-                throw new BadRequestException('INVALID_HOUR_RANGE');
+
+            const openMin = resolvedIsOpen ? timeToMinutes(open) : null;
+            const closeMin = resolvedIsOpen ? timeToMinutes(close) : null;
+            const conflictingAppointments = await this.findConflictingAppointmentsForDay(
+                dateStr,
+                resolvedIsOpen,
+                openMin,
+                closeMin,
+            );
+
+            if (conflictingAppointments.length > 0) {
+                throw new BadRequestException({
+                    code: 'BUSINESS_HOURS_CONFLICT',
+                    message: 'לא ניתן לעדכן את שעות היום הזה כי קיימים תורים בטווח שייצא מחוץ לשעות החדשות.',
+                    conflicts: conflictingAppointments.map((appointment) => ({
+                        id: appointment.id,
+                        startsAt: appointment.startsAt,
+                        endsAt: appointment.endsAt,
+                    })),
+                });
             }
-        }
 
-        const openMin = resolvedIsOpen ? timeToMinutes(open) : null;
-        const closeMin = resolvedIsOpen ? timeToMinutes(close) : null;
-        const conflictingAppointments = await this.findConflictingAppointmentsForDay(
-            dateStr,
-            resolvedIsOpen,
-            openMin,
-            closeMin,
-        );
+            const existing = await this.businessHoursOverrideRepo.findOne({ where: { date: dateStr } });
+            const row = existing ?? this.businessHoursOverrideRepo.create({ date: dateStr });
+            row.open = open;
+            row.close = close;
+            row.slotIntervalMinutes = slotIntervalMinutes;
+            await this.businessHoursOverrideRepo.save(row);
 
-        if (conflictingAppointments.length > 0) {
-            throw new BadRequestException({
-                code: 'BUSINESS_HOURS_CONFLICT',
-                message: 'לא ניתן לעדכן את שעות היום הזה כי קיימים תורים בטווח שייצא מחוץ לשעות החדשות.',
-                conflicts: conflictingAppointments.map((appointment) => ({
-                    id: appointment.id,
-                    startsAt: appointment.startsAt,
-                    endsAt: appointment.endsAt,
-                })),
-            });
-        }
-
-        const existing = await this.businessHoursOverrideRepo.findOne({ where: { date: dateStr } });
-        const row = existing ?? this.businessHoursOverrideRepo.create({ date: dateStr });
-        row.open = open;
-        row.close = close;
-        row.slotIntervalMinutes = slotIntervalMinutes;
-        await this.businessHoursOverrideRepo.save(row);
-
-        const isOpen = Boolean(open && close && open !== close);
-        return {
-            date: dateStr,
-            weekday,
-            open: isOpen ? open : null,
-            close: isOpen ? close : null,
-            open_time: isOpen ? open : null,
-            close_time: isOpen ? close : null,
-            slotIntervalMinutes,
-            slot_interval_minutes: slotIntervalMinutes,
-            isOpen,
-            is_open: isOpen,
-            isClosed: !isOpen,
-            is_closed: !isOpen,
-            hasOverride: true,
-            has_override: true,
-        };
+            const isOpen = Boolean(open && close && open !== close);
+            return {
+                date: dateStr,
+                weekday,
+                open: isOpen ? open : null,
+                close: isOpen ? close : null,
+                open_time: isOpen ? open : null,
+                close_time: isOpen ? close : null,
+                slotIntervalMinutes,
+                slot_interval_minutes: slotIntervalMinutes,
+                isOpen,
+                is_open: isOpen,
+                isClosed: !isOpen,
+                is_closed: !isOpen,
+                hasOverride: true,
+                has_override: true,
+            };
+        });
     }
 
     @Put('business-hours')

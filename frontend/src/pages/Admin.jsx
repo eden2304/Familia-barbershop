@@ -86,7 +86,6 @@ import api, { API_ROOT } from "@/api/base44Client";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules, sanitizeBookingRulesForSave, clampAdvanceDays } from "@/lib/booking-rules";
 import { getStoredAuthToken, clearStoredAuth, setStoredAuthToken } from '../utils/authStorage';
 import { readStoredClient, writeStoredClient } from '../utils/clientStorage';
-import { LOCAL_BACKGROUND_VIDEO_ENTRY, LOCAL_STORY_VIDEOS } from "@/lib/localMedia";
 
 const resolveMediaUrl = (value) => {
   if (!value) return "";
@@ -1133,14 +1132,16 @@ export default function Admin() { // Removed props
 
       const [
         allAppointmentsData, servicesData, testimonialsData,
-        hoursData, clientsData,
+        galleryData, hoursData, clientsData, backgroundVideosData,
         productsData, bookingRulesSetting
       ] = await Promise.all([
         AdminApi.appointmentsByDate(selectedDate).catch(() => []),
         listAdminPreferred(Service, "order_index").catch(() => []),
         listAdminPreferred(Testimonial, "order_index").catch(() => []),
+        listAdminPreferred(GalleryImage, "order_index").catch(() => []),
         listAny(BusinessHours).catch(() => []),
         loadClients(),                                // ← לקוחות
+        listAdminPreferred(BackgroundVideo).catch(() => []),     // ← סרטוני רקע (פעם אחת!)
         listAdminPreferred(Product, "order_index").catch(() => []),
         Setting?.get ? Setting.get('booking.rules').catch(() => null) : Promise.resolve(null),
       ]);
@@ -1161,12 +1162,12 @@ export default function Admin() { // Removed props
       }
       setServices(servicesData || []);
       setTestimonials(normalizedTestimonials);
-      setGalleryImages(LOCAL_STORY_VIDEOS);
+      setGalleryImages(galleryData || []);
       setBusinessHours(hoursData || []);
       setBusinessHoursDirty(false);
       setBusinessHoursFeedback(null);
       setAllClients(clientsData || []);
-      setBackgroundVideos([LOCAL_BACKGROUND_VIDEO_ENTRY]);
+      setBackgroundVideos(backgroundVideosData || []);
       setProducts(productsData || []);
 
       const normalizedBookingRules = normalizeBookingRules(bookingRulesSetting?.value);
@@ -4308,32 +4309,69 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'stories' && (
                     <div className="space-y-6">
-                      <Alert className="border-slate-200 bg-slate-50">
-                        <AlertDescription>
-                          הסטוריז קבועים במערכת ונטענים מקבצים מקומיים: video1.mp4 עד video6.mp4. לא ניתן למחוק או להחליף אותם דרך הניהול.
-                        </AlertDescription>
-                      </Alert>
-                      <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {galleryImages.map((item) => (
-                            <Card key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                              <div className="aspect-video bg-gray-100">
-                                <video
-                                    src={item.video_url || item.image_url || item.url}
-                                    className="w-full h-full object-cover"
-                                    muted
-                                    playsInline
-                                    controls={false}
-                                />
-                              </div>
-                              <CardContent className="p-4">
-                                <p className="text-sm text-gray-600 mb-3 truncate">{item.alt_text || 'סרטון'}</p>
-                                <div className="rounded-xl bg-slate-100 px-3 py-2 text-center text-sm text-slate-600">
-                                  סטורי מקומי קבוע
-                                </div>
-                              </CardContent>
-                            </Card>
-                        ))}
+                      <div className="flex justify-end">
+                        <Button
+                            onClick={() => setShowGalleryForm(true)}
+                            className="w-10 h-10 rounded-full bg-black hover:bg-gray-800 text-white shadow-md"
+                            size="icon"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </Button>
                       </div>
+                      <DragDropContext onDragEnd={(result) => handleDragEnd(result, galleryImages, setGalleryImages, GalleryImage)}>
+                        <Droppable droppableId="gallery">
+                          {(provided) => (
+                              <div
+                                  {...provided.droppableProps}
+                                  ref={provided.innerRef}
+                                  className="grid md:grid-cols-3 lg:grid-cols-4 gap-4"
+                              >
+                                {galleryImages.map((item, index) => (
+                                    <Draggable key={item.id} draggableId={item.id.toString()} index={index}>
+                                      {(provided) => (
+                                          <div
+                                              ref={provided.innerRef}
+                                              {...provided.draggableProps}
+                                          >
+                                            <Card className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                                              <div className="flex items-center justify-start gap-2 p-2" {...provided.dragHandleProps}>
+                                                <GripVertical className="cursor-grab text-gray-400"/>
+                                              </div>
+                                              <div className="aspect-video bg-gray-100">
+                                                <video
+                                                    src={
+                                                      (item.video_url && item.video_url.startsWith('http')) ? item.video_url
+                                                          : (item.image_url && item.image_url.startsWith('http')) ? item.image_url
+                                                              : `${(api?.defaults?.baseURL || '').replace(/\/+$/, '')}${item.video_url || item.image_url || ''}`
+                                                    }
+                                                    className="w-full h-full object-cover"
+                                                    muted
+                                                    playsInline
+                                                    controls={false}
+                                                />
+                                              </div>
+                                              <CardContent className="p-4">
+                                                <p className="text-sm text-gray-600 mb-3 truncate">{item.alt_text || 'סרטון'}</p>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleDelete(GalleryImage, item.id, "סרטון")}
+                                                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                >
+                                                  <Trash2 className="w-4 h-4 mr-1" />
+                                                  מחק
+                                                </Button>
+                                              </CardContent>
+                                            </Card>
+                                          </div>
+                                      )}
+                                    </Draggable>
+                                ))}
+                                {provided.placeholder}
+                              </div>
+                          )}
+                        </Droppable>
+                      </DragDropContext>
                     </div>
                 )}
 
@@ -4417,11 +4455,15 @@ const extractRecurringSchedules = (client) => {
 
                 {activeTab === 'background' && (
                     <div className="space-y-6">
-                      <Alert className="border-slate-200 bg-slate-50">
-                        <AlertDescription>
-                          סרטון הרקע קבוע במערכת מתוך הקובץ המקומי backgroundVideo.mp4. לא ניתן למחוק, להחליף או לכבות אותו דרך הניהול.
-                        </AlertDescription>
-                      </Alert>
+                      <div className="flex justify-end">
+                        <Button
+                            onClick={() => setShowBackgroundVideoForm(true)}
+                            className="w-10 h-10 rounded-full bg-black hover:bg-gray-800 text-white shadow-md"
+                            size="icon"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </Button>
+                      </div>
 
                       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {backgroundVideos.map((video) => {
@@ -4446,8 +4488,37 @@ const extractRecurringSchedules = (client) => {
                                     {isActive ? "פעיל" : "לא פעיל"}
                                   </Badge>
                                 </div>
-                                <div className="rounded-xl bg-slate-100 px-3 py-2 text-center text-sm text-slate-600">
-                                  סרטון רקע מקומי וקבוע
+                                <div className="flex gap-2">
+                                  <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={async () => {
+                                        if (await showConfirm("האם להפוך לסרטון הרקע הפעיל?")) {
+                                          try {
+                                            await Promise.all(
+                                                backgroundVideos.map(v =>
+                                                    BackgroundVideo.update(v.id, { is_active: v.id === video.id })
+                                                )
+                                            );
+                                            loadData();
+                                          } catch (error) {
+                                            console.error("Error setting active background video:", error);
+                                          }
+                                        }
+                                      }}
+                                      className="flex-1"
+                                      disabled={isActive}
+                                  >
+                                    {isActive ? "פעיל" : "הפעל"}
+                                  </Button>
+                                  <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDelete(BackgroundVideo, video.id, "סרטון רקע")}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
                                 </div>
                               </CardContent>
                             </Card>

@@ -13,7 +13,6 @@ import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
 import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
 import { clearStoredClient, readStoredClient, writeStoredClient } from "@/utils/clientStorage";
-import { LOCAL_BACKGROUND_VIDEO } from "@/lib/localMedia";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -36,6 +35,16 @@ const TikTokIcon = ({ className = "w-7 h-7" }) => (
     <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.47V2h-3.11v12.4a2.89 2.89 0 1 1-2-2.75V8.48a6 6 0 1 0 5.14 5.93V8.09a7.92 7.92 0 0 0 4.63 1.49V6.69h-.89Z" />
   </svg>
 );
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+const resolveVideoUrl = (value) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(API_URL || "").replace(/\/+$/, "");
+  if (value.startsWith("/")) return `${base}${value}`;
+  return `${base}/${value}`;
+};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -125,8 +134,9 @@ export default function Home() {
       })();
       const shouldLoadFutureRecurring = Boolean(token && storedClientPhone);
 
-      const [raw, myAppointments] = await Promise.all([
+      const [raw, bg, myAppointments] = await Promise.all([
         api.get('/testimonials', { signal }).catch(() => []),
+        api.get('/background-videos', { signal }).catch(() => []),
         shouldLoadFutureRecurring ? api.Appointment.listMine().catch(() => []) : Promise.resolve([]),
       ]);
 
@@ -142,7 +152,16 @@ export default function Home() {
 
       if (!signal?.aborted) setTestimonials(testiFromApi);
 
-      if (!signal?.aborted) setBackgroundVideoUrl(LOCAL_BACKGROUND_VIDEO);
+      const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
+      const rawUrl = active?.imageUrl
+        || active?.image_url
+        || active?.fullUrl
+        || active?.full_url
+        || active?.videoUrl
+        || active?.video_url
+        || active?.url
+        || "";
+      if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
 
       const nextRecurring = findNextFutureRecurringAppointment(myAppointments, client ?? (() => {
         try {

@@ -15,6 +15,22 @@ import type { Express } from 'express';
 import { randomUUID } from 'crypto';
 import { execFile, execFileSync } from 'child_process';
 
+const mimeToExtension: Record<string, string> = {
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'video/x-m4v': 'm4v',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/avif': 'avif',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+};
+
+const allowedUploadMimeTypes = new Set(Object.keys(mimeToExtension));
+const videoUploadMimeTypes = new Set(['video/mp4', 'video/quicktime', 'video/x-m4v']);
+
 let ffmpegAvailable: boolean | null = null;
 
 @Controller('admin')
@@ -143,8 +159,8 @@ export class AdminContentController {
     @Post('upload')
     @UseInterceptors(FileInterceptor('file', {
         fileFilter: (_req, file, cb) => {
-            const allowedMimeTypes = new Set(['video/mp4', 'video/quicktime', 'video/x-m4v']);
-            if (!allowedMimeTypes.has(String(file.mimetype || '').toLowerCase())) {
+            const mimeType = String(file.mimetype || '').toLowerCase();
+            if (!allowedUploadMimeTypes.has(mimeType)) {
                 cb(new BadRequestException('UNSUPPORTED_FILE_TYPE') as Error, false);
                 return;
             }
@@ -162,9 +178,11 @@ export class AdminContentController {
                 }
                 cb(null, fullDir);
             },
-            filename: (_req, _file, cb) => {
+            filename: (_req, file, cb) => {
                 const id = randomUUID();
-                cb(null, `${id}.mp4`);
+                const mimeType = String(file.mimetype || '').toLowerCase();
+                const extension = mimeToExtension[mimeType] || 'bin';
+                cb(null, `${id}.${extension}`);
             },
         }),
         limits: { fileSize: 1024 * 1024 * 1024 },
@@ -173,7 +191,22 @@ export class AdminContentController {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }
+
+        const mimeType = String(file.mimetype || '').toLowerCase();
         const fullFilename = file.filename;
+        const fullUrl = `/uploads/full/${fullFilename}`;
+
+        if (!videoUploadMimeTypes.has(mimeType)) {
+            return {
+                ok: true,
+                fullUrl,
+                previewUrl: fullUrl,
+                url: fullUrl,
+                size: file.size,
+                mime: file.mimetype,
+            };
+        }
+
         const previewDir = path.resolve(process.cwd(), 'uploads', 'preview');
         const previewPath = path.join(previewDir, fullFilename);
         const inputPath = file.path;
@@ -213,10 +246,9 @@ export class AdminContentController {
                 }
             }
         } else {
-            previewUrl = `/uploads/full/${fullFilename}`;
+            previewUrl = fullUrl;
         }
 
-        const fullUrl = `/uploads/full/${fullFilename}`;
         return {
             ok: true,
             fullUrl,

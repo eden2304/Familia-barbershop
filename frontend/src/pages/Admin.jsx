@@ -1559,96 +1559,6 @@ const extractRecurringSchedules = (client) => {
     }
   }, [memberSettings]);
 
-  const memberSpecificVisibleDays = useMemo(() => buildWeekDays(memberSpecificWeekOffset), [memberSpecificWeekOffset]);
-
-  const memberSpecificSlotsForSelectedDate = useMemo(() => {
-    if (!memberSpecificSelectedDate) return [];
-    const ymd = toYmdLocal(memberSpecificSelectedDate);
-    const weekday = memberSpecificSelectedDate.getDay();
-    const step = stepMinutesByDay[weekday] || 30;
-    const businessRange = businessHoursByDay[weekday];
-    const ranges = [];
-    if (businessRange?.open && businessRange?.close && businessRange?.isOpen !== false) {
-      ranges.push({ start: businessRange.open, end: businessRange.close });
-    } else {
-      const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => h.weekday === weekday);
-      if (fallback?.open && fallback?.close) ranges.push({ start: fallback.open, end: fallback.close });
-    }
-    const existingWindows = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
-    existingWindows.forEach((win) => ranges.push({ start: win.start, end: win.end }));
-    return buildSlotsFromRanges(ranges, step).filter((time) => isFutureDateTime(ymd, time));
-  }, [businessHoursByDay, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
-
-  const memberSpecificSelectedSlots = useMemo(() => {
-    if (!memberSpecificSelectedDate) return [];
-    const ymd = toYmdLocal(memberSpecificSelectedDate);
-    const weekday = memberSpecificSelectedDate.getDay();
-    const step = stepMinutesByDay[weekday] || 30;
-    const combined = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
-    return expandWindowsToSlots(combined, step).filter((time) => isFutureDateTime(ymd, time));
-  }, [memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
-
-  const toggleMemberSpecificSlot = React.useCallback((dateStr, time) => {
-    const dateObj = new Date(`${dateStr}T12:00:00`);
-    const step = stepMinutesByDay[dateObj.getDay()] || 30;
-    setMemberSpecificDraft((prev) => {
-      const currentWindows = prev[dateStr] || memberSpecificWindowsByDate[dateStr] || [];
-      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
-      if (slotSet.has(time)) slotSet.delete(time);
-      else slotSet.add(time);
-      const sortedSlots = Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b));
-      const nextWindows = slotsToWindows(sortedSlots, step).map((win, index) => ({
-        date: dateStr,
-        start: win.start,
-        end: win.end,
-        id: `${dateStr}-${win.start}-${win.end}-${index}`,
-      }));
-      return { ...prev, [dateStr]: nextWindows };
-    });
-  }, [memberSpecificWindowsByDate, stepMinutesByDay]);
-
-  const handleSaveMemberSpecificSlots = React.useCallback(() => {
-    const draftEntries = Object.entries(memberSpecificDraft);
-    if (draftEntries.length === 0) {
-      setMemberSpecificDialogOpen(false);
-      return;
-    }
-    setMemberSettings((prev) => {
-      const preserved = (prev.memberSpecificWindows || []).filter((win) => !Object.prototype.hasOwnProperty.call(memberSpecificDraft, win.date));
-      const draftWindows = draftEntries.flatMap(([date, windows]) => (windows || []).map((win, index) => ({
-        date,
-        start: win.start,
-        end: win.end,
-        id: `${date}-${win.start}-${win.end}-${index}`,
-      })));
-      return { ...prev, memberSpecificWindows: [...preserved, ...draftWindows] };
-    });
-    setMemberSettingsDirty(true);
-    setMemberSettingsFeedback(null);
-    setMemberSpecificDraft({});
-    setMemberSpecificDialogOpen(false);
-  }, [memberSpecificDraft]);
-
-  const removeSpecificMemberSlot = React.useCallback((dateStr, time) => {
-    const dateObj = new Date(`${dateStr}T12:00:00`);
-    const step = stepMinutesByDay[dateObj.getDay()] || 30;
-    setMemberSettings((prev) => {
-      const currentWindows = (prev.memberSpecificWindows || []).filter((win) => win.date === dateStr);
-      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
-      slotSet.delete(time);
-      const nextForDate = slotsToWindows(Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b)), step).map((win, index) => ({
-        date: dateStr,
-        start: win.start,
-        end: win.end,
-        id: `${dateStr}-${win.start}-${win.end}-${index}`,
-      }));
-      const others = (prev.memberSpecificWindows || []).filter((win) => win.date !== dateStr);
-      return { ...prev, memberSpecificWindows: [...others, ...nextForDate] };
-    });
-    setMemberSettingsDirty(true);
-    setMemberSettingsFeedback(null);
-  }, [stepMinutesByDay]);
-
   const getAppointmentsForDay = (date) => {
     return appointments
         .filter(apt =>
@@ -2927,6 +2837,96 @@ const extractRecurringSchedules = (client) => {
       return buildSlotsFromRanges(ranges, step);
     })
   ), [businessHoursByDay, memberWindowsByDay, stepMinutesByDay]);
+
+  const memberSpecificVisibleDays = useMemo(() => buildWeekDays(memberSpecificWeekOffset), [memberSpecificWeekOffset]);
+
+  const memberSpecificSlotsForSelectedDate = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const step = stepMinutesByDay[weekday] || 30;
+    const businessRange = businessHoursByDay[weekday];
+    const ranges = [];
+    if (businessRange?.open && businessRange?.close && businessRange?.isOpen !== false) {
+      ranges.push({ start: businessRange.open, end: businessRange.close });
+    } else {
+      const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => h.weekday === weekday);
+      if (fallback?.open && fallback?.close) ranges.push({ start: fallback.open, end: fallback.close });
+    }
+    const existingWindows = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    existingWindows.forEach((win) => ranges.push({ start: win.start, end: win.end }));
+    return buildSlotsFromRanges(ranges, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [businessHoursByDay, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const memberSpecificSelectedSlots = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const step = stepMinutesByDay[weekday] || 30;
+    const combined = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    return expandWindowsToSlots(combined, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const toggleMemberSpecificSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSpecificDraft((prev) => {
+      const currentWindows = prev[dateStr] || memberSpecificWindowsByDate[dateStr] || [];
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      if (slotSet.has(time)) slotSet.delete(time);
+      else slotSet.add(time);
+      const sortedSlots = Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b));
+      const nextWindows = slotsToWindows(sortedSlots, step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      return { ...prev, [dateStr]: nextWindows };
+    });
+  }, [memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const handleSaveMemberSpecificSlots = React.useCallback(() => {
+    const draftEntries = Object.entries(memberSpecificDraft);
+    if (draftEntries.length === 0) {
+      setMemberSpecificDialogOpen(false);
+      return;
+    }
+    setMemberSettings((prev) => {
+      const preserved = (prev.memberSpecificWindows || []).filter((win) => !Object.prototype.hasOwnProperty.call(memberSpecificDraft, win.date));
+      const draftWindows = draftEntries.flatMap(([date, windows]) => (windows || []).map((win, index) => ({
+        date,
+        start: win.start,
+        end: win.end,
+        id: `${date}-${win.start}-${win.end}-${index}`,
+      })));
+      return { ...prev, memberSpecificWindows: [...preserved, ...draftWindows] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+    setMemberSpecificDraft({});
+    setMemberSpecificDialogOpen(false);
+  }, [memberSpecificDraft]);
+
+  const removeSpecificMemberSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSettings((prev) => {
+      const currentWindows = (prev.memberSpecificWindows || []).filter((win) => win.date === dateStr);
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      slotSet.delete(time);
+      const nextForDate = slotsToWindows(Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b)), step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      const others = (prev.memberSpecificWindows || []).filter((win) => win.date !== dateStr);
+      return { ...prev, memberSpecificWindows: [...others, ...nextForDate] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  }, [stepMinutesByDay]);
 
   const toggleMemberSlot = React.useCallback((weekday, time) => {
     const step = stepMinutesByDay[weekday] || 30;

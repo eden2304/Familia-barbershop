@@ -142,6 +142,14 @@ export class AdminContentController {
     // ----- Upload (Stories/Backgrounds) -----
     @Post('upload')
     @UseInterceptors(FileInterceptor('file', {
+        fileFilter: (_req, file, cb) => {
+            const allowedMimeTypes = new Set(['video/mp4', 'video/quicktime', 'video/x-m4v']);
+            if (!allowedMimeTypes.has(String(file.mimetype || '').toLowerCase())) {
+                cb(new BadRequestException('UNSUPPORTED_FILE_TYPE') as Error, false);
+                return;
+            }
+            cb(null, true);
+        },
         storage: diskStorage({
             destination: (_req, _file, cb) => {
                 const fullDir = path.resolve(process.cwd(), 'uploads', 'full');

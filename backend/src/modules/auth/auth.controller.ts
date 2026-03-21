@@ -124,7 +124,7 @@ export class AuthController {
         if (refreshToken) {
             await this.svc.revokeRefreshToken(refreshToken).catch(() => undefined);
         }
-        res.cookie('refreshToken', '', { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 0, path: '/' });
+        res.cookie('refreshToken', '', { httpOnly: true, secure: true, sameSite: 'strict', maxAge: 0, path: '/' });
         return { ok: true };
     }
 
@@ -189,12 +189,12 @@ export class AuthController {
             res.cookie('refreshToken', token, {
                 httpOnly: true,
                 secure: isProd,
-                sameSite: 'lax',
+                sameSite: 'strict',
                 maxAge,
                 path: '/',
             });
         } else {
-            res.cookie('refreshToken', '', { httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: 0, path: '/' });
+            res.cookie('refreshToken', '', { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 0, path: '/' });
         }
     }
 }

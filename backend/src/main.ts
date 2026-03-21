@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Request, Response, NextFunction } from 'express';
@@ -10,6 +10,18 @@ import { DataSource } from 'typeorm';
 const logger = new Logger('Bootstrap');
 const RETENTION_DAYS = 7;
 const WHATSAPP_LOG_RETENTION_DAYS = 1;
+const ALLOWED_ORIGINS = [
+    'https://familia-barbershop.com',
+    'https://familia-barbershop-production.up.railway.app',
+    'https://heartfelt-analysis-production.up.railway.app',
+    'https://heartfelt-analysis-production-3e5d.up.railway.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+];
+
+function isAllowedOrigin(origin: string): boolean {
+    return ALLOWED_ORIGINS.includes(origin);
+}
 
 function securityHeaders(req: Request, res: Response, next: NextFunction) {
     res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none'");
@@ -80,15 +92,7 @@ async function bootstrap() {
     app.enableCors({
         origin(origin, callback) {
             if (!origin) return callback(null, true);
-            const allowlist = [
-                'https://familia-barbershop.com',
-                'https://familia-barbershop-production.up.railway.app',
-                'https://heartfelt-analysis-production.up.railway.app',
-                'http://localhost:5173',
-                'http://localhost:3000',
-            ];
-            const isRailway = origin.endsWith('.up.railway.app');
-            if (allowlist.includes(origin) || isRailway) return callback(null, true);
+            if (isAllowedOrigin(origin)) return callback(null, true);
             return callback(new Error('CORS_DENIED'));
         },
         credentials: true,
@@ -104,6 +108,43 @@ async function bootstrap() {
     });
 
     app.use(securityHeaders);
+
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+        const method = String(req.method || 'GET').toUpperCase();
+        if (['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+            next();
+            return;
+        }
+
+        const hasCookieHeader = typeof req.headers.cookie === 'string' && req.headers.cookie.trim().length > 0;
+        if (!hasCookieHeader) {
+            next();
+            return;
+        }
+
+        const origin = String(req.headers.origin || '').trim();
+        const referer = String(req.headers.referer || '').trim();
+        const candidate = origin || referer;
+        if (!candidate) {
+            next(new ForbiddenException('CSRF_ORIGIN_REQUIRED'));
+            return;
+        }
+
+        let derivedOrigin = '';
+        try {
+            derivedOrigin = new URL(candidate).origin;
+        } catch {
+            next(new ForbiddenException('CSRF_ORIGIN_INVALID'));
+            return;
+        }
+
+        if (!isAllowedOrigin(derivedOrigin)) {
+            next(new ForbiddenException('CSRF_ORIGIN_DENIED'));
+            return;
+        }
+
+        next();
+    });
     app.useStaticAssets(uploadDir, {
         prefix: '/uploads',
         setHeaders: (res, filePath) => {

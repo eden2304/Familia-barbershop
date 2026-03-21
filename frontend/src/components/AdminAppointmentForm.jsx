@@ -1,10 +1,9 @@
-
 import { useState, useEffect, useMemo } from "react";
 import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Sparkles, UserRound, X } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
@@ -20,43 +19,59 @@ const DAYS_IN_WEEK = [
   { key: 6, name: "שבת", short: "ש'" }
 ];
 
-// Phone number normalization utility - consistent format
-const normalizePhone = (phone) => {
-  const cleaned = phone.replace(/\D/g, '');
-
-  if (cleaned.startsWith('972')) {
-    return `0${cleaned.substring(3)}`;
-  } else if (cleaned.length === 9 && cleaned.startsWith('5')) {
-    return `0${cleaned}`;
-  } else if (cleaned.length === 10 && cleaned.startsWith('05')) {
-    return cleaned;
-  }
-
+const normalizePhone = (phone = "") => {
+  const cleaned = String(phone).replace(/\D/g, '');
+  if (cleaned.startsWith('972')) return `0${cleaned.substring(3)}`;
+  if (cleaned.length === 9 && cleaned.startsWith('5')) return `0${cleaned}`;
+  if (cleaned.length === 10 && cleaned.startsWith('05')) return cleaned;
   return cleaned.startsWith('0') ? cleaned : `0${cleaned}`;
 };
 
-// מחזיר מערך של 7 תאריכים (ראשון-שבת) עבור שבוע עם היסט/אופסט נתון
-// weekOffset = 0 השבוע הנוכחי, 1 שבוע הבא, 2+ וכן הלאה
 const getWeekDays = (weekOffset = 0) => {
-    // מתחילים מראשון (weekStartsOn: 0)
-    const base = startOfWeek(addDays(new Date(), weekOffset * 7), { weekStartsOn: 0 });
-    return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+  const base = startOfWeek(addDays(new Date(), weekOffset * 7), { weekStartsOn: 0 });
+  return Array.from({ length: 7 }, (_, i) => addDays(base, i));
 };
 
-export default function AdminAppointmentForm({ onSubmit, onCancel, services, clients }) {
+const normalizeClientName = (client) => `${client?.first_name || client?.firstName || ''} ${client?.last_name || client?.lastName || ''}`.trim();
+
+export default function AdminAppointmentForm({
+  onSubmit,
+  onCancel,
+  services,
+  clients,
+  initialDate = null,
+  initialSlot = null,
+  lockDateTime = false,
+}) {
   const [selectedService, setSelectedService] = useState(null);
-  const [selectedDay, setSelectedDay] = useState(null);
-  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(initialDate);
+  const [selectedSlot, setSelectedSlot] = useState(initialSlot);
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [formData, setFormData] = useState({
     client_name: "",
     phone: "",
-    note: ""
   });
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [availableByDate, setAvailableByDate] = useState({});
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const { showAlert } = useSystemPopup();
+
+  useEffect(() => {
+    setSelectedDay(initialDate instanceof Date && !Number.isNaN(initialDate.getTime()) ? initialDate : null);
+  }, [initialDate]);
+
+  useEffect(() => {
+    setSelectedSlot(initialSlot?.time instanceof Date && !Number.isNaN(initialSlot.time.getTime()) ? initialSlot : null);
+  }, [initialSlot]);
+
+  useEffect(() => {
+    if (!initialDate || lockDateTime !== true) return;
+    const weekStart = startOfWeek(initialDate, { weekStartsOn: 0 });
+    const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+    const diffWeeks = Math.max(0, Math.round((weekStart.getTime() - currentWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+    setSelectedWeek(diffWeeks);
+  }, [initialDate, lockDateTime]);
 
   const weekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
 
@@ -125,54 +140,53 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
       .finally(() => setLoadingSlots(false));
   }, [selectedService?.id, weekDays]);
 
-    const resolveServiceDuration = (service) => {
-        const duration = Number(
-            service?.duration_minutes ??
-            service?.durationMinutes ??
-            service?.duration ??
-            0
-        );
-        return Number.isFinite(duration) && duration > 0 ? duration : 0;
-    };
+  const resolveServiceDuration = (service) => {
+    const duration = Number(service?.duration_minutes ?? service?.durationMinutes ?? service?.duration ?? 0);
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  };
 
   const getAvailableSlotsForDay = (date) => {
     if (!date) return [];
     return availableByDate[toYMD(date)] || [];
   };
 
+  const handleNameChange = (e) => {
+    const value = e.target.value;
+    setFormData((prev) => ({ ...prev, client_name: value }));
 
-    const handleNameChange = (e) => {
-      const value = e.target.value;
-      setFormData({...formData, client_name: value});
-
-      if (value.length > 1 && clients) {
-          const filteredSuggestions = clients.filter(client =>
-              `${client.first_name || ''} ${client.last_name || ''}`.toLowerCase().includes(value.toLowerCase())
-          );
-          setSuggestions(filteredSuggestions);
-      } else {
-          setSuggestions([]);
-      }
+    if (value.trim().length > 0 && clients) {
+      const term = value.trim().toLowerCase();
+      const filteredSuggestions = clients.filter((client) => {
+        const fullName = normalizeClientName(client).toLowerCase();
+        const phone = String(client?.phone || '').toLowerCase();
+        return fullName.includes(term) || phone.includes(term);
+      }).slice(0, 8);
+      setSuggestions(filteredSuggestions);
+    } else {
+      setSuggestions([]);
+    }
   };
 
   const handleSuggestionClick = (client) => {
-      setFormData({
-          ...formData,
-          client_name: `${client.first_name || ''} ${client.last_name || ''}`,
-          phone: client.phone || ''
-      });
-      setSuggestions([]);
+    setFormData((prev) => ({
+      ...prev,
+      client_name: normalizeClientName(client),
+      phone: client?.phone || ''
+    }));
+    setSuggestions([]);
   };
 
   const availableSlotsForSelectedDay = selectedDay ? getAvailableSlotsForDay(selectedDay) : [];
-  const { showAlert } = useSystemPopup();
+  const selectedDateTimeLabel = selectedSlot?.time
+    ? `${format(selectedSlot.time, 'EEEE', { locale: he })} · ${format(selectedSlot.time, 'dd/MM')} · ${format(selectedSlot.time, 'HH:mm')}`
+    : null;
 
   const handleBack = () => {
-    if (selectedSlot) {
+    if (selectedSlot && !lockDateTime) {
       setSelectedSlot(null);
       return;
     }
-    if (selectedDay) {
+    if (selectedDay && !lockDateTime) {
       setSelectedDay(null);
       return;
     }
@@ -195,107 +209,96 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
     try {
       const startTime = selectedSlot.time;
       const endTime = addMinutes(startTime, resolveServiceDuration(selectedService));
-
-      // Normalize phone number before saving
       const normalizedPhone = normalizePhone(formData.phone);
 
       const appointmentData = {
         service_id: selectedService.id,
         client_name: formData.client_name,
-        phone: normalizedPhone, // Use normalized phone
+        phone: normalizedPhone,
         starts_at: startTime.toISOString(),
         ends_at: endTime.toISOString(),
-        note: formData.note || null,
         status: "booked"
       };
 
       await onSubmit(appointmentData);
-
-      // Reset form and selections after successful submission
-      setFormData({ client_name: "", phone: "", note: "" });
+      setFormData({ client_name: "", phone: "" });
       setSelectedService(null);
-      setSelectedDay(null);
-      setSelectedSlot(null);
+      if (!lockDateTime) {
+        setSelectedDay(null);
+        setSelectedSlot(null);
+      }
     } catch (error) {
       console.error("Error creating appointment:", error);
-      await showAlert("שגיאה ביצירת התור. אנא נסה שוב."); // User-friendly error message
+      await showAlert("שגיאה ביצירת התור. אנא נסה שוב.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md mx-auto">
+    <div className="bg-white p-6 rounded-3xl shadow-lg w-full max-w-md mx-auto">
       <div className="space-y-4">
-        {/* Back Button and Title */}
         <div className="relative mb-4 pt-10 min-h-16 flex items-center justify-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onCancel}
-            className="rounded-full absolute right-0 top-0"
-            aria-label="סגירת חלון"
-          >
+          <Button variant="ghost" size="icon" onClick={onCancel} className="rounded-full absolute right-0 top-0" aria-label="סגירת חלון">
             <X className="w-5 h-5" />
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={handleBack}
-            className="rounded-full absolute right-0 top-10"
-            aria-label="חזרה לשלב הקודם"
-          >
+          <Button variant="ghost" size="icon" onClick={handleBack} className="rounded-full absolute right-0 top-10" aria-label="חזרה לשלב הקודם">
             <ChevronRight className="w-5 h-5" />
           </Button>
-          <h3 className="text-xl font-bold text-gray-900 text-center">הוספת תור חדש</h3>
+          <div className="text-center">
+            <h3 className="text-xl font-bold text-gray-900">הוספת תור חדש</h3>
+            <p className="text-sm text-gray-500">אותו תהליך מוכר, רק יותר מהר.</p>
+          </div>
         </div>
-        
+
         <AnimatePresence mode="wait">
           {!selectedService ? (
-            <motion.div
-              key="services"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="text-center"
-            >
+            <motion.div key="services" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
+              {lockDateTime && selectedDateTimeLabel ? (
+                <div className="mb-4 rounded-2xl border border-amber-100 bg-gradient-to-l from-amber-50 to-white p-4 text-right shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Badge className="rounded-full bg-black px-3 py-1 text-white hover:bg-black">מהיומן השבועי</Badge>
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div className="space-y-1 text-sm text-gray-700">
+                    <div className="flex items-center justify-end gap-2"><span>{selectedDateTimeLabel}</span><Clock3 className="h-4 w-4" /></div>
+                    <div className="flex items-center justify-end gap-2"><span>נבחרה משבצת פנויה ביומן</span><CalendarDays className="h-4 w-4" /></div>
+                  </div>
+                </div>
+              ) : null}
               <h2 className="text-xl font-bold text-gray-900 mb-4">בחירת שירות</h2>
               <div className="space-y-3">
                 {services?.map((service) => (
-                  <motion.div
+                  <motion.button
+                    type="button"
                     key={service.id}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setSelectedService(service)}
-                    className="relative bg-white rounded-2xl p-4 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-all"
+                    className="relative w-full bg-white rounded-2xl p-4 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md hover:border-gray-300 transition-all text-right"
                   >
                     <div className="absolute top-2 left-2 bg-black text-white px-2 py-1 rounded-md font-bold text-xs">
-                        ₪{service.price}
+                      ₪{service.price}
                     </div>
                     <div className="text-center">
                       <h3 className="text-base font-bold text-gray-900">{service.name}</h3>
                     </div>
-                  </motion.div>
+                  </motion.button>
                 ))}
               </div>
             </motion.div>
           ) : !selectedDay ? (
-            <motion.div
-              key="days"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="text-center"
-            >
+            <motion.div key="days" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
               <h2 className="text-xl font-bold text-gray-900 mb-4">בחירת תאריך</h2>
-
               <div className="flex justify-between items-center mb-4">
                 <Button variant="ghost" size="sm" onClick={() => setSelectedWeek(prev => prev - 1)} disabled={selectedWeek === 0} className="rounded-full p-2"><ChevronRight className="w-4 h-4" /></Button>
                 <span className="text-sm font-medium">{selectedWeek === 0 ? "השבוע הנוכחי" : `שבוע +${selectedWeek}`}</span>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedWeek(prev => prev + 1)} className="rounded-full p-2"><ChevronLeft className="w-4 h-4" /></Button>
               </div>
-
               <div className="space-y-2">
                 {weekDays.map((date) => {
                   const isPast = isBefore(date, startOfDay(new Date()));
                   const dayName = DAYS_IN_WEEK.find(d => d.key === date.getDay())?.name;
                   const hasSlots = getAvailableSlotsForDay(date).length > 0;
-
                   return (
                     <Button
                       key={format(date, 'yyyy-MM-dd')}
@@ -311,13 +314,8 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
               </div>
             </motion.div>
           ) : !selectedSlot ? (
-            <motion.div
-              key="times"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="text-center"
-            >
+            <motion.div key="times" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
               <h2 className="text-xl font-bold text-gray-900 mb-4">{format(selectedDay, 'EEEE, dd/MM', { locale: he })}</h2>
-
               <div className="max-h-80 overflow-y-auto space-y-3 p-1">
                 {loadingSlots && <p className="text-gray-500 text-sm mt-2">טוען שעות פנויות...</p>}
                 {availableSlotsForSelectedDay.map((slot, index) => (
@@ -325,43 +323,42 @@ export default function AdminAppointmentForm({ onSubmit, onCancel, services, cli
                     {slot.formatted}
                   </Button>
                 ))}
-                {availableSlotsForSelectedDay.length === 0 && (
-                    <p className="text-gray-500 text-sm mt-4">אין תורים פנויים ביום זה.</p>
-                )}
+                {availableSlotsForSelectedDay.length === 0 && <p className="text-gray-500 text-sm mt-4">אין תורים פנויים ביום זה.</p>}
               </div>
             </motion.div>
           ) : (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="text-center"
-            >
-              <h2 className="text-xl font-bold text-gray-900 mb-6">אישור פרטים</h2>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="relative">
-                    <Input placeholder="שם הלקוח" value={formData.client_name} onChange={handleNameChange} required className="h-12 text-center"/>
-                    {suggestions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-40 overflow-y-auto">
-                            {suggestions.map(client => (
-                                <div
-                                    key={client.id}
-                                    onClick={() => handleSuggestionClick(client)}
-                                    className="p-3 hover:bg-gray-100 cursor-pointer text-right"
-                                >
-                                    <p className="font-medium">{client.first_name} {client.last_name}</p>
-                                    <p className="text-sm text-gray-500">{client.phone}</p>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+            <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
+              <h2 className="text-xl font-bold text-gray-900 mb-3">פרטי הלקוח</h2>
+              {selectedDateTimeLabel ? (
+                <div className="mb-5 rounded-2xl bg-gray-50 border border-gray-200 px-4 py-3 text-right text-sm text-gray-700">
+                  <div className="flex items-center justify-end gap-2 font-semibold text-gray-900"><span>{selectedService?.name}</span><Sparkles className="h-4 w-4 text-amber-500" /></div>
+                  <div className="mt-2 flex items-center justify-end gap-2"><span>{selectedDateTimeLabel}</span><Clock3 className="h-4 w-4 text-gray-500" /></div>
                 </div>
-                <Input type="tel" placeholder="טלפון" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required className="h-12 text-center"/>
-                <Textarea placeholder="הערה (אופציונלי)" value={formData.note} onChange={(e) => setFormData({...formData, note: e.target.value})} className="text-center"/>
-
+              ) : null}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="relative text-right">
+                  <Input placeholder="שם הלקוח או טלפון" value={formData.client_name} onChange={handleNameChange} required className="h-12 text-right" />
+                  <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400"><UserRound className="h-4 w-4" /></div>
+                  {suggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-lg z-10 max-h-52 overflow-y-auto text-right">
+                      {suggestions.map((client) => (
+                        <button
+                          type="button"
+                          key={client.id}
+                          onClick={() => handleSuggestionClick(client)}
+                          className="w-full p-3 hover:bg-gray-50 cursor-pointer text-right"
+                        >
+                          <p className="font-medium">{normalizeClientName(client) || 'ללא שם'}</p>
+                          <p className="text-sm text-gray-500">{client.phone}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Input type="tel" placeholder="טלפון" value={formData.phone} onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))} required className="h-12 text-right" />
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={onCancel} className="flex-1 rounded-full py-3">ביטול</Button>
-                  <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3">
+                  <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800">
                     {loading ? "יוצר..." : "קבע תור"}
                   </Button>
                 </div>

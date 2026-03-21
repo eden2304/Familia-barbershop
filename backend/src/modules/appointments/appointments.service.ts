@@ -765,8 +765,11 @@ export class AppointmentsService {
         const [yearStr, monthStr, dayStr] = dateStr.split('-');
         const targetUTC = Date.UTC(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
         const diffDays = Math.floor((targetUTC - todayUTC) / 86_400_000);
-        const maxDays = isMember ? bookingRules.memberMaxAdvanceDays : bookingRules.publicMaxAdvanceDays;
-        if (diffDays > maxDays) {
+        const visibilityMaxDays = Math.max(
+            Number(bookingRules.publicMaxAdvanceDays ?? 0),
+            Number(bookingRules.memberMaxAdvanceDays ?? 0),
+        );
+        if (diffDays > visibilityMaxDays) {
             return [];
         }
 

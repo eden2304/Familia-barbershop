@@ -536,6 +536,7 @@ export default function Admin() { // Removed props
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
   const didAutoAdvanceWeeklyCalendarRef = React.useRef(false);
+  const selectedDateRef = React.useRef(selectedDate);
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -1124,6 +1125,7 @@ export default function Admin() { // Removed props
   };
 
   const loadData = async () => {
+    const requestDate = new Date(selectedDateRef.current);
     try {
       setLoading(true);
 
@@ -1154,7 +1156,9 @@ export default function Admin() { // Removed props
         };
       });
 
-      setAppointments(normalizeAppointmentsForDay(allAppointmentsData));
+      if (isSameDay(requestDate, selectedDateRef.current)) {
+        setAppointments(normalizeAppointmentsForDay(allAppointmentsData));
+      }
       setServices(servicesData || []);
       setTestimonials(normalizedTestimonials);
       setGalleryImages(galleryData || []);
@@ -1177,6 +1181,10 @@ export default function Admin() { // Removed props
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

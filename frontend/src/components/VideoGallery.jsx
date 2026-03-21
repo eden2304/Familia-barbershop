@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { GalleryImage } from "@/api/entities"; // ← זה ה-export אצלך
 import { X } from "lucide-react";
+import { LOCAL_STORY_VIDEOS } from "@/lib/localMedia";
 
 export default function VideoGallery() {
   const [videos, setVideos] = useState([]);
@@ -68,26 +68,7 @@ export default function VideoGallery() {
     }, [selectedVideo]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const fetchVideos = async () => {
-      try {
-        // אותו API כמו אצלך, רק דרך ה-index
-        const galleryData = await GalleryImage.list({ signal: controller.signal });
-        if (!controller.signal.aborted) {
-          setVideos(Array.isArray(galleryData) ? galleryData : []);
-        }
-      } catch (error) {
-        if (error?.name !== 'AbortError') {
-          console.error("Error fetching gallery videos:", error);
-        }
-        if (!controller.signal.aborted) {
-          setVideos([]);
-        }
-      }
-    };
-
-    fetchVideos();
-    return () => controller.abort();
+    setVideos(LOCAL_STORY_VIDEOS);
   }, []);
 
   if (videos.length === 0) {
@@ -123,7 +104,7 @@ export default function VideoGallery() {
                   />
                   <div className="absolute bottom-2 right-2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center border-2 border-white">
                     <img
-                        src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
+                        src="/logo.png"
                         alt="logo"
                         className="w-5 h-5 object-contain"
                     />

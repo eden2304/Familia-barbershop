@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DeepPartial } from 'typeorm';
+import { Repository, DeepPartial, MoreThan } from 'typeorm';
 import { sign, verify, type Secret, type SignOptions, type JwtPayload } from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 
 import { Client } from '../../clients/client.entity';
 import { Setting } from '../../entities/setting.entity';
 import { AdminPhone } from '../../entities/admin-phone.entity';
+import { Appointment } from '../../entities/appointment.entity';
 import { ConfigService } from '@nestjs/config';
 import { AuthRole, AuthTokenPayload, AuthTokens } from './auth.types';
 import { RefreshToken } from '../../entities/refresh-token.entity';
@@ -87,6 +88,7 @@ export class AuthService {
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
         @InjectRepository(Setting) private readonly settingRepo: Repository<Setting>,
         @InjectRepository(AdminPhone) private readonly adminRepo: Repository<AdminPhone>,
+        @InjectRepository(Appointment) private readonly appointmentRepo: Repository<Appointment>,
         @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
         private readonly configService: ConfigService,
         private readonly jwt: JwtService,
@@ -399,6 +401,20 @@ export class AuthService {
         };
     }
 
+    private async hasFutureAppointment(clientId: number): Promise<boolean> {
+        if (!Number.isFinite(clientId) || clientId <= 0) return false;
+
+        const count = await this.appointmentRepo.count({
+            where: {
+                client: { id: clientId } as any,
+                status: 'booked',
+                startsAt: MoreThan(new Date()),
+            },
+        });
+
+        return count > 0;
+    }
+
     private async logClientLoginUpdates(client: Client) {
         if (await this.isAdminPhone(client.phone)) {
             return;
@@ -409,6 +425,10 @@ export class AuthService {
         const clientName = `${firstName} ${lastName}`.trim() || client.phone;
         const clientId = Number(client.id);
         if (await this.wasRecentlyLogged(clientId)) {
+            return;
+        }
+
+        if (await this.hasFutureAppointment(clientId)) {
             return;
         }
 
@@ -519,6 +539,10 @@ export class AuthService {
         for (const entry of due) {
             const client = await this.clientRepo.findOne({ where: { id: Number(entry.clientId) } });
             if (client && await this.isAdminPhone(client.phone)) {
+                continue;
+            }
+
+            if (await this.hasFutureAppointment(Number(entry.clientId))) {
                 continue;
             }
 

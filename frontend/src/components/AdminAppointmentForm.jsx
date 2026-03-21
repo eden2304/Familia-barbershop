@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Sparkles, UserRound, X } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
@@ -51,7 +50,6 @@ export default function AdminAppointmentForm({
   const [formData, setFormData] = useState({
     client_name: "",
     phone: "",
-    note: ""
   });
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -219,12 +217,11 @@ export default function AdminAppointmentForm({
         phone: normalizedPhone,
         starts_at: startTime.toISOString(),
         ends_at: endTime.toISOString(),
-        note: formData.note || null,
         status: "booked"
       };
 
       await onSubmit(appointmentData);
-      setFormData({ client_name: "", phone: "", note: "" });
+      setFormData({ client_name: "", phone: "" });
       setSelectedService(null);
       if (!lockDateTime) {
         setSelectedDay(null);
@@ -359,7 +356,6 @@ export default function AdminAppointmentForm({
                   )}
                 </div>
                 <Input type="tel" placeholder="טלפון" value={formData.phone} onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))} required className="h-12 text-right" />
-                <Textarea placeholder="הערה (אופציונלי)" value={formData.note} onChange={(e) => setFormData((prev) => ({ ...prev, note: e.target.value }))} className="text-right min-h-24" />
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={onCancel} className="flex-1 rounded-full py-3">ביטול</Button>
                   <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800">

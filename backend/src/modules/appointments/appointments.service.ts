@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import {
     Repository,
+    DataSource,
     LessThan,
     MoreThan,
     MoreThanOrEqual,
@@ -78,6 +79,7 @@ export class AppointmentsService {
     private readonly logger = new Logger(AppointmentsService.name);
 
     constructor(
+        private readonly dataSource: DataSource,
         @InjectRepository(Appointment) private readonly apptRepo: Repository<Appointment>,
         @InjectRepository(ServiceEntity) private readonly svcRepo: Repository<ServiceEntity>,
         @InjectRepository(Client) private readonly clientRepo: Repository<Client>,
@@ -88,6 +90,14 @@ export class AppointmentsService {
         private readonly whatsappService: WhatsAppService,
         private readonly adminPushService: AdminPushService,
     ) {}
+
+    private async withDateLock<T>(dateStr: string, task: () => Promise<T>): Promise<T> {
+        const lockKey = `booking-day:${dateStr}`;
+        return this.dataSource.transaction(async (manager) => {
+            await manager.query('select pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+            return task();
+        });
+    }
 
     private clampAdvanceDays(value: any, fallback: number): number {
         const num = Number(value);
@@ -368,13 +378,16 @@ export class AppointmentsService {
     }
 
     async create(dto: CreateAppointmentDto, options: { bypassMemberRestrictions?: boolean } = {}) {
+        const startAt = this.parseLocalISO(dto.startsAtISO);
+        if (Number.isNaN(startAt.getTime())) throw new BadRequestException('Invalid startsAt');
+        const dateStr = DateTime.fromJSDate(startAt).setZone(TZ).toFormat('yyyy-LL-dd');
+
+        return this.withDateLock(dateStr, async () => {
         // 1) שירות
         const service = await this.svcRepo.findOne({ where: { id: dto.serviceId } });
         if (!service) throw new NotFoundException('Service not found');
 
         // 2) start/end
-        const startAt = this.parseLocalISO(dto.startsAtISO);
-        if (Number.isNaN(startAt.getTime())) throw new BadRequestException('Invalid startsAt');
         const endAt = new Date(startAt.getTime() + service.durationMinutes * 60_000);
 
         // 3) לא להזמין לעבר
@@ -437,7 +450,6 @@ export class AppointmentsService {
         }
 
         // 5) שעות פעילות + אינטרוול
-        const dateStr = DateTime.fromJSDate(startAt).setZone(TZ).toFormat('yyyy-LL-dd');
         const { bh, offset, jsDow } = await this.getBusinessHoursForDate(dateStr);
         const interval = Number(bh?.slotIntervalMinutes ?? 30) || 30;
         const openStr = String(bh?.open ?? '').trim();
@@ -472,7 +484,11 @@ export class AppointmentsService {
             if (!hasBaseWindow && hasMemberWindow && !bypassMemberRestrictions) {
                 throw new ForbiddenException('MEMBERS_ONLY_WINDOW');
             }
-            throw new ForbiddenException('OUT_OF_BUSINESS_HOURS');
+            throw new ForbiddenException({
+                code: 'OUT_OF_BUSINESS_HOURS',
+                message: 'השעות עודכנו ממש עכשיו, ולכן התור שבחרת כבר לא נמצא בתוך שעות הפעילות.',
+                suggestedAction: 'RESELECT_SLOT',
+            });
         }
 
         this.ensureAlignedToInterval(startAt, interval);
@@ -538,6 +554,7 @@ export class AppointmentsService {
             console.warn('WhatsApp send failed (appointment_approved).');
         }
         return saved;
+        });
     }
 
 

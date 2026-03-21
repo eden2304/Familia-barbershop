@@ -13,6 +13,7 @@ import VerificationModal from "../components/VerificationModal.jsx";
 import WaitingListModal from "../components/WaitingListModal.jsx";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import ClientWelcomeBanner from "@/components/ClientWelcomeBanner";
+import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { DEFAULT_BOOKING_RULES, normalizeBookingRules } from "@/lib/booking-rules";
 
 // ✅ API החדש
@@ -183,6 +184,7 @@ function isFutureSlot(dateObj, hhmm) {
 /* ---------------- component ---------------- */
 export default function Book() {
   const navigate = useNavigate();
+  const { showAlert } = useSystemPopup();
 
   const [step, setStep] = useState(1);
   const [client, setClient] = useState(null);
@@ -624,6 +626,17 @@ export default function Book() {
       if (err?.status === 409 && err?.code === 'SLOT_TAKEN') {
         setError('התור נתפס ממש עכשיו. בבקשה לבחור שעה אחרת.');
         await refreshAvailabilityForDate(selectedDate, selectedService?.id);
+      } else if (err?.code === 'OUT_OF_BUSINESS_HOURS' || err?.code === 'CLOSED_DAY') {
+        const popupMessage = err?.message || 'שעות הפעילות עודכנו כרגע, ולכן לא ניתן להשלים את קביעת התור בשעה שבחרת.';
+        setError(popupMessage);
+        setSelectedTimeSlot(null);
+        setShowForm(false);
+        await refreshAvailabilityForDate(selectedDate, selectedService?.id);
+        await showAlert({
+          title: 'השעות עודכנו',
+          description: `${popupMessage}\n\nבחר/י בבקשה שעה חדשה מתוך הזמינות המעודכנת.`,
+          confirmText: 'הבנתי',
+        });
       } else {
         setError("שגיאה ביצירת התור: " + (err.code || err.message || "נסה שוב."));
       }

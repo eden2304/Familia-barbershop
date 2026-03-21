@@ -428,6 +428,12 @@ function buildHttpError(method, path, status, payload, headers) {
   } else if (status === 409 && (codeFromPayload === 'SLOT_TAKEN' || (payload && payload.error === 'SLOT_TAKEN'))) {
     err.code = 'SLOT_TAKEN';
     err.message = (payload && payload.message) || 'This slot was just booked. Please choose another time.';
+  } else if (status === 403 && (codeFromPayload === 'OUT_OF_BUSINESS_HOURS' || payload?.code === 'OUT_OF_BUSINESS_HOURS')) {
+    err.code = 'OUT_OF_BUSINESS_HOURS';
+    err.message = (payload && payload.message) || 'השעות עודכנו, והתור שבחרת כבר לא זמין.';
+  } else if (status === 403 && (codeFromPayload === 'CLOSED_DAY' || payload?.code === 'CLOSED_DAY')) {
+    err.code = 'CLOSED_DAY';
+    err.message = (payload && payload.message) || 'העסק סגור ביום שבחרת.';
   } else if (status === 400 && (codeFromPayload === 'NAME_REQUIRED' || (payload && payload.message === 'NAME_REQUIRED'))) {
     err.code = 'NAME_REQUIRED';
   } else if (status === 400 && (codeFromPayload === 'Invalid code' || (payload && payload.message === 'Invalid code'))) {

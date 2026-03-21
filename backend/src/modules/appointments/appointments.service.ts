@@ -45,10 +45,17 @@ interface BookingRules {
     memberMaxAdvanceDays: number;
     memberOnlyServiceIds: string[];
     memberOnlyWindows: MemberWindow[];
+    memberSpecificWindows: SpecificMemberWindow[];
 }
 
 interface MemberWindow {
     weekday: number;
+    start: string;
+    end: string;
+}
+
+interface SpecificMemberWindow {
+    date: string;
     start: string;
     end: string;
 }
@@ -72,6 +79,7 @@ const DEFAULT_BOOKING_RULES: BookingRules = {
     memberMaxAdvanceDays: 14,
     memberOnlyServiceIds: [],
     memberOnlyWindows: [],
+    memberSpecificWindows: [],
 };
 
 @Injectable()
@@ -121,6 +129,72 @@ export class AppointmentsService {
         if (minutes < 0) minutes = 0;
         if (minutes > 59) minutes = 59;
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+
+    private normalizeDate(value: any): string | null {
+        if (value === undefined || value === null) return null;
+        const str = String(value).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+        const parsed = new Date(str);
+        if (!Number.isFinite(parsed.getTime())) return null;
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    private isFutureSpecificWindow(date: string, endTime: string): boolean {
+        const end = new Date(`${date}T${endTime}:00${this.israelOffsetForDate(date)}`);
+        return Number.isFinite(end.getTime()) && end.getTime() > Date.now();
+    }
+
+    private normalizeSpecificMemberWindows(candidate: any): SpecificMemberWindow[] {
+        const windows: SpecificMemberWindow[] = [];
+        const seen = new Set<string>();
+
+        const pushWindow = (date: any, start: any, end: any) => {
+            const dateNorm = this.normalizeDate(date);
+            const startNorm = this.normalizeTime(start);
+            const endNorm = this.normalizeTime(end);
+            if (!dateNorm || !startNorm || !endNorm) return;
+            const startMinutes = parseInt(startNorm.slice(0, 2), 10) * 60 + parseInt(startNorm.slice(3), 10);
+            const endMinutes = parseInt(endNorm.slice(0, 2), 10) * 60 + parseInt(endNorm.slice(3), 10);
+            if (endMinutes <= startMinutes || !this.isFutureSpecificWindow(dateNorm, endNorm)) return;
+            const key = `${dateNorm}|${startNorm}|${endNorm}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            windows.push({ date: dateNorm, start: startNorm, end: endNorm });
+        };
+
+        const explore = (value: any, fallbackDate?: string) => {
+            if (!value) return;
+            if (Array.isArray(value)) {
+                value.forEach((entry) => explore(entry, fallbackDate));
+                return;
+            }
+            if (typeof value === 'object') {
+                const date = value.date ?? value.day ?? value.fullDate ?? value.ymd ?? fallbackDate;
+                const start = value.start ?? value.from ?? value.open ?? value.start_time ?? value.startTime;
+                const end = value.end ?? value.to ?? value.close ?? value.end_time ?? value.endTime;
+                if (date !== undefined || (start !== undefined && end !== undefined)) {
+                    pushWindow(date, start, end);
+                    return;
+                }
+                Object.entries(value).forEach(([maybeDate, nested]) => {
+                    const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(maybeDate) ? maybeDate : fallbackDate;
+                    explore(nested, parsedDate);
+                });
+            }
+        };
+
+        explore(candidate);
+
+        windows.sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date);
+            return a.start.localeCompare(b.start);
+        });
+
+        return windows;
     }
 
     private normalizeMemberWindows(candidate: any): MemberWindow[] {
@@ -210,6 +284,12 @@ export class AppointmentsService {
             source.memberWindows ??
             source.member_windows ??
             [];
+        const specificWindowCandidate =
+            source.memberSpecificWindows ??
+            source.member_specific_windows ??
+            source.specificMemberWindows ??
+            source.specific_member_windows ??
+            [];
 
         const publicMaxAdvanceDays = this.clampAdvanceDays(publicCandidate, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
         const memberMaxAdvanceDays = this.clampAdvanceDays(memberCandidate, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
@@ -227,12 +307,14 @@ export class AppointmentsService {
               )
             : [];
         const windows = this.normalizeMemberWindows(windowCandidate);
+        const specificWindows = this.normalizeSpecificMemberWindows(specificWindowCandidate);
 
         return {
             publicMaxAdvanceDays,
             memberMaxAdvanceDays,
             memberOnlyServiceIds: ids,
             memberOnlyWindows: windows,
+            memberSpecificWindows: specificWindows,
         };
     }
 
@@ -321,12 +403,21 @@ export class AppointmentsService {
         jsDow: number,
         baseWindow?: { start: Date; end: Date } | null,
     ) {
-        return (rules.memberOnlyWindows || [])
+        const weeklyWindows = (rules.memberOnlyWindows || [])
             .filter(win => Number(win.weekday) === Number(jsDow))
             .map(win => ({
                 start: new Date(`${dateStr}T${win.start}:00${offset}`),
                 end: new Date(`${dateStr}T${win.end}:00${offset}`),
-            }))
+            }));
+
+        const specificWindows = (rules.memberSpecificWindows || [])
+            .filter(win => win.date === dateStr)
+            .map(win => ({
+                start: new Date(`${dateStr}T${win.start}:00${offset}`),
+                end: new Date(`${dateStr}T${win.end}:00${offset}`),
+            }));
+
+        return [...weeklyWindows, ...specificWindows]
             .map(win => this.intersectWindow(win, baseWindow))
             .filter((win): win is { start: Date; end: Date } => Boolean(win));
     }

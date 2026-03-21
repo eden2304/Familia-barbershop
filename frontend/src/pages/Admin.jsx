@@ -71,7 +71,7 @@ import {
   List,
 } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
-import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
+import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, differenceInCalendarDays } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import ProductForm from "../components/ProductForm.jsx";
@@ -272,6 +272,28 @@ const slotsToWindows = (slots, stepMinutes) => {
   return windows;
 };
 
+const toYmdLocal = (date) => {
+  if (!date) return '';
+  const value = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(value.getTime())) return '';
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const isFutureDateTime = (dateStr, hhmm) => {
+  if (!dateStr || !hhmm) return false;
+  const when = new Date(`${dateStr}T${hhmm}:00`);
+  return Number.isFinite(when.getTime()) && when.getTime() > Date.now();
+};
+
+const buildWeekDays = (weekOffset = 0) => {
+  const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+  const base = addDays(start, weekOffset * 7);
+  return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+};
+
 const buildSlotsFromRanges = (ranges, stepMinutes) => {
   if (!Array.isArray(ranges) || !stepMinutes) return [];
   const slots = new Set();
@@ -363,6 +385,10 @@ export default function Admin() { // Removed props
   const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
+  const [memberSpecificDialogOpen, setMemberSpecificDialogOpen] = useState(false);
+  const [memberSpecificWeekOffset, setMemberSpecificWeekOffset] = useState(0);
+  const [memberSpecificSelectedDate, setMemberSpecificSelectedDate] = useState(null);
+  const [memberSpecificDraft, setMemberSpecificDraft] = useState({});
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
   const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
@@ -1442,6 +1468,24 @@ const extractRecurringSchedules = (client) => {
     return grouped.map((arr) => [...arr].sort((a, b) => a.start.localeCompare(b.start)));
   }, [memberSettings.memberOnlyWindows]);
 
+  const memberSpecificWindows = useMemo(() => (
+    [...(memberSettings.memberSpecificWindows || [])]
+      .filter((win) => isFutureDateTime(win.date, win.end))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+  ), [memberSettings.memberSpecificWindows]);
+
+  const memberSpecificWindowsByDate = useMemo(() => {
+    const grouped = {};
+    memberSpecificWindows.forEach((window) => {
+      if (!grouped[window.date]) grouped[window.date] = [];
+      grouped[window.date].push(window);
+    });
+    Object.keys(grouped).forEach((date) => {
+      grouped[date] = grouped[date].sort((a, b) => a.start.localeCompare(b.start));
+    });
+    return grouped;
+  }, [memberSpecificWindows]);
+
   const updateAdvanceDays = (field, rawValue, fallback) => {
     const sanitized = clampAdvanceDays(rawValue, fallback);
     setMemberSettings((prev) => ({ ...prev, [field]: sanitized }));
@@ -1504,6 +1548,106 @@ const extractRecurringSchedules = (client) => {
       setMemberSettingsFeedback(null);
     }
   }, [services, memberSettings.memberOnlyServiceIds]);
+
+  useEffect(() => {
+    const next = normalizeBookingRules(memberSettings);
+    const current = JSON.stringify(sanitizeBookingRulesForSave(memberSettings));
+    const normalized = JSON.stringify(sanitizeBookingRulesForSave(next));
+    if (current !== normalized) {
+      setMemberSettings(next);
+      setMemberSettingsDirty(true);
+    }
+  }, [memberSettings]);
+
+  const memberSpecificVisibleDays = useMemo(() => buildWeekDays(memberSpecificWeekOffset), [memberSpecificWeekOffset]);
+
+  const memberSpecificSlotsForSelectedDate = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const step = stepMinutesByDay[weekday] || 30;
+    const businessRange = businessHoursByDay[weekday];
+    const ranges = [];
+    if (businessRange?.open && businessRange?.close && businessRange?.isOpen !== false) {
+      ranges.push({ start: businessRange.open, end: businessRange.close });
+    } else {
+      const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => h.weekday === weekday);
+      if (fallback?.open && fallback?.close) ranges.push({ start: fallback.open, end: fallback.close });
+    }
+    const existingWindows = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    existingWindows.forEach((win) => ranges.push({ start: win.start, end: win.end }));
+    return buildSlotsFromRanges(ranges, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [businessHoursByDay, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const memberSpecificSelectedSlots = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const step = stepMinutesByDay[weekday] || 30;
+    const combined = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    return expandWindowsToSlots(combined, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const toggleMemberSpecificSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSpecificDraft((prev) => {
+      const currentWindows = prev[dateStr] || memberSpecificWindowsByDate[dateStr] || [];
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      if (slotSet.has(time)) slotSet.delete(time);
+      else slotSet.add(time);
+      const sortedSlots = Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b));
+      const nextWindows = slotsToWindows(sortedSlots, step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      return { ...prev, [dateStr]: nextWindows };
+    });
+  }, [memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const handleSaveMemberSpecificSlots = React.useCallback(() => {
+    const draftEntries = Object.entries(memberSpecificDraft);
+    if (draftEntries.length === 0) {
+      setMemberSpecificDialogOpen(false);
+      return;
+    }
+    setMemberSettings((prev) => {
+      const preserved = (prev.memberSpecificWindows || []).filter((win) => !Object.prototype.hasOwnProperty.call(memberSpecificDraft, win.date));
+      const draftWindows = draftEntries.flatMap(([date, windows]) => (windows || []).map((win, index) => ({
+        date,
+        start: win.start,
+        end: win.end,
+        id: `${date}-${win.start}-${win.end}-${index}`,
+      })));
+      return { ...prev, memberSpecificWindows: [...preserved, ...draftWindows] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+    setMemberSpecificDraft({});
+    setMemberSpecificDialogOpen(false);
+  }, [memberSpecificDraft]);
+
+  const removeSpecificMemberSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSettings((prev) => {
+      const currentWindows = (prev.memberSpecificWindows || []).filter((win) => win.date === dateStr);
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      slotSet.delete(time);
+      const nextForDate = slotsToWindows(Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b)), step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      const others = (prev.memberSpecificWindows || []).filter((win) => win.date !== dateStr);
+      return { ...prev, memberSpecificWindows: [...others, ...nextForDate] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  }, [stepMinutesByDay]);
 
   const getAppointmentsForDay = (date) => {
     return appointments
@@ -4094,6 +4238,178 @@ const extractRecurringSchedules = (client) => {
                           </div>
                         </CardContent>
                       </Card>
+
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <CardTitle>תורים ספציפיים לחברי מועדון</CardTitle>
+                            <p className="mt-2 text-sm text-gray-600">
+                              הוסף ימים ושעות חד-פעמיים שיהיו זמינים רק לחברי מועדון. שעות שעברו מוסתרות אוטומטית מהרשימה.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setMemberSpecificDialogOpen(true);
+                              setMemberSpecificWeekOffset(0);
+                              setMemberSpecificSelectedDate(new Date());
+                              setMemberSpecificDraft({});
+                            }}
+                            className="rounded-full bg-black text-white hover:bg-gray-800"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            הוסף תורים ספציפיים
+                          </Button>
+                        </CardHeader>
+                        <CardContent>
+                          {Object.keys(memberSpecificWindowsByDate).length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                              עדיין לא הוגדרו תורים ספציפיים לחברי מועדון.
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {Object.entries(memberSpecificWindowsByDate).map(([date, windows]) => {
+                                const weekday = new Date(`${date}T12:00:00`).getDay();
+                                const step = stepMinutesByDay[weekday] || 30;
+                                const slots = expandWindowsToSlots(windows, step).filter((time) => isFutureDateTime(date, time));
+                                if (slots.length === 0) return null;
+                                return (
+                                  <div key={date} className="rounded-3xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-4 sm:p-5">
+                                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <div>
+                                        <h4 className="text-base font-bold text-gray-900">{format(new Date(`${date}T12:00:00`), 'EEEE, d MMMM yyyy', { locale: he })}</h4>
+                                        <p className="text-xs text-gray-500">זמין לחברי מועדון בלבד</p>
+                                      </div>
+                                      <span className="inline-flex w-fit items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                        {slots.length} שעות פעילות
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {slots.map((time) => (
+                                        <button
+                                          key={`${date}-${time}`}
+                                          type="button"
+                                          onClick={() => removeSpecificMemberSlot(date, time)}
+                                          className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:border-red-200 hover:text-red-600"
+                                        >
+                                          <Clock className="h-3.5 w-3.5" />
+                                          {time}
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Dialog open={memberSpecificDialogOpen} onOpenChange={(open) => { setMemberSpecificDialogOpen(open); if (!open) setMemberSpecificDraft({}); }}>
+                        <DialogContent className="max-w-3xl rounded-[28px] p-0 overflow-hidden">
+                          <DialogHeader className="border-b border-gray-100 px-6 pt-6 pb-4 text-right">
+                            <DialogTitle className="text-2xl font-bold text-gray-900">הוספת תורים ספציפיים לחברי מועדון</DialogTitle>
+                            <DialogDescription className="text-sm text-gray-600">
+                              בחר יום מסוים ואז סמן את כל השעות שתרצה לפתוח רק לחברי מועדון. אפשר להגדיר כמה ימים ורק בסוף לשמור.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+                            <div className="mb-4 flex items-center justify-between">
+                              <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev - 1)} className="rounded-full" disabled={memberSpecificWeekOffset <= 0}>
+                                <ChevronRight className="h-5 w-5" />
+                              </Button>
+                              <p className="text-sm font-medium text-gray-600">
+                                {format(memberSpecificVisibleDays[0], 'd.M', { locale: he })} - {format(memberSpecificVisibleDays[6], 'd.M', { locale: he })}
+                              </p>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev + 1)} className="rounded-full">
+                                <ChevronLeft className="h-5 w-5" />
+                              </Button>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                              {memberSpecificVisibleDays.map((date) => {
+                                const ymd = toYmdLocal(date);
+                                const isPastDay = differenceInCalendarDays(startOfDay(date), startOfDay(new Date())) < 0;
+                                const selectedCount = expandWindowsToSlots(memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [], stepMinutesByDay[date.getDay()] || 30).filter((time) => isFutureDateTime(ymd, time)).length;
+                                return (
+                                  <button
+                                    key={ymd}
+                                    type="button"
+                                    disabled={isPastDay}
+                                    onClick={() => setMemberSpecificSelectedDate(date)}
+                                    className={`rounded-3xl border p-4 text-right transition ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-lg' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <Calendar className="h-4 w-4" />
+                                      <span className="text-xs">{WEEKDAY_LABELS[date.getDay()]}</span>
+                                    </div>
+                                    <p className="mt-4 text-lg font-bold">{format(date, 'dd/MM')}</p>
+                                    <p className={`mt-1 text-xs ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'text-white/80' : 'text-gray-500'}`}>
+                                      {selectedCount > 0 ? `${selectedCount} שעות נבחרו` : 'לא נבחרו שעות'}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-6 rounded-3xl bg-gray-50 p-4 sm:p-5">
+                              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h4 className="text-lg font-bold text-gray-900">
+                                    {memberSpecificSelectedDate ? format(memberSpecificSelectedDate, 'EEEE, d MMMM', { locale: he }) : 'בחר יום כדי להוסיף שעות'}
+                                  </h4>
+                                  <p className="text-sm text-gray-500">השעות מסוננות אוטומטית לפי שעות הפעילות והזמנים שעדיין לא עברו.</p>
+                                </div>
+                                {memberSpecificSelectedDate && memberSpecificSelectedSlots.length > 0 && (
+                                  <span className="inline-flex w-fit items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                    {memberSpecificSelectedSlots.length} שעות סומנו
+                                  </span>
+                                )}
+                              </div>
+
+                              {memberSpecificSelectedDate ? (
+                                <div className="space-y-4">
+                                  <div className="flex flex-wrap gap-2">
+                                    {memberSpecificSlotsForSelectedDate.length > 0 ? memberSpecificSlotsForSelectedDate.map((time) => {
+                                      const ymd = toYmdLocal(memberSpecificSelectedDate);
+                                      const selected = memberSpecificSelectedSlots.includes(time);
+                                      return (
+                                        <button
+                                          key={`${ymd}-${time}`}
+                                          type="button"
+                                          onClick={() => toggleMemberSpecificSlot(ymd, time)}
+                                          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${selected ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                                        >
+                                          {time}
+                                        </button>
+                                      );
+                                    }) : (
+                                      <p className="text-sm text-gray-500">אין שעות זמינות לבחירה ביום הזה.</p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="mb-2 text-xs font-semibold text-gray-500">שעות שנבחרו ליום זה</p>
+                                    {memberSpecificSelectedSlots.length > 0 ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {memberSpecificSelectedSlots.map((time) => (
+                                          <span key={`selected-${time}`} className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">{time}</span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-400">עדיין לא סומנו שעות.</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                          <DialogFooter className="border-t border-gray-100 px-6 py-4">
+                            <Button type="button" variant="outline" onClick={() => { setMemberSpecificDialogOpen(false); setMemberSpecificDraft({}); }} className="rounded-full">ביטול</Button>
+                            <Button type="button" onClick={handleSaveMemberSpecificSlots} className="rounded-full bg-black text-white hover:bg-gray-800">שמור</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
 
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {memberSettingsFeedback && (

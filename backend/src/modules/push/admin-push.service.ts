@@ -48,12 +48,13 @@ export class AdminPushService {
         }
 
         const endpoint = String(subscription.endpoint).trim();
+        const endpointUrl = this.parseAndValidatePushEndpoint(endpoint);
         const p256dh = String(subscription.keys.p256dh).trim();
         const auth = String(subscription.keys.auth).trim();
 
-        let existing = await this.subscriptionsRepo.findOne({ where: { endpoint } });
+        let existing = await this.subscriptionsRepo.findOne({ where: { endpoint: endpointUrl.toString() } });
         if (!existing) {
-            existing = this.subscriptionsRepo.create({ adminPhone, endpoint, p256dh, auth });
+            existing = this.subscriptionsRepo.create({ adminPhone, endpoint: endpointUrl.toString(), p256dh, auth });
         } else {
             existing.adminPhone = adminPhone;
             existing.p256dh = p256dh;
@@ -62,6 +63,40 @@ export class AdminPushService {
 
         await this.subscriptionsRepo.save(existing);
         return existing;
+    }
+
+
+    private parseAndValidatePushEndpoint(endpoint: string): URL {
+        let endpointUrl: URL;
+        try {
+            endpointUrl = new URL(endpoint);
+        } catch {
+            throw new BadRequestException('INVALID_PUSH_ENDPOINT');
+        }
+
+        const protocol = endpointUrl.protocol.toLowerCase();
+        if (protocol != 'https:') {
+            throw new BadRequestException('PUSH_ENDPOINT_PROTOCOL_NOT_ALLOWED');
+        }
+
+        const hostname = endpointUrl.hostname.toLowerCase();
+        const allowedHosts = new Set([
+            'fcm.googleapis.com',
+            'updates.push.services.mozilla.com',
+            'push.services.mozilla.com',
+            'web.push.apple.com',
+        ]);
+        const allowedSuffixes = ['.push.apple.com'];
+        const isAllowedHost = allowedHosts.has(hostname) || allowedSuffixes.some((suffix) => hostname.endsWith(suffix));
+        if (!isAllowedHost) {
+            throw new BadRequestException('PUSH_ENDPOINT_HOST_NOT_ALLOWED');
+        }
+
+        if (endpointUrl.username || endpointUrl.password) {
+            throw new BadRequestException('PUSH_ENDPOINT_CREDENTIALS_FORBIDDEN');
+        }
+
+        return endpointUrl;
     }
 
     async sendAdminUpdateNotification(payload: PushPayload) {

@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { SubscribeAdminPushDto } from './dto/subscribe-admin-push.dto';
 import { AdminPushService } from './admin-push.service';
 
 @Controller('admin/push')
+@UseGuards(JwtAuthGuard)
 @Roles('admin')
 export class AdminPushController {
     constructor(private readonly adminPushService: AdminPushService) {}

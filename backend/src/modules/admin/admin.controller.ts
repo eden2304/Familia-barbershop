@@ -33,9 +33,11 @@ export class AdminController {
 
         const code = String(body?.code ?? '').trim();
         const expected = String(process.env.ADMIN_CODE ?? '').trim();
-        const fallback = '12345';
+        if (!expected || expected.length < 8) {
+            throw new UnauthorizedException('ADMIN_CODE_NOT_CONFIGURED');
+        }
 
-        const ok = (expected && code === expected) || code === fallback;
+        const ok = code === expected;
         if (!ok) {
             await this.rateLimitStore.recordFailure(
                 counterKey,

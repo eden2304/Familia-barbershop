@@ -796,7 +796,7 @@ export class AppointmentsService {
         const workEnd = hasBaseWindow ? new Date(`${dateStr}T${closeStr}:00${offset}`) : null;
         const baseWindow = hasBaseWindow && workStart && workEnd ? { start: workStart, end: workEnd } : null;
         const memberWindows = this.buildMemberWindowsForDate(dateStr, bookingRules, offset, jsDow, baseWindow);
-        if (!baseWindow) return [];
+        if (!baseWindow && memberWindows.length === 0) return [];
 
         const appts = await this.apptRepo.find({
             where: {

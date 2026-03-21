@@ -149,9 +149,28 @@ async function bootstrap() {
         prefix: '/uploads',
         setHeaders: (res, filePath) => {
             res.setHeader('Accept-Ranges', 'bytes');
-            if (filePath.endsWith('.mp4')) {
+
+            const lowerPath = filePath.toLowerCase();
+            if (lowerPath.endsWith('.mp4')) {
                 res.setHeader('Content-Type', 'video/mp4');
+            } else if (lowerPath.endsWith('.webm')) {
+                res.setHeader('Content-Type', 'video/webm');
+            } else if (lowerPath.endsWith('.png')) {
+                res.setHeader('Content-Type', 'image/png');
+            } else if (lowerPath.endsWith('.jpg') || lowerPath.endsWith('.jpeg') || lowerPath.endsWith('.jfif')) {
+                res.setHeader('Content-Type', 'image/jpeg');
+            } else if (lowerPath.endsWith('.gif')) {
+                res.setHeader('Content-Type', 'image/gif');
+            } else if (lowerPath.endsWith('.webp')) {
+                res.setHeader('Content-Type', 'image/webp');
+            } else if (lowerPath.endsWith('.avif')) {
+                res.setHeader('Content-Type', 'image/avif');
+            } else if (lowerPath.endsWith('.heic')) {
+                res.setHeader('Content-Type', 'image/heic');
+            } else if (lowerPath.endsWith('.heif')) {
+                res.setHeader('Content-Type', 'image/heif');
             }
+
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         },
     });

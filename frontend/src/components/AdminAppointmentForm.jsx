@@ -34,11 +34,44 @@ const getWeekDays = (weekOffset = 0) => {
 
 const normalizeClientName = (client) => `${client?.first_name || client?.firstName || ''} ${client?.last_name || client?.lastName || ''}`.trim();
 
+const getClosingDateFor = (date, hoursRows = []) => {
+  try {
+    const dow = date.getDay();
+    const row = (hoursRows || []).find(
+      (item) => Number(item?.day_of_week ?? item?.weekday ?? item?.day ?? item?.dayOfWeek) === dow
+    );
+    const closeValue = row?.closes_at ?? row?.close_at ?? row?.closing_time ?? row?.end ?? row?.close;
+    if (!closeValue) return null;
+    const [hours, minutes] = String(closeValue).split(":").map(Number);
+    const closingDate = new Date(date);
+    closingDate.setHours(hours || 0, minutes || 0, 0, 0);
+    return closingDate;
+  } catch {
+    return null;
+  }
+};
+
+const shouldAutoOpenNextWeek = (hoursRows = []) => {
+  const now = new Date();
+  const day = now.getDay();
+
+  if (day === 6) return true;
+
+  if (day === 5) {
+    const fridayClose = getClosingDateFor(now, hoursRows);
+    if (!fridayClose) return false;
+    return now.getTime() >= fridayClose.getTime();
+  }
+
+  return false;
+};
+
 export default function AdminAppointmentForm({
   onSubmit,
   onCancel,
   services,
   clients,
+  businessHours = [],
   initialDate = null,
   initialSlot = null,
   lockDateTime = false,
@@ -46,7 +79,7 @@ export default function AdminAppointmentForm({
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDay, setSelectedDay] = useState(initialDate);
   const [selectedSlot, setSelectedSlot] = useState(initialSlot);
-  const [selectedWeek, setSelectedWeek] = useState(0);
+  const [selectedWeek, setSelectedWeek] = useState(() => (shouldAutoOpenNextWeek(businessHours) ? 1 : 0));
   const [formData, setFormData] = useState({
     client_name: "",
     phone: "",
@@ -72,6 +105,11 @@ export default function AdminAppointmentForm({
     const diffWeeks = Math.max(0, Math.round((weekStart.getTime() - currentWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000)));
     setSelectedWeek(diffWeeks);
   }, [initialDate, lockDateTime]);
+
+  useEffect(() => {
+    if (lockDateTime || initialDate) return;
+    setSelectedWeek(shouldAutoOpenNextWeek(businessHours) ? 1 : 0);
+  }, [businessHours, initialDate, lockDateTime]);
 
   const weekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
 

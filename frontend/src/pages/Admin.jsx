@@ -217,6 +217,23 @@ const toTimeString = (minutes) => {
   return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 };
 
+const getClosingDateFor = (date, hoursRows = []) => {
+  try {
+    const dow = date.getDay();
+    const row = (hoursRows || []).find(
+      (item) => Number(item?.day_of_week ?? item?.weekday ?? item?.day ?? item?.dayOfWeek) === dow
+    );
+    const closeValue = row?.closes_at ?? row?.close_at ?? row?.closing_time ?? row?.end ?? row?.close;
+    if (!closeValue) return null;
+    const [hours, minutes] = String(closeValue).split(':').map(Number);
+    const closingDate = new Date(date);
+    closingDate.setHours(hours || 0, minutes || 0, 0, 0);
+    return closingDate;
+  } catch {
+    return null;
+  }
+};
+
 const expandWindowsToSlots = (windows, stepMinutes) => {
   if (!Array.isArray(windows) || !stepMinutes) return [];
   const slots = new Set();
@@ -518,6 +535,7 @@ export default function Admin() { // Removed props
   const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
+  const didAutoAdvanceWeeklyCalendarRef = React.useRef(false);
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -1487,6 +1505,36 @@ const extractRecurringSchedules = (client) => {
         )
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   };
+
+  const shouldAutoOpenNextWeek = React.useCallback(() => {
+    const now = new Date();
+    const day = now.getDay();
+
+    if (day === 6) return true;
+
+    if (day === 5) {
+      const fridayClose = getClosingDateFor(now, businessHours);
+      if (!fridayClose) return false;
+      return now.getTime() >= fridayClose.getTime();
+    }
+
+    return false;
+  }, [businessHours]);
+
+  useEffect(() => {
+    if (didAutoAdvanceWeeklyCalendarRef.current) return;
+    if (!shouldAutoOpenNextWeek()) return;
+
+    const nowWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+    const selectedWeekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
+    if (selectedWeekStart.getTime() !== nowWeekStart.getTime()) {
+      didAutoAdvanceWeeklyCalendarRef.current = true;
+      return;
+    }
+
+    didAutoAdvanceWeeklyCalendarRef.current = true;
+    setSelectedDate(addDays(nowWeekStart, 7));
+  }, [selectedDate, shouldAutoOpenNextWeek]);
 
   const weeklyCalendarStart = useMemo(
       () => startOfWeek(selectedDate, { weekStartsOn: 0 }),

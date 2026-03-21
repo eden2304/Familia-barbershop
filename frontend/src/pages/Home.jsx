@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -48,6 +48,7 @@ const resolveVideoUrl = (value) => {
 
 export default function Home() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [client, setClient] = useState(null);
   const [testimonials, setTestimonials] = useState([]);
   const [testimonialPage, setTestimonialPage] = useState(0);
@@ -108,6 +109,17 @@ export default function Home() {
       window.removeEventListener('storage', syncClientFromStorage);
     };
   }, []);
+
+  useEffect(() => {
+    const token = getStoredAuthToken();
+    const storedClient = readStoredClient();
+    const isAdmin = Boolean(storedClient?.isAdmin || storedClient?.is_admin || storedClient?.roles?.includes?.('admin'));
+    const allowAdminHome = Boolean(location.state?.allowAdminHome);
+
+    if (token && isAdmin && !allowAdminHome) {
+      navigate("/Admin", { replace: true });
+    }
+  }, [location.state, navigate]);
 
   const loadData = async (signal) => {
     setLoading(true);
@@ -204,7 +216,8 @@ export default function Home() {
       setShowLoadingScreen(true);
 
       setTimeout(() => {
-        navigate("/");
+        if (adminFlag) navigate("/Admin", { replace: true });
+        else navigate("/");
         setShowLoadingScreen(false);
       }, 1200);
     } catch (error) {

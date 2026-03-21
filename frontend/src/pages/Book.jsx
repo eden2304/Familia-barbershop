@@ -562,8 +562,9 @@ export default function Book() {
     writeStoredClient(norm);
     setShowVerification(false);
     setShowPostLoginLoading(true);
+    const isAdmin = Boolean(norm?.isAdmin || norm?.is_admin || norm?.roles?.includes?.('admin'));
     setTimeout(() => {
-      navigate("/");
+      navigate(isAdmin ? "/Admin" : "/");
       setShowPostLoginLoading(false);
     }, 1200);
   };

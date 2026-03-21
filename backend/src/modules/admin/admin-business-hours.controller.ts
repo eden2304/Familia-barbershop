@@ -68,6 +68,36 @@ export class AdminBusinessHoursController {
         return sanitizeTime(value);
     }
 
+    private resolveBaseHours(
+        weekday: number,
+        base?: Pick<BusinessHour, 'open' | 'close' | 'slotIntervalMinutes'> | null,
+    ) {
+        const fallback = DEFAULT_HOURS.find((row) => row.weekday === weekday);
+        const open = String(base?.open ?? fallback?.open ?? '00:00');
+        const close = String(base?.close ?? fallback?.close ?? '00:00');
+        const slotIntervalMinutes = Number(base?.slotIntervalMinutes ?? fallback?.slotIntervalMinutes ?? 30) || 30;
+        return {
+            open,
+            close,
+            slotIntervalMinutes,
+            isOpen: Boolean(open && close && open !== close),
+        };
+    }
+
+    private isOverrideFollowingBase(
+        override: Pick<BusinessHoursOverride, 'open' | 'close' | 'slotIntervalMinutes'>,
+        base?: Pick<BusinessHour, 'open' | 'close' | 'slotIntervalMinutes'> | null,
+        weekday?: number,
+    ) {
+        const resolvedWeekday = Number.isInteger(weekday) ? Number(weekday) : this.weekdayForDate((override as any).date);
+        const previousBase = this.resolveBaseHours(resolvedWeekday, base);
+        return (
+            String(override.open ?? '00:00') === previousBase.open &&
+            String(override.close ?? '00:00') === previousBase.close &&
+            (Number(override.slotIntervalMinutes) || 30) === previousBase.slotIntervalMinutes
+        );
+    }
+
     private async findConflictingAppointmentsForDay(
         dateStr: string,
         isOpen: boolean,
@@ -282,6 +312,10 @@ export class AdminBusinessHoursController {
             });
         }
 
+        const existingBaseRows = await this.businessHoursRepo.find();
+        const existingBaseByWeekday = new Map(existingBaseRows.map((row) => [row.weekday, row]));
+        const existingOverrides = await this.businessHoursOverrideRepo.find();
+
         const rowsToSave = Array.from(normalized.values()).map((row) => ({
             weekday: row.weekday,
             open: row.open,
@@ -289,7 +323,63 @@ export class AdminBusinessHoursController {
             slotIntervalMinutes: row.slotIntervalMinutes,
         }));
 
+        const overridesToUpdate: BusinessHoursOverride[] = [];
+        const conflicts: Array<{ date: string; weekday: number; appointments: Array<{ id: string; startsAt: Date; endsAt: Date | null }> }> = [];
+
+        for (const override of existingOverrides) {
+            const weekday = this.weekdayForDate(override.date);
+            const nextWeeklyRow = normalized.get(weekday);
+            if (!nextWeeklyRow) continue;
+
+            const previousBaseRow = existingBaseByWeekday.get(weekday) ?? null;
+            if (!this.isOverrideFollowingBase(override, previousBaseRow, weekday)) {
+                continue;
+            }
+
+            const openMin = nextWeeklyRow.isOpen ? timeToMinutes(nextWeeklyRow.open) : null;
+            const closeMin = nextWeeklyRow.isOpen ? timeToMinutes(nextWeeklyRow.close) : null;
+            const conflictingAppointments = await this.findConflictingAppointmentsForDay(
+                override.date,
+                nextWeeklyRow.isOpen,
+                openMin,
+                closeMin,
+            );
+
+            if (conflictingAppointments.length > 0) {
+                conflicts.push({
+                    date: override.date,
+                    weekday,
+                    appointments: conflictingAppointments.map((appointment) => ({
+                        id: appointment.id,
+                        startsAt: appointment.startsAt,
+                        endsAt: appointment.endsAt,
+                    })),
+                });
+                continue;
+            }
+
+            override.open = nextWeeklyRow.open;
+            override.close = nextWeeklyRow.close;
+            override.slotIntervalMinutes = nextWeeklyRow.slotIntervalMinutes;
+            overridesToUpdate.push(override);
+        }
+
+        if (conflicts.length > 0) {
+            throw new BadRequestException({
+                code: 'BUSINESS_HOURS_OVERRIDE_CONFLICT',
+                message: 'לא ניתן לעדכן חלק מהימים הספציפיים כי יש בהם תורים שייצאו מחוץ לשעות החדשות. יש לבטל או להזיז אותם קודם.',
+                conflicts: conflicts.map((entry) => ({
+                    date: entry.date,
+                    weekday: entry.weekday,
+                    appointments: entry.appointments,
+                })),
+            });
+        }
+
         await this.businessHoursRepo.upsert(rowsToSave, ['weekday']);
+        if (overridesToUpdate.length > 0) {
+            await this.businessHoursOverrideRepo.save(overridesToUpdate);
+        }
 
         const fresh = await this.businessHoursRepo.find({
             order: { weekday: 'ASC', id: 'ASC' },

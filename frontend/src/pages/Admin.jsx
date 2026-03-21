@@ -1308,7 +1308,19 @@ export default function Admin() { // Removed props
       setBusinessHoursFeedback({ type: 'success', message: 'שעות הפעילות נשמרו בהצלחה.' });
     } catch (error) {
       console.error('Failed to save business hours', error);
-      setBusinessHoursFeedback({ type: 'error', message: 'שמירת שעות הפעילות נכשלה. נסה שוב.' });
+      const conflictDays = Array.isArray(error?.payload?.conflicts)
+        ? error.payload.conflicts
+            .map((item) => item?.date)
+            .filter(Boolean)
+            .join(', ')
+        : '';
+      const fallbackMessage = conflictDays
+        ? `שמירת שעות הפעילות נכשלה. יש ימים ספציפיים עם תורים שחורגים מהשעות החדשות: ${conflictDays}. בטלו או הזיזו את התורים האלו ונסו שוב.`
+        : 'שמירת שעות הפעילות נכשלה. נסה שוב.';
+      setBusinessHoursFeedback({
+        type: 'error',
+        message: error?.payload?.message || error?.payload?.error || error?.message || fallbackMessage,
+      });
     } finally {
       setBusinessHoursSaving(false);
     }

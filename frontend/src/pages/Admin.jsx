@@ -386,6 +386,7 @@ export default function Admin() { // Removed props
   const [importClientsPreview, setImportClientsPreview] = useState([]);
   const [importClientsFeedback, setImportClientsFeedback] = useState(null);
   const [importClientsLoading, setImportClientsLoading] = useState(false);
+  const [lastAppointmentFilter, setLastAppointmentFilter] = useState('all');
   const isPhoneLike = (value) => {
     const digits = String(value ?? '').replace(/\D/g, '');
     return digits.length >= 7;
@@ -2590,10 +2591,18 @@ const extractRecurringSchedules = (client) => {
           lastDateFromAppointments && !Number.isNaN(lastDateFromAppointments.getTime())
               ? lastDateFromAppointments
               : null;
-      const lastDate = normalizedApiDate ?? lastDateFromSchedule;
-      const isRecent = lastDate ? differenceInDays(now, lastDate) <= 30 : false;
+      const lastDate = [normalizedApiDate, lastDateFromSchedule]
+          .filter(Boolean)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+      const daysSinceLastAppointment = lastDate ? differenceInDays(now, lastDate) : null;
+      const isRecent = lastDate ? daysSinceLastAppointment <= 30 : false;
 
-      return { ...c, lastAppointmentDate: lastDate, lastAppointmentRecent: isRecent };
+      return {
+        ...c,
+        lastAppointmentDate: lastDate,
+        lastAppointmentRecent: isRecent,
+        daysSinceLastAppointment,
+      };
     });
   }, [allClients, appointments]);
 
@@ -2715,6 +2724,13 @@ const extractRecurringSchedules = (client) => {
       const blockedFlag = Boolean(client.isBlocked ?? client.is_blocked);
       if (showBlockedClients !== blockedFlag) return false;
       if (showMembersOnlyClients && !memberFlag) return false;
+
+      const daysSinceLastAppointment = Number(client.daysSinceLastAppointment);
+      const hasLastAppointment = Number.isFinite(daysSinceLastAppointment);
+      if (lastAppointmentFilter === 'last_month' && (!hasLastAppointment || daysSinceLastAppointment > 30)) return false;
+      if (lastAppointmentFilter === 'last_two_months' && (!hasLastAppointment || daysSinceLastAppointment > 60)) return false;
+      if (lastAppointmentFilter === 'over_three_months' && (!hasLastAppointment || daysSinceLastAppointment <= 90)) return false;
+
       if (!term) return true;
       const nameParts = [
         client.first_name ?? client.firstName ?? '',
@@ -2725,7 +2741,7 @@ const extractRecurringSchedules = (client) => {
           .replace(/\D/g, '');
       return displayName.includes(term) || phoneDigits.includes(term);
     });
-  }, [clientDataWithAppointments, clientSearchTerm, showBlockedClients, showMembersOnlyClients]);
+  }, [clientDataWithAppointments, clientSearchTerm, lastAppointmentFilter, showBlockedClients, showMembersOnlyClients]);
 
   const businessHoursByDay = useMemo(() => {
     const arr = Array.from({ length: 7 }, () => null);
@@ -3542,6 +3558,16 @@ const extractRecurringSchedules = (client) => {
                                 className="md:max-w-sm"
                             />
                             <div className="flex flex-wrap items-center gap-3">
+                              <select
+                                  value={lastAppointmentFilter}
+                                  onChange={(e) => setLastAppointmentFilter(e.target.value)}
+                                  className="h-10 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              >
+                                <option value="all">כל התאריכים</option>
+                                <option value="last_month">בחודש האחרון</option>
+                                <option value="last_two_months">בחודשיים האחרונים</option>
+                                <option value="over_three_months">מעל שלושה חודשים</option>
+                              </select>
                               <Button
                                   type="button"
                                   variant={showBlockedClients ? "default" : "outline"}

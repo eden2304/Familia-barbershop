@@ -218,6 +218,7 @@ async function migrate() {
         create table if not exists clients (
                                                id serial primary key,
                                                first_name text not null default '',
+                                               last_appointment_at timestamp with time zone,
                                                last_name  text not null default '',
                                                phone      text not null unique
         );
@@ -366,6 +367,18 @@ async function migrate() {
 
     // ----- שמירה על תאימות קיימת בשאר הטבלאות -----
     await ensureColumn('clients', 'is_member', 'boolean default false');
+    await ensureColumn('clients', 'last_appointment_at', 'timestamp with time zone');
+    await pool.query(`
+        update clients c
+        set last_appointment_at = latest.max_starts_at
+        from (
+            select client_id, max(starts_at) as max_starts_at
+            from appointments
+            group by client_id
+        ) latest
+        where latest.client_id = c.id
+          and (c.last_appointment_at is null or c.last_appointment_at < latest.max_starts_at)
+    `);
     await pool.query(`update clients set is_member = coalesce(is_member, false)`);
     await pool.query(`alter table clients alter column is_member set default false`);
     await pool.query(`alter table clients alter column is_member set not null`);
@@ -1259,7 +1272,7 @@ async function router(req, res) {
                  c.last_name,
                  c.phone,
                  coalesce(c.is_member,false) as is_member,
-                 (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
+                 c.last_appointment_at as last_appointment_at,
                  coalesce(json_agg(
                      json_build_object(
                        'id', r.id,
@@ -1598,6 +1611,7 @@ async function router(req, res) {
                  values ($1,$2,$3,$4,$5,$6)
                      returning id`,
                 [service_id ?? null, clientId, sLegacy, eLegacy, status, note]            );
+            await updateClientLastAppointment(clientId, sLegacy);
             return json(res, 200, { id: q.rows[0].id });
         }
 
@@ -1695,6 +1709,7 @@ async function router(req, res) {
              values ($1,$2,$3,$4,$5,$6) returning id`,
             [serviceId, clientId, start, end, 'booked', note]
         );
+        await updateClientLastAppointment(clientId, start);
         return json(res, 200, { id: ins.rows[0].id });
     }
 
@@ -2011,7 +2026,10 @@ async function router(req, res) {
         const body = await readBody(req);
         const { id, newStartAt, newEndAt } = body || {};
         if (!id || !newStartAt || !newEndAt) return json(res, 400, { error: 'Missing id/newStartAt/newEndAt' });
-        await pool.query(`update appointments set starts_at=$2, ends_at=$3 where id=$1`, [id, new Date(newStartAt), new Date(newEndAt)]);
+        const updated = await pool.query(`update appointments set starts_at=$2, ends_at=$3 where id=$1 returning client_id, starts_at`, [id, new Date(newStartAt), new Date(newEndAt)]);
+        if (updated.rows[0]?.client_id != null) {
+            await updateClientLastAppointment(updated.rows[0].client_id, updated.rows[0].starts_at);
+        }
         return json(res, 200, { ok: true });
     }
 
@@ -2889,6 +2907,21 @@ function normalizePhone(phone) {
     return digits.startsWith('0') ? digits : '0' + digits;
 }
 
+
+async function updateClientLastAppointment(clientId, appointmentDate) {
+    if (clientId == null || !appointmentDate) return;
+    const normalizedDate = appointmentDate instanceof Date ? appointmentDate : new Date(appointmentDate);
+    if (!Number.isFinite(normalizedDate.getTime())) return;
+    await pool.query(
+        `update clients
+         set last_appointment_at = case
+             when last_appointment_at is null or last_appointment_at < $2 then $2
+             else last_appointment_at
+         end
+         where id = $1`,
+        [clientId, normalizedDate]
+    );
+}
 
 async function upsertClient(firstName, lastName, phone, options = {}) {
     const p0 = normalizePhone(phone);

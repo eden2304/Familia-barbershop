@@ -5210,7 +5210,7 @@ const extractRecurringSchedules = (client) => {
 
         {showServiceForm && (
             <Dialog open={showServiceForm} onOpenChange={setShowServiceForm}>
-              <DialogContent className="w-[min(calc(100vw-32px),36rem)] rounded-[32px] border-0 bg-white p-4 shadow-[0_32px_90px_rgba(15,23,42,0.26)] sm:p-6" aria-describedby={undefined}>
+              <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>{editingService ? 'עריכת שירות' : 'הוספת שירות חדש'}</DialogTitle>
                 </DialogHeader>
@@ -5228,7 +5228,7 @@ const extractRecurringSchedules = (client) => {
 
         {showTestimonialForm && (
             <Dialog open={showTestimonialForm} onOpenChange={setShowTestimonialForm}>
-              <DialogContent className="w-[min(calc(100vw-32px),36rem)] rounded-[32px] border-0 bg-white p-4 shadow-[0_32px_90px_rgba(15,23,42,0.26)] sm:p-6" aria-describedby={undefined}>
+              <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>{editingTestimonial ? 'עריכת תגובה' : 'הוספת תגובה חדשה'}</DialogTitle>
                 </DialogHeader>
@@ -5246,7 +5246,7 @@ const extractRecurringSchedules = (client) => {
 
         {showGalleryForm && (
             <Dialog open={showGalleryForm} onOpenChange={setShowGalleryForm}>
-              <DialogContent className="w-[min(calc(100vw-32px),36rem)] rounded-[32px] border-0 bg-white p-4 shadow-[0_32px_90px_rgba(15,23,42,0.26)] sm:p-6" aria-describedby={undefined}>
+              <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>הוספת סרטון חדש</DialogTitle>
                 </DialogHeader>
@@ -5268,7 +5268,7 @@ const extractRecurringSchedules = (client) => {
 
         {showBackgroundVideoForm && (
             <Dialog open={showBackgroundVideoForm} onOpenChange={setShowBackgroundVideoForm}>
-              <DialogContent className="w-[min(calc(100vw-32px),36rem)] rounded-[32px] border-0 bg-white p-4 shadow-[0_32px_90px_rgba(15,23,42,0.26)] sm:p-6" aria-describedby={undefined}>
+              <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>הוספת סרטון רקע חדש</DialogTitle>
                 </DialogHeader>
@@ -5294,7 +5294,7 @@ const extractRecurringSchedules = (client) => {
 
         {showProductForm && (
             <Dialog open={showProductForm} onOpenChange={setShowProductForm}>
-              <DialogContent className="w-[min(calc(100vw-32px),36rem)] rounded-[32px] border-0 bg-white p-4 shadow-[0_32px_90px_rgba(15,23,42,0.26)] sm:p-6" aria-describedby={undefined}>
+              <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>{editingProduct ? 'עריכת מוצר' : 'הוספת מוצר חדש'}</DialogTitle>
                 </DialogHeader>
@@ -5376,29 +5376,10 @@ function ClientForm({ onSubmit, onCancel }) {
   );
 }
 
-function AdminFormShell({ title, description, accent = "from-zinc-950 via-zinc-900 to-zinc-800", children, footer }) {
-  return (
-      <div className="space-y-5" dir="rtl">
-        <div className={`overflow-hidden rounded-[28px] bg-gradient-to-br ${accent} p-5 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]`}>
-          <p className="text-xs font-medium text-white/70">Familia Admin</p>
-          <h3 className="mt-2 text-2xl font-semibold">{title}</h3>
-          {description ? <p className="mt-2 text-sm leading-6 text-white/75">{description}</p> : null}
-        </div>
-        <div className="space-y-4 rounded-[28px] border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
-          {children}
-        </div>
-        {footer}
-      </div>
-  );
-}
-
-function AdminField({ label, hint, children }) {
+function AdminField({ label, children }) {
   return (
       <div className="space-y-2.5">
-        <div className="space-y-1">
-          <Label className="text-sm font-semibold text-slate-900">{label}</Label>
-          {hint ? <p className="text-xs leading-5 text-slate-500">{hint}</p> : null}
-        </div>
+        <Label className="text-sm font-semibold text-slate-900">{label}</Label>
         {children}
       </div>
   );
@@ -5407,10 +5388,10 @@ function AdminField({ label, hint, children }) {
 function AdminFormActions({ submitLabel, onCancel, cancelLabel = "ביטול", submitDisabled = false }) {
   return (
       <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
-        <Button type="button" variant="outline" onClick={onCancel} className="h-12 flex-1 rounded-2xl border-slate-200 bg-white text-base font-medium" disabled={submitDisabled}>
+        <Button type="button" variant="outline" onClick={onCancel} className="h-11 flex-1 rounded-2xl border-slate-200 bg-white text-base font-medium" disabled={submitDisabled}>
           {cancelLabel}
         </Button>
-        <Button type="submit" className="h-12 flex-1 rounded-2xl bg-black text-base font-medium text-white hover:bg-zinc-800" disabled={submitDisabled}>
+        <Button type="submit" className="h-11 flex-1 rounded-2xl bg-black text-base font-medium text-white hover:bg-zinc-800" disabled={submitDisabled}>
           {submitLabel}
         </Button>
       </div>
@@ -5433,62 +5414,55 @@ function ServiceForm({ service, onSubmit, onCancel }) {
   };
 
   return (
-      <form onSubmit={handleSubmit}>
-        <AdminFormShell
-            title={service ? "עריכת שירות" : "שירות חדש"}
-            description="עדכן את פרטי השירות בפורמט נקי שמתאים לשפה העיצובית של המערכת."
-            accent="from-zinc-950 via-zinc-900 to-slate-800"
-            footer={<AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} />}
-        >
-          <AdminField label="שם השירות" hint="שם קצר וברור שיופיע במסך ההזמנות.">
+      <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+        <AdminField label="שם השירות">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+          />
+        </AdminField>
+
+        <AdminField label="תיאור">
+          <Textarea
+              className="min-h-[108px] rounded-2xl border-slate-200 bg-white text-base"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          />
+        </AdminField>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <AdminField label="משך (דקות)">
             <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+                type="number"
+                value={formData.durationMinutes}
+                onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) })}
                 required
             />
           </AdminField>
-
-          <AdminField label="תיאור" hint="אפשר להוסיף פירוט קצר כדי להסביר מה כולל השירות.">
-            <Textarea
-                className="min-h-[112px] rounded-2xl border-slate-200 bg-white text-base"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          <AdminField label="מחיר (₪)">
+            <Input
+                className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+                type="number"
+                value={formData.price}
+                onChange={(e) => setFormData({ ...formData, price: parseInt(e.target.value) })}
+                required
             />
           </AdminField>
+        </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <AdminField label="משך (דקות)" hint="משך משוער לביצוע השירות.">
-              <Input
-                  className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                  type="number"
-                  value={formData.durationMinutes}
-                  onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) })}
-                  required
-              />
-            </AdminField>
-            <AdminField label="מחיר (₪)" hint="המחיר שיוצג ללקוח במערכת.">
-              <Input
-                  className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: parseInt(e.target.value) })}
-                  required
-              />
-            </AdminField>
-          </div>
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <Label htmlFor="active-service" className="text-sm font-semibold text-slate-900">שירות פעיל</Label>
+          <Switch
+              id="active-service"
+              checked={formData.isActive}
+              onCheckedChange={(checked) => setFormData({ ...formData, isActive: Boolean(checked) })}
+          />
+        </div>
 
-          <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">שירות פעיל</p>
-              <p className="text-xs text-slate-500">כשהאפשרות פעילה, לקוחות יוכלו לבחור את השירות בהזמנה.</p>
-            </div>
-            <Switch
-                checked={formData.isActive}
-                onCheckedChange={(checked) => setFormData({ ...formData, isActive: Boolean(checked) })}
-            />
-          </div>
-        </AdminFormShell>
+        <AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} />
       </form>
   );
 }
@@ -5512,49 +5486,44 @@ function TestimonialForm({ testimonial, onSubmit, onCancel }) {
   };
 
   return (
-      <form onSubmit={handleSubmit}>
-        <AdminFormShell
-            title={testimonial ? "עריכת תגובה" : "תגובה חדשה"}
-            description="הוסף המלצה בפורמט אלגנטי עם היררכיה ברורה ותוכן שקל לסרוק."
-            accent="from-amber-500 via-orange-500 to-zinc-900"
-            footer={<AdminFormActions submitLabel={testimonial ? 'עדכן תגובה' : 'הוסף תגובה'} onCancel={onCancel} />}
-        >
-          <AdminField label="שם הלקוח" hint="כך התגובה תוצג באתר ובמסכי הניהול.">
-            <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                value={formData.author}
-                onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                required
-            />
-          </AdminField>
+      <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+        <AdminField label="שם הלקוח">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+              value={formData.author}
+              onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+              required
+          />
+        </AdminField>
 
-          <AdminField label="תוכן התגובה" hint="מומלץ לשמור על מסר קצר, אותנטי וברור.">
-            <Textarea
-                className="min-h-[132px] rounded-2xl border-slate-200 bg-white text-base"
-                value={formData.text}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData({ ...formData, text: value, content: value });
-                }}
-                required
-            />
-          </AdminField>
+        <AdminField label="תוכן התגובה">
+          <Textarea
+              className="min-h-[120px] rounded-2xl border-slate-200 bg-white text-base"
+              value={formData.text}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFormData({ ...formData, text: value, content: value });
+              }}
+              required
+          />
+        </AdminField>
 
-          <AdminField label="דירוג" hint="בחר את רמת שביעות הרצון שיוצג יחד עם ההמלצה.">
-            <Select value={formData.rating.toString()} onValueChange={(value) => setFormData({ ...formData, rating: parseInt(value) })}>
-              <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white text-base">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 כוכב</SelectItem>
-                <SelectItem value="2">2 כוכבים</SelectItem>
-                <SelectItem value="3">3 כוכבים</SelectItem>
-                <SelectItem value="4">4 כוכבים</SelectItem>
-                <SelectItem value="5">5 כוכבים</SelectItem>
-              </SelectContent>
-            </Select>
-          </AdminField>
-        </AdminFormShell>
+        <AdminField label="דירוג">
+          <Select value={formData.rating.toString()} onValueChange={(value) => setFormData({ ...formData, rating: parseInt(value) })}>
+            <SelectTrigger className="h-11 rounded-2xl border-slate-200 bg-white text-base">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">1 כוכב</SelectItem>
+              <SelectItem value="2">2 כוכבים</SelectItem>
+              <SelectItem value="3">3 כוכבים</SelectItem>
+              <SelectItem value="4">4 כוכבים</SelectItem>
+              <SelectItem value="5">5 כוכבים</SelectItem>
+            </SelectContent>
+          </Select>
+        </AdminField>
+
+        <AdminFormActions submitLabel={testimonial ? 'עדכן תגובה' : 'הוסף תגובה'} onCancel={onCancel} />
       </form>
   );
 }
@@ -5578,12 +5547,10 @@ function GalleryForm({ onSubmit, onCancel }) {
 
     setUploading(true);
     try {
-      // שרת מחזיר { ok:true, url: "/uploads/..." }
-      console.log('selected file:', file?.name, file?.type, file); // צריך לראות שם/סוג
+      console.log('selected file:', file?.name, file?.type, file);
       const { previewUrl, fullUrl, url } = await UploadFile.upload(file);
 
-      // נבנה URL מוחלט לפי הבסיס של axios (api)
-      const base = (api?.defaults?.baseURL || '').replace(/\/+$/,''); // בלי "/" בסוף
+      const base = (api?.defaults?.baseURL || '').replace(/\/+$/,'');
       const previewAbs = previewUrl
         ? (previewUrl.startsWith('http') ? previewUrl : `${base}${previewUrl}`)
         : (url.startsWith('http') ? url : `${base}${url}`);
@@ -5592,12 +5559,11 @@ function GalleryForm({ onSubmit, onCancel }) {
         : previewAbs;
 
       await onSubmit({
-        // נשמור את שלושתם כדי שכל מקום בקוד ימצא מה שהוא צריך:
         image_url: previewAbs,
         video_url: fullAbs,
-        url:       fullAbs,
-        full_url:  fullAbs,
-        alt_text:  formData.alt_text,
+        url: fullAbs,
+        full_url: fullAbs,
+        alt_text: formData.alt_text,
         order_index: formData.order_index
       });
     } catch (error) {
@@ -5609,41 +5575,36 @@ function GalleryForm({ onSubmit, onCancel }) {
   };
 
   return (
-      <form onSubmit={handleSubmit}>
-        <AdminFormShell
-            title="סטורי חדש"
-            description="מסך הוספה מעוצב יותר, עם חלוקה ברורה בין הקובץ, תיאור הסיפור וסדר ההצגה."
-            accent="from-fuchsia-600 via-violet-600 to-zinc-900"
-            footer={<AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סטורי"} onCancel={onCancel} submitDisabled={uploading} />}
-        >
-          <AdminField label="קובץ וידאו" hint="אפשר לבחור MP4 או כל פורמט וידאו נתמך.">
-            <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base file:ml-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
-                type="file"
-                accept="video/mp4,video/*"
-                onChange={(e) => setFile(e.target.files[0])}
-                required
-            />
-          </AdminField>
+      <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+        <AdminField label="קובץ וידאו">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base file:ml-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
+              type="file"
+              accept="video/mp4,video/*"
+              onChange={(e) => setFile(e.target.files[0])}
+              required
+          />
+        </AdminField>
 
-          <AdminField label="תיאור" hint="הטקסט הזה עוזר לזהות את הסרטון ברשימה.">
-            <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                value={formData.alt_text}
-                onChange={(e) => setFormData({ ...formData, alt_text: e.target.value })}
-                required
-            />
-          </AdminField>
+        <AdminField label="תיאור">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+              value={formData.alt_text}
+              onChange={(e) => setFormData({ ...formData, alt_text: e.target.value })}
+              required
+          />
+        </AdminField>
 
-          <AdminField label="סדר תצוגה" hint="ערך נמוך יותר יוצג מוקדם יותר בקרוסלה.">
-            <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base"
-                type="number"
-                value={formData.order_index}
-                onChange={(e) => setFormData({ ...formData, order_index: parseInt(e.target.value) })}
-            />
-          </AdminField>
-        </AdminFormShell>
+        <AdminField label="סדר תצוגה">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
+              type="number"
+              value={formData.order_index}
+              onChange={(e) => setFormData({ ...formData, order_index: parseInt(e.target.value) })}
+          />
+        </AdminField>
+
+        <AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סטורי"} onCancel={onCancel} submitDisabled={uploading} />
       </form>
   );
 }
@@ -5678,25 +5639,19 @@ function BackgroundVideoForm({ onSubmit, onCancel }) {
     }
   };
 
-
   return (
-      <form onSubmit={handleSubmit}>
-        <AdminFormShell
-            title="סרטון רקע חדש"
-            description="העלאת סרטון הרקע עטופה עכשיו בממשק שמתאים לשפה היוקרתית של המערכת."
-            accent="from-sky-600 via-cyan-500 to-zinc-900"
-            footer={<AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סרטון"} onCancel={onCancel} submitDisabled={uploading} />}
-        >
-          <AdminField label="קובץ וידאו" hint="הסרטון שיוצג ברקע של דף הבית לאחר העלאה.">
-            <Input
-                className="h-12 rounded-2xl border-slate-200 bg-white text-base file:ml-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
-                type="file"
-                accept="video/mp4,video/*"
-                onChange={(e) => setFile(e.target.files[0])}
-                required
-            />
-          </AdminField>
-        </AdminFormShell>
+      <form onSubmit={handleSubmit} className="space-y-4" dir="rtl">
+        <AdminField label="קובץ וידאו">
+          <Input
+              className="h-11 rounded-2xl border-slate-200 bg-white text-base file:ml-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
+              type="file"
+              accept="video/mp4,video/*"
+              onChange={(e) => setFile(e.target.files[0])}
+              required
+          />
+        </AdminField>
+
+        <AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סרטון"} onCancel={onCancel} submitDisabled={uploading} />
       </form>
   );
 }

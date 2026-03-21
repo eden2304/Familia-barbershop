@@ -924,9 +924,13 @@ async function router(req, res) {
                 ext === 'mp4'  ? 'video/mp4' :
                     ext === 'webm' ? 'video/webm' :
                         ext === 'png'  ? 'image/png' :
-                            ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+                            ext === 'jpg' || ext === 'jpeg' || ext === 'jfif' ? 'image/jpeg' :
                                 ext === 'gif'  ? 'image/gif' :
-                                    'application/octet-stream';
+                                    ext === 'webp' ? 'image/webp' :
+                                        ext === 'avif' ? 'image/avif' :
+                                            ext === 'heic' ? 'image/heic' :
+                                                ext === 'heif' ? 'image/heif' :
+                                                    'application/octet-stream';
 
             res.writeHead(200, {
                 'Content-Type': mime,
@@ -965,7 +969,11 @@ async function router(req, res) {
                         : mimeType === 'video/webm' ? 'webm'
                             : mimeType === 'image/png'  ? 'png'
                                 : mimeType === 'image/jpeg' ? 'jpg'
-                                    : 'bin';
+                                    : mimeType === 'image/webp' ? 'webp'
+                                        : mimeType === 'image/avif' ? 'avif'
+                                            : mimeType === 'image/heic' ? 'heic'
+                                                : mimeType === 'image/heif' ? 'heif'
+                                                    : 'bin';
 
             const base = Date.now() + '_' + Math.random().toString(36).slice(2);
             const safeName = `${base}.${ext}`;

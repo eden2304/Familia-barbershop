@@ -43,7 +43,7 @@ export const rateLimitConfig = {
         ipDailyWindowSec: toInt(process.env.RATE_LIMIT_BOOKING_IP_DAILY_WINDOW_SEC, 86400),
     },
     adminUi: {
-        limit: toInt(process.env.RATE_LIMIT_ADMIN_UI_LIMIT, 240),
+        limit: toInt(process.env.RATE_LIMIT_ADMIN_UI_LIMIT, 3000),
         windowSec: toInt(process.env.RATE_LIMIT_ADMIN_UI_WINDOW_SEC, 60),
     },
     adminVerify: {

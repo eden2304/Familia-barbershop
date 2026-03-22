@@ -4311,14 +4311,11 @@ const extractRecurringSchedules = (client) => {
                       </Card>
 
                       <Dialog open={memberSpecificDialogOpen} onOpenChange={(open) => { setMemberSpecificDialogOpen(open); if (!open) setMemberSpecificDraft({}); }}>
-                        <DialogContent className="w-[calc(100vw-48px)] max-w-[380px] rounded-[20px] p-0 overflow-hidden shadow-2xl">
-                          <DialogHeader className="border-b border-gray-100 px-3.5 pt-3.5 pb-2.5 text-right sm:px-4 sm:pt-4">
-                            <DialogTitle className="text-2xl font-bold text-gray-900">הוספת תורים ספציפיים לחברי מועדון</DialogTitle>
-                            <DialogDescription className="text-sm text-gray-600">
-                              בחר יום מסוים ואז סמן את כל השעות שתרצה לפתוח רק לחברי מועדון. אפשר להגדיר כמה ימים ורק בסוף לשמור.
-                            </DialogDescription>
+                        <DialogContent className="w-[calc(100vw-56px)] max-w-[350px] rounded-[18px] p-0 overflow-hidden shadow-2xl [&>button:last-child]:right-3 [&>button:last-child]:top-3 [&>button:last-child]:z-20 [&>button:last-child]:rounded-full [&>button:last-child]:border [&>button:last-child]:border-gray-200 [&>button:last-child]:bg-white [&>button:last-child]:p-1 [&>button:last-child]:opacity-100 [&>button:last-child]:shadow-sm">
+                          <DialogHeader className="border-b border-gray-100 px-3.5 pt-3.5 pb-2.5 pr-10 text-right sm:px-4 sm:pt-4 sm:pr-11">
+                            <DialogTitle className="text-lg font-bold text-gray-900">הוספת תורים ספציפיים לחברי מועדון</DialogTitle>
                           </DialogHeader>
-                          <div className="max-h-[68vh] overflow-y-auto px-3 py-3 sm:px-3.5 sm:py-3.5">
+                          <div className="max-h-[66vh] overflow-y-auto px-3 py-3">
                             <div className="mb-4 flex items-center justify-between">
                               <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev - 1)} className="rounded-full" disabled={memberSpecificWeekOffset <= 0}>
                                 <ChevronRight className="h-5 w-5" />
@@ -4331,7 +4328,7 @@ const extractRecurringSchedules = (client) => {
                               </Button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                            <div className="grid grid-cols-3 gap-1.5">
                               {memberSpecificVisibleDays.map((date) => {
                                 const ymd = toYmdLocal(date);
                                 const isPastDay = differenceInCalendarDays(startOfDay(date), startOfDay(new Date())) < 0;
@@ -4342,13 +4339,13 @@ const extractRecurringSchedules = (client) => {
                                     type="button"
                                     disabled={isPastDay}
                                     onClick={() => setMemberSpecificSelectedDate(date)}
-                                    className={`rounded-xl border px-2 py-2 text-right transition min-h-[64px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-sm' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
+                                    className={`rounded-lg border px-1.5 py-2 text-right transition min-h-[56px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-sm' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
                                   >
                                     <div className="flex items-center justify-between">
                                       <Calendar className="h-3 w-3" />
-                                      <span className="text-[11px]">{WEEKDAY_LABELS[date.getDay()]}</span>
+                                      <span className="text-[10px]">{WEEKDAY_LABELS[date.getDay()]}</span>
                                     </div>
-                                    <p className="mt-1.5 text-[13px] font-bold">{format(date, 'dd/MM')}</p>
+                                    <p className="mt-1 text-xs font-bold">{format(date, 'dd/MM')}</p>
                                     <p className={`mt-1 text-xs ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'text-white/80' : 'text-gray-500'}`}>
                                       {selectedCount > 0 ? `${selectedCount} שעות נבחרו` : 'לא נבחרו שעות'}
                                     </p>

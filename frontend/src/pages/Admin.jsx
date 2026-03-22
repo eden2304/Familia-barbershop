@@ -4307,14 +4307,14 @@ const extractRecurringSchedules = (client) => {
                       </Card>
 
                       <Dialog open={memberSpecificDialogOpen} onOpenChange={(open) => { setMemberSpecificDialogOpen(open); if (!open) setMemberSpecificDraft({}); }}>
-                        <DialogContent className="max-w-3xl rounded-[28px] p-0 overflow-hidden">
+                        <DialogContent className="max-w-2xl rounded-[24px] p-0 overflow-hidden">
                           <DialogHeader className="border-b border-gray-100 px-6 pt-6 pb-4 text-right">
                             <DialogTitle className="text-2xl font-bold text-gray-900">הוספת תורים ספציפיים לחברי מועדון</DialogTitle>
                             <DialogDescription className="text-sm text-gray-600">
                               בחר יום מסוים ואז סמן את כל השעות שתרצה לפתוח רק לחברי מועדון. אפשר להגדיר כמה ימים ורק בסוף לשמור.
                             </DialogDescription>
                           </DialogHeader>
-                          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+                          <div className="max-h-[75vh] overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
                             <div className="mb-4 flex items-center justify-between">
                               <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev - 1)} className="rounded-full" disabled={memberSpecificWeekOffset <= 0}>
                                 <ChevronRight className="h-5 w-5" />
@@ -4327,7 +4327,7 @@ const extractRecurringSchedules = (client) => {
                               </Button>
                             </div>
 
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                               {memberSpecificVisibleDays.map((date) => {
                                 const ymd = toYmdLocal(date);
                                 const isPastDay = differenceInCalendarDays(startOfDay(date), startOfDay(new Date())) < 0;
@@ -4338,13 +4338,13 @@ const extractRecurringSchedules = (client) => {
                                     type="button"
                                     disabled={isPastDay}
                                     onClick={() => setMemberSpecificSelectedDate(date)}
-                                    className={`rounded-3xl border p-4 text-right transition ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-lg' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
+                                    className={`rounded-2xl border px-3 py-3 text-right transition min-h-[92px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
                                   >
                                     <div className="flex items-center justify-between">
                                       <Calendar className="h-4 w-4" />
                                       <span className="text-xs">{WEEKDAY_LABELS[date.getDay()]}</span>
                                     </div>
-                                    <p className="mt-4 text-lg font-bold">{format(date, 'dd/MM')}</p>
+                                    <p className="mt-3 text-base font-bold">{format(date, 'dd/MM')}</p>
                                     <p className={`mt-1 text-xs ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'text-white/80' : 'text-gray-500'}`}>
                                       {selectedCount > 0 ? `${selectedCount} שעות נבחרו` : 'לא נבחרו שעות'}
                                     </p>
@@ -4353,7 +4353,7 @@ const extractRecurringSchedules = (client) => {
                               })}
                             </div>
 
-                            <div className="mt-6 rounded-3xl bg-gray-50 p-4 sm:p-5">
+                            <div className="mt-4 rounded-2xl bg-gray-50 p-3.5 sm:p-4">
                               <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
                                   <h4 className="text-lg font-bold text-gray-900">

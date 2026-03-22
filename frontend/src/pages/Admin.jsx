@@ -389,6 +389,7 @@ export default function Admin() { // Removed props
   const [memberSpecificWeekOffset, setMemberSpecificWeekOffset] = useState(0);
   const [memberSpecificSelectedDate, setMemberSpecificSelectedDate] = useState(null);
   const [memberSpecificDraft, setMemberSpecificDraft] = useState({});
+  const [memberSpecificDayHoursOverrides, setMemberSpecificDayHoursOverrides] = useState({});
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
   const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
@@ -587,6 +588,29 @@ export default function Admin() { // Removed props
     () => Array.from({ length: 30 }, (_, idx) => idx + 1),
     []
   );
+
+
+  const loadMemberSpecificDayHours = React.useCallback(async (days) => {
+    const entries = await Promise.all((days || []).map(async (day) => {
+      const dayKey = format(day, 'yyyy-MM-dd');
+      try {
+        const data = await BusinessHours.getDay(dayKey).catch(() => null);
+        if (!data) return [dayKey, null];
+        return [dayKey, {
+          open: data.open ?? data.open_time ?? null,
+          close: data.close ?? data.close_time ?? null,
+          slotMinutes: Number(data.slotIntervalMinutes ?? data.slot_interval_minutes ?? data.slot ?? 30) || 30,
+          isOpen: Boolean(data.isOpen ?? data.is_open ?? !(data.isClosed ?? data.is_closed)),
+        }];
+      } catch (_) {
+        return [dayKey, null];
+      }
+    }));
+    setMemberSpecificDayHoursOverrides((prev) => ({
+      ...prev,
+      ...Object.fromEntries(entries.filter(([_, value]) => Boolean(value))),
+    }));
+  }, []);
 
   const loadWeeklyDayHours = React.useCallback(async (days) => {
     if (!Array.isArray(days) || days.length === 0) return;
@@ -2844,18 +2868,26 @@ const extractRecurringSchedules = (client) => {
 
   const memberSpecificVisibleDays = useMemo(() => (
     buildWeekDays(memberSpecificWeekOffset).filter((date) => {
-      const row = businessHoursByDay[date.getDay()];
+      const dayKey = format(date, 'yyyy-MM-dd');
+      const row = memberSpecificDayHoursOverrides[dayKey] ?? businessHoursByDay[date.getDay()];
       if (!row) return false;
       return row.isOpen !== false && Boolean(row.open && row.close);
     })
-  ), [businessHoursByDay, memberSpecificWeekOffset]);
+  ), [businessHoursByDay, memberSpecificDayHoursOverrides, memberSpecificWeekOffset]);
+
+  useEffect(() => {
+    if (!memberSpecificDialogOpen) return;
+    if (memberSpecificVisibleDays.length === 0) return;
+    loadMemberSpecificDayHours(memberSpecificVisibleDays);
+  }, [loadMemberSpecificDayHours, memberSpecificDialogOpen, memberSpecificVisibleDays]);
 
   const memberSpecificSlotsForSelectedDate = useMemo(() => {
     if (!memberSpecificSelectedDate) return [];
     const ymd = toYmdLocal(memberSpecificSelectedDate);
     const weekday = memberSpecificSelectedDate.getDay();
-    const step = stepMinutesByDay[weekday] || 30;
-    const businessRange = businessHoursByDay[weekday];
+    const dayOverride = memberSpecificDayHoursOverrides[ymd];
+    const step = Number(dayOverride?.slotMinutes ?? stepMinutesByDay[weekday] ?? 30) || 30;
+    const businessRange = dayOverride ?? businessHoursByDay[weekday];
     const ranges = [];
     if (businessRange?.open && businessRange?.close && businessRange?.isOpen !== false) {
       ranges.push({ start: businessRange.open, end: businessRange.close });
@@ -2866,16 +2898,17 @@ const extractRecurringSchedules = (client) => {
     const existingWindows = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
     existingWindows.forEach((win) => ranges.push({ start: win.start, end: win.end }));
     return buildSlotsFromRanges(ranges, step).filter((time) => isFutureDateTime(ymd, time));
-  }, [businessHoursByDay, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+  }, [businessHoursByDay, memberSpecificDayHoursOverrides, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
 
   const memberSpecificSelectedSlots = useMemo(() => {
     if (!memberSpecificSelectedDate) return [];
     const ymd = toYmdLocal(memberSpecificSelectedDate);
     const weekday = memberSpecificSelectedDate.getDay();
-    const step = stepMinutesByDay[weekday] || 30;
+    const dayOverride = memberSpecificDayHoursOverrides[ymd];
+    const step = Number(dayOverride?.slotMinutes ?? stepMinutesByDay[weekday] ?? 30) || 30;
     const combined = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
     return expandWindowsToSlots(combined, step).filter((time) => isFutureDateTime(ymd, time));
-  }, [memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+  }, [memberSpecificDayHoursOverrides, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
 
   const toggleMemberSpecificSlot = React.useCallback((dateStr, time) => {
     const dateObj = new Date(`${dateStr}T12:00:00`);

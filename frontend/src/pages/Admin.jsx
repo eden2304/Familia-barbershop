@@ -71,7 +71,7 @@ import {
   List,
 } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
-import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays } from "date-fns";
+import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, differenceInCalendarDays } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import ProductForm from "../components/ProductForm.jsx";
@@ -272,6 +272,28 @@ const slotsToWindows = (slots, stepMinutes) => {
   return windows;
 };
 
+const toYmdLocal = (date) => {
+  if (!date) return '';
+  const value = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(value.getTime())) return '';
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const isFutureDateTime = (dateStr, hhmm) => {
+  if (!dateStr || !hhmm) return false;
+  const when = new Date(`${dateStr}T${hhmm}:00`);
+  return Number.isFinite(when.getTime()) && when.getTime() > Date.now();
+};
+
+const buildWeekDays = (weekOffset = 0) => {
+  const start = startOfWeek(new Date(), { weekStartsOn: 0 });
+  const base = addDays(start, weekOffset * 7);
+  return Array.from({ length: 7 }, (_, i) => addDays(base, i));
+};
+
 const buildSlotsFromRanges = (ranges, stepMinutes) => {
   if (!Array.isArray(ranges) || !stepMinutes) return [];
   const slots = new Set();
@@ -363,6 +385,11 @@ export default function Admin() { // Removed props
   const [memberSettingsDirty, setMemberSettingsDirty] = useState(false);
   const [memberSettingsSaving, setMemberSettingsSaving] = useState(false);
   const [memberSettingsFeedback, setMemberSettingsFeedback] = useState(null);
+  const [memberSpecificDialogOpen, setMemberSpecificDialogOpen] = useState(false);
+  const [memberSpecificWeekOffset, setMemberSpecificWeekOffset] = useState(0);
+  const [memberSpecificSelectedDate, setMemberSpecificSelectedDate] = useState(null);
+  const [memberSpecificDraft, setMemberSpecificDraft] = useState({});
+  const [memberSpecificDayHoursOverrides, setMemberSpecificDayHoursOverrides] = useState({});
   const [cancelingRecurringId, setCancelingRecurringId] = useState(null);
   const [recurringCancelModal, setRecurringCancelModal] = useState({ ...RECURRING_CANCEL_INITIAL });
   const [clientDetailsModal, setClientDetailsModal] = useState({ isOpen: false, client: null });
@@ -561,6 +588,29 @@ export default function Admin() { // Removed props
     () => Array.from({ length: 30 }, (_, idx) => idx + 1),
     []
   );
+
+
+  const loadMemberSpecificDayHours = React.useCallback(async (days) => {
+    const entries = await Promise.all((days || []).map(async (day) => {
+      const dayKey = format(day, 'yyyy-MM-dd');
+      try {
+        const data = await BusinessHours.getDay(dayKey).catch(() => null);
+        if (!data) return [dayKey, null];
+        return [dayKey, {
+          open: data.open ?? data.open_time ?? null,
+          close: data.close ?? data.close_time ?? null,
+          slotMinutes: Number(data.slotIntervalMinutes ?? data.slot_interval_minutes ?? data.slot ?? 30) || 30,
+          isOpen: Boolean(data.isOpen ?? data.is_open ?? !(data.isClosed ?? data.is_closed)),
+        }];
+      } catch (_) {
+        return [dayKey, null];
+      }
+    }));
+    setMemberSpecificDayHoursOverrides((prev) => ({
+      ...prev,
+      ...Object.fromEntries(entries.filter(([_, value]) => Boolean(value))),
+    }));
+  }, []);
 
   const loadWeeklyDayHours = React.useCallback(async (days) => {
     if (!Array.isArray(days) || days.length === 0) return;
@@ -1442,6 +1492,24 @@ const extractRecurringSchedules = (client) => {
     return grouped.map((arr) => [...arr].sort((a, b) => a.start.localeCompare(b.start)));
   }, [memberSettings.memberOnlyWindows]);
 
+  const memberSpecificWindows = useMemo(() => (
+    [...(memberSettings.memberSpecificWindows || [])]
+      .filter((win) => isFutureDateTime(win.date, win.end))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+  ), [memberSettings.memberSpecificWindows]);
+
+  const memberSpecificWindowsByDate = useMemo(() => {
+    const grouped = {};
+    memberSpecificWindows.forEach((window) => {
+      if (!grouped[window.date]) grouped[window.date] = [];
+      grouped[window.date].push(window);
+    });
+    Object.keys(grouped).forEach((date) => {
+      grouped[date] = grouped[date].sort((a, b) => a.start.localeCompare(b.start));
+    });
+    return grouped;
+  }, [memberSpecificWindows]);
+
   const updateAdvanceDays = (field, rawValue, fallback) => {
     const sanitized = clampAdvanceDays(rawValue, fallback);
     setMemberSettings((prev) => ({ ...prev, [field]: sanitized }));
@@ -1504,6 +1572,16 @@ const extractRecurringSchedules = (client) => {
       setMemberSettingsFeedback(null);
     }
   }, [services, memberSettings.memberOnlyServiceIds]);
+
+  useEffect(() => {
+    const next = normalizeBookingRules(memberSettings);
+    const current = JSON.stringify(sanitizeBookingRulesForSave(memberSettings));
+    const normalized = JSON.stringify(sanitizeBookingRulesForSave(next));
+    if (current !== normalized) {
+      setMemberSettings(next);
+      setMemberSettingsDirty(true);
+    }
+  }, [memberSettings]);
 
   const getAppointmentsForDay = (date) => {
     return appointments
@@ -2743,16 +2821,20 @@ const extractRecurringSchedules = (client) => {
     });
   }, [clientDataWithAppointments, clientSearchTerm, lastAppointmentFilter, showBlockedClients, showMembersOnlyClients]);
 
+  const effectiveBusinessHoursRows = useMemo(() => (
+    Array.isArray(businessHoursDraft) && businessHoursDraft.length > 0 ? businessHoursDraft : businessHours
+  ), [businessHours, businessHoursDraft]);
+
   const businessHoursByDay = useMemo(() => {
     const arr = Array.from({ length: 7 }, () => null);
-    (businessHours || []).forEach((row) => {
+    (effectiveBusinessHoursRows || []).forEach((row) => {
       const normalized = normalizeBusinessHourRow(row);
       if (normalized && Number.isInteger(normalized.weekday)) {
         arr[normalized.weekday] = normalized;
       }
     });
     return arr;
-  }, [businessHours]);
+  }, [effectiveBusinessHoursRows]);
 
   const stepMinutesByDay = useMemo(() => (
     Array.from({ length: 7 }, (_, day) => {
@@ -2783,6 +2865,111 @@ const extractRecurringSchedules = (client) => {
       return buildSlotsFromRanges(ranges, step);
     })
   ), [businessHoursByDay, memberWindowsByDay, stepMinutesByDay]);
+
+  const memberSpecificVisibleDays = useMemo(() => (
+    buildWeekDays(memberSpecificWeekOffset).filter((date) => {
+      const dayKey = format(date, 'yyyy-MM-dd');
+      const row = memberSpecificDayHoursOverrides[dayKey] ?? businessHoursByDay[date.getDay()];
+      if (!row) return false;
+      return row.isOpen !== false && Boolean(row.open && row.close);
+    })
+  ), [businessHoursByDay, memberSpecificDayHoursOverrides, memberSpecificWeekOffset]);
+
+  useEffect(() => {
+    if (!memberSpecificDialogOpen) return;
+    if (memberSpecificVisibleDays.length === 0) return;
+    loadMemberSpecificDayHours(memberSpecificVisibleDays);
+  }, [loadMemberSpecificDayHours, memberSpecificDialogOpen, memberSpecificVisibleDays]);
+
+  const memberSpecificSlotsForSelectedDate = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const dayOverride = memberSpecificDayHoursOverrides[ymd];
+    const step = Number(dayOverride?.slotMinutes ?? stepMinutesByDay[weekday] ?? 30) || 30;
+    const businessRange = dayOverride ?? businessHoursByDay[weekday];
+    const ranges = [];
+    if (businessRange?.open && businessRange?.close && businessRange?.isOpen !== false) {
+      ranges.push({ start: businessRange.open, end: businessRange.close });
+    } else {
+      const fallback = DEFAULT_MEMBER_DAY_HOURS.find((h) => h.weekday === weekday);
+      if (fallback?.open && fallback?.close) ranges.push({ start: fallback.open, end: fallback.close });
+    }
+    const existingWindows = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    existingWindows.forEach((win) => ranges.push({ start: win.start, end: win.end }));
+    return buildSlotsFromRanges(ranges, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [businessHoursByDay, memberSpecificDayHoursOverrides, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const memberSpecificSelectedSlots = useMemo(() => {
+    if (!memberSpecificSelectedDate) return [];
+    const ymd = toYmdLocal(memberSpecificSelectedDate);
+    const weekday = memberSpecificSelectedDate.getDay();
+    const dayOverride = memberSpecificDayHoursOverrides[ymd];
+    const step = Number(dayOverride?.slotMinutes ?? stepMinutesByDay[weekday] ?? 30) || 30;
+    const combined = memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [];
+    return expandWindowsToSlots(combined, step).filter((time) => isFutureDateTime(ymd, time));
+  }, [memberSpecificDayHoursOverrides, memberSpecificDraft, memberSpecificSelectedDate, memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const toggleMemberSpecificSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSpecificDraft((prev) => {
+      const currentWindows = prev[dateStr] || memberSpecificWindowsByDate[dateStr] || [];
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      if (slotSet.has(time)) slotSet.delete(time);
+      else slotSet.add(time);
+      const sortedSlots = Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b));
+      const nextWindows = slotsToWindows(sortedSlots, step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      return { ...prev, [dateStr]: nextWindows };
+    });
+  }, [memberSpecificWindowsByDate, stepMinutesByDay]);
+
+  const handleSaveMemberSpecificSlots = React.useCallback(() => {
+    const draftEntries = Object.entries(memberSpecificDraft);
+    if (draftEntries.length === 0) {
+      setMemberSpecificDialogOpen(false);
+      return;
+    }
+    setMemberSettings((prev) => {
+      const preserved = (prev.memberSpecificWindows || []).filter((win) => !Object.prototype.hasOwnProperty.call(memberSpecificDraft, win.date));
+      const draftWindows = draftEntries.flatMap(([date, windows]) => (windows || []).map((win, index) => ({
+        date,
+        start: win.start,
+        end: win.end,
+        id: `${date}-${win.start}-${win.end}-${index}`,
+      })));
+      return { ...prev, memberSpecificWindows: [...preserved, ...draftWindows] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+    setMemberSpecificDraft({});
+    setMemberSpecificDialogOpen(false);
+  }, [memberSpecificDraft]);
+
+  const removeSpecificMemberSlot = React.useCallback((dateStr, time) => {
+    const dateObj = new Date(`${dateStr}T12:00:00`);
+    const step = stepMinutesByDay[dateObj.getDay()] || 30;
+    setMemberSettings((prev) => {
+      const currentWindows = (prev.memberSpecificWindows || []).filter((win) => win.date === dateStr);
+      const slotSet = new Set(expandWindowsToSlots(currentWindows, step));
+      slotSet.delete(time);
+      const nextForDate = slotsToWindows(Array.from(slotSet).sort((a, b) => toMinutes(a) - toMinutes(b)), step).map((win, index) => ({
+        date: dateStr,
+        start: win.start,
+        end: win.end,
+        id: `${dateStr}-${win.start}-${win.end}-${index}`,
+      }));
+      const others = (prev.memberSpecificWindows || []).filter((win) => win.date !== dateStr);
+      return { ...prev, memberSpecificWindows: [...others, ...nextForDate] };
+    });
+    setMemberSettingsDirty(true);
+    setMemberSettingsFeedback(null);
+  }, [stepMinutesByDay]);
 
   const toggleMemberSlot = React.useCallback((weekday, time) => {
     const step = stepMinutesByDay[weekday] || 30;
@@ -3102,7 +3289,7 @@ const extractRecurringSchedules = (client) => {
                                                     {entry.client_name}
                                                   </h4>
                                                   <div className="flex items-center gap-2">
-                                                    <p className="text-sm text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
+                                                    <p className="text-xs leading-5 text-gray-600">{service?.name || 'שירות לא ידוע'}</p>
                                                     {isMember && (
                                                         <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                                           חבר מועדון
@@ -3508,7 +3695,7 @@ const extractRecurringSchedules = (client) => {
                                 <Card className="bg-white rounded-2xl shadow-sm">
                                   <CardContent className="p-6 text-center">
                                     <Users className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                                    <h3 className="text-2xl font-bold text-gray-900">{stats.totalClients}</h3>
+                                    <h3 className="text-xl font-bold text-gray-900">{stats.totalClients}</h3>
                                     <p className="text-gray-600">סה"כ לקוחות</p>
                                   </CardContent>
                                 </Card>
@@ -3516,7 +3703,7 @@ const extractRecurringSchedules = (client) => {
                                 <Card className="bg-white rounded-2xl shadow-sm">
                                   <CardContent className="p-6 text-center">
                                     <Calendar className="w-12 h-12 text-green-600 mx-auto mb-4" />
-                                    <h3 className="text-2xl font-bold text-gray-900">{stats.monthlyAppointments}</h3>
+                                    <h3 className="text-lg font-bold text-gray-900">{stats.monthlyAppointments}</h3>
                                     <p className="text-gray-600">תורים שהושלמו החודש</p>
                                   </CardContent>
                                 </Card>
@@ -4094,6 +4281,175 @@ const extractRecurringSchedules = (client) => {
                           </div>
                         </CardContent>
                       </Card>
+
+                      <Card className="bg-white rounded-2xl shadow-sm">
+                        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <CardTitle>תורים ספציפיים לחברי מועדון</CardTitle>
+                            <p className="mt-2 text-sm text-gray-600">
+                              הוסף ימים ושעות חד-פעמיים שיהיו זמינים רק לחברי מועדון. שעות שעברו מוסתרות אוטומטית מהרשימה.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setMemberSpecificDialogOpen(true);
+                              setMemberSpecificWeekOffset(0);
+                              setMemberSpecificSelectedDate(new Date());
+                              setMemberSpecificDraft({});
+                            }}
+                            className="rounded-full bg-black text-white hover:bg-gray-800"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            הוסף תורים ספציפיים
+                          </Button>
+                        </CardHeader>
+                        <CardContent>
+                          {Object.keys(memberSpecificWindowsByDate).length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                              עדיין לא הוגדרו תורים ספציפיים לחברי מועדון.
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {Object.entries(memberSpecificWindowsByDate).map(([date, windows]) => {
+                                const weekday = new Date(`${date}T12:00:00`).getDay();
+                                const step = stepMinutesByDay[weekday] || 30;
+                                const slots = expandWindowsToSlots(windows, step).filter((time) => isFutureDateTime(date, time));
+                                if (slots.length === 0) return null;
+                                return (
+                                  <div key={date} className="rounded-3xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-4 sm:p-5">
+                                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <div>
+                                        <h4 className="text-sm font-bold text-gray-900">{format(new Date(`${date}T12:00:00`), 'EEEE, d MMMM yyyy', { locale: he })}</h4>
+                                        <p className="text-xs text-gray-500">זמין לחברי מועדון בלבד</p>
+                                      </div>
+                                      <span className="inline-flex w-fit items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                        {slots.length} שעות פעילות
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {slots.map((time) => (
+                                        <button
+                                          key={`${date}-${time}`}
+                                          type="button"
+                                          onClick={() => removeSpecificMemberSlot(date, time)}
+                                          className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:border-red-200 hover:text-red-600"
+                                        >
+                                          <Clock className="h-3.5 w-3.5" />
+                                          {time}
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Dialog open={memberSpecificDialogOpen} onOpenChange={(open) => { setMemberSpecificDialogOpen(open); if (!open) setMemberSpecificDraft({}); }}>
+                        <DialogContent className="w-[calc(100vw-56px)] max-w-[350px] rounded-[18px] p-0 overflow-hidden shadow-2xl [&>button:last-child]:right-3 [&>button:last-child]:top-3 [&>button:last-child]:z-20 [&>button:last-child]:rounded-full [&>button:last-child]:border [&>button:last-child]:border-gray-200 [&>button:last-child]:bg-white [&>button:last-child]:p-1 [&>button:last-child]:opacity-100 [&>button:last-child]:shadow-sm">
+                          <DialogHeader className="border-b border-gray-100 px-3.5 pt-3.5 pb-2.5 pr-10 text-right sm:px-4 sm:pt-4 sm:pr-11">
+                            <DialogTitle className="text-lg font-bold text-gray-900">הוספת תורים ספציפיים לחברי מועדון</DialogTitle>
+                          </DialogHeader>
+                          <div className="max-h-[66vh] overflow-y-auto px-3 py-3">
+                            <div className="mb-4 flex items-center justify-between">
+                              <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev - 1)} className="rounded-full" disabled={memberSpecificWeekOffset <= 0}>
+                                <ChevronRight className="h-5 w-5" />
+                              </Button>
+                              <p className="text-sm font-medium text-gray-600">
+                                {memberSpecificVisibleDays.length > 0 ? `${format(memberSpecificVisibleDays[0], 'd.M', { locale: he })} - ${format(memberSpecificVisibleDays[memberSpecificVisibleDays.length - 1], 'd.M', { locale: he })}` : 'אין ימים פתוחים בשבוע זה'}
+                              </p>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev + 1)} className="rounded-full">
+                                <ChevronLeft className="h-5 w-5" />
+                              </Button>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {memberSpecificVisibleDays.map((date) => {
+                                const ymd = toYmdLocal(date);
+                                const isPastDay = differenceInCalendarDays(startOfDay(date), startOfDay(new Date())) < 0;
+                                const selectedCount = expandWindowsToSlots(memberSpecificDraft[ymd] || memberSpecificWindowsByDate[ymd] || [], stepMinutesByDay[date.getDay()] || 30).filter((time) => isFutureDateTime(ymd, time)).length;
+                                return (
+                                  <button
+                                    key={ymd}
+                                    type="button"
+                                    disabled={isPastDay}
+                                    onClick={() => setMemberSpecificSelectedDate(date)}
+                                    className={`rounded-xl border px-2 py-2.5 text-right transition min-h-[66px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-sm' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <Calendar className="h-3.5 w-3.5" />
+                                      <span className="text-[11px]">{WEEKDAY_LABELS[date.getDay()]}</span>
+                                    </div>
+                                    <p className="mt-1.5 text-[13px] font-bold">{format(date, 'dd/MM')}</p>
+                                    <p className={`mt-1 text-xs ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'text-white/80' : 'text-gray-500'}`}>
+                                      {selectedCount > 0 ? `${selectedCount} שעות נבחרו` : 'לא נבחרו שעות'}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-2.5 rounded-xl bg-gray-50 p-2.5">
+                              <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h4 className="text-base font-bold text-gray-900">
+                                    {memberSpecificSelectedDate ? format(memberSpecificSelectedDate, 'EEEE, d MMMM', { locale: he }) : 'בחר יום כדי להוסיף שעות'}
+                                  </h4>
+                                  <p className="text-xs text-gray-500">השעות מסוננות אוטומטית לפי שעות הפעילות המעודכנות והזמנים שעדיין לא עברו.</p>
+                                </div>
+                                {memberSpecificSelectedDate && memberSpecificSelectedSlots.length > 0 && (
+                                  <span className="inline-flex w-fit items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                    {memberSpecificSelectedSlots.length} שעות סומנו
+                                  </span>
+                                )}
+                              </div>
+
+                              {memberSpecificSelectedDate ? (
+                                <div className="space-y-4">
+                                  <div className="flex flex-wrap gap-2">
+                                    {memberSpecificSlotsForSelectedDate.length > 0 ? memberSpecificSlotsForSelectedDate.map((time) => {
+                                      const ymd = toYmdLocal(memberSpecificSelectedDate);
+                                      const selected = memberSpecificSelectedSlots.includes(time);
+                                      return (
+                                        <button
+                                          key={`${ymd}-${time}`}
+                                          type="button"
+                                          onClick={() => toggleMemberSpecificSlot(ymd, time)}
+                                          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${selected ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                                        >
+                                          {time}
+                                        </button>
+                                      );
+                                    }) : (
+                                      <p className="text-sm text-gray-500">אין שעות זמינות לבחירה ביום הזה.</p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="mb-2 text-xs font-semibold text-gray-500">שעות שנבחרו ליום זה</p>
+                                    {memberSpecificSelectedSlots.length > 0 ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {memberSpecificSelectedSlots.map((time) => (
+                                          <span key={`selected-${time}`} className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">{time}</span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-gray-400">עדיין לא סומנו שעות.</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                          <DialogFooter className="border-t border-gray-100 px-6 py-4">
+                            <Button type="button" variant="outline" onClick={() => { setMemberSpecificDialogOpen(false); setMemberSpecificDraft({}); }} className="rounded-full">ביטול</Button>
+                            <Button type="button" onClick={handleSaveMemberSpecificSlots} className="rounded-full bg-black text-white hover:bg-gray-800">שמור</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
 
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {memberSettingsFeedback && (

@@ -142,6 +142,10 @@ export class RateLimitGuard implements CanActivate {
             routePath.startsWith('/settings/admin.updates');
 
         if (isAdminUiRoute) {
+            const isAuthenticatedAdmin = Boolean(req.user?.roles?.includes('admin') || req.user?.isAdmin || req.user?.is_admin);
+            if (isAuthenticatedAdmin) {
+                return [];
+            }
             return [{
                 key: `admin-ui:ip:${ip}:${req.method.toUpperCase()}:${routePath}`,
                 limit: rateLimitConfig.adminUi.limit,

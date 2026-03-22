@@ -61,6 +61,7 @@ function handleUnauthorized(status, path, payload) {
 
 // ---------------- Simple GET cache with TTL ----------------
 const __getCache = new Map();
+const __inflightGetRequests = new Map();
 const __storagePrefix = 'familia_api_cache::';
 let __rateLimitBlockedUntilMs = 0;
 let __lastRateLimitNoticeMs = 0;
@@ -133,6 +134,10 @@ export function invalidateCacheByPathPrefix(prefix) {
 
 function __defaultTtlMs(path) {
   const p = String(path || '');
+  if (p.startsWith('/admin/appointments?date=')) return 5_000; // 5s
+  if (p.startsWith('/admin/blocked-times')) return 10_000; // 10s
+  if (p.startsWith('/waiting-list')) return 5_000; // 5s
+  if (p.startsWith('/clients')) return 30_000; // 30s
   // זמינות משתנה מהר -> TTL קצר
   if (p.startsWith('/appointments/available')) return 15_000; // 15s
   // דברים יחסית סטטיים (30-120s)
@@ -149,6 +154,7 @@ function __defaultTtlMs(path) {
 function __shouldPersist(path) {
   const p = String(path || '');
   return (
+    p.startsWith('/clients') ||
     p.startsWith('/services') ||
     p.startsWith('/products') ||
     p.startsWith('/gallery-videos') ||
@@ -211,6 +217,7 @@ function __setCached(key, value, ttlMs, path) {
 async function httpGet(path, options = {}) {
   const headers = authHeaders();
   const signal = options?.signal;
+  const bypassCache = Boolean(options?.bypassCache);
 
   const ttlMs =
       typeof options.cacheTtlMs === 'number'
@@ -220,7 +227,7 @@ async function httpGet(path, options = {}) {
   const key = __cacheKey(path, headers);
 
   // TTL cache HIT
-  if (ttlMs > 0) {
+  if (!bypassCache && ttlMs > 0) {
     const cached = __getCached(key, path);
     if (cached !== undefined) return cached;
     if (__shouldPersist(path)) {
@@ -232,40 +239,58 @@ async function httpGet(path, options = {}) {
     }
   }
 
+  if (!bypassCache && __inflightGetRequests.has(key)) {
+    return __inflightGetRequests.get(key);
+  }
+
   __throwIfRateLimited('GET', path);
 
-  const res = await fetch(String(BASE_URL) + String(path), {
-    method: 'GET',
-    headers,
-    signal,
-    // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
-    cache: 'no-store',
-  });
+  const requestPromise = (async () => {
+    const res = await fetch(String(BASE_URL) + String(path), {
+      method: 'GET',
+      headers,
+      signal,
+      // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
+      cache: 'no-store',
+    });
 
-  // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
-  if (res.status === 304) {
-    const cached = __getCached(key, path);
-    if (cached !== undefined) return cached;
-    return null;
+    // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
+    if (res.status === 304) {
+      const cached = __getCached(key, path);
+      if (cached !== undefined) return cached;
+      return null;
+    }
+
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (res.status === 404) return null;
+
+    const isJson = ct.indexOf('application/json') !== -1;
+    const payload = isJson ? await safeJson(res) : null;
+
+    if (!res.ok) {
+      handleUnauthorized(res.status, path, payload);
+      const err = buildHttpError('GET', path, res.status, payload, res.headers);
+      console.error('[API GET ' + path + ']', err);
+      throw err;
+    }
+
+    // TTL cache SET
+    if (!bypassCache && ttlMs > 0) __setCached(key, payload, ttlMs, path);
+
+    return payload;
+  })();
+
+  if (!bypassCache) {
+    __inflightGetRequests.set(key, requestPromise);
   }
 
-  const ct = (res.headers.get('content-type') || '').toLowerCase();
-  if (res.status === 404) return null;
-
-  const isJson = ct.indexOf('application/json') !== -1;
-  const payload = isJson ? await safeJson(res) : null;
-
-  if (!res.ok) {
-    handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('GET', path, res.status, payload, res.headers);
-    console.error('[API GET ' + path + ']', err);
-    throw err;
+  try {
+    return await requestPromise;
+  } finally {
+    if (!bypassCache) {
+      __inflightGetRequests.delete(key);
+    }
   }
-
-  // TTL cache SET
-  if (ttlMs > 0) __setCached(key, payload, ttlMs, path);
-
-  return payload;
 }
 
 
@@ -574,6 +599,15 @@ function normAppointment(x) {
 const normAppointmentArr = (a) => Array.isArray(a) ? a.map(normAppointment) : [];
 
 /* ---- input mappers (accept snake or camel) ---- */
+
+function invalidateAdminSchedulingCaches() {
+  invalidateCacheByPathPrefix('/admin/appointments');
+  invalidateCacheByPathPrefix('/appointments/available');
+  invalidateCacheByPathPrefix('/admin/blocked-times');
+  invalidateCacheByPathPrefix('/waiting-list');
+  invalidateCacheByPathPrefix('/clients/me/appointments');
+}
+
 function toServiceBody(b) {
   b = b || {};
   return {
@@ -786,6 +820,7 @@ const api = {
       };
 
       const res = await httpPost('/appointments', publicBody);
+      invalidateAdminSchedulingCaches();
       return normAppointment(res);
     },
 
@@ -797,16 +832,21 @@ const api = {
         return normAppointment(res);
       }
       const res = await httpPut('/admin/appointments/' + encodeURIComponent(id), data);
+      invalidateAdminSchedulingCaches();
       return normAppointment(res);
     },
 
     // delete – קודם ציבורי, פולבק ל-admin
     delete: async (id) => {
       try {
-        return await httpDelete('/appointments/' + encodeURIComponent(id));
+        const result = await httpDelete('/appointments/' + encodeURIComponent(id));
+        invalidateAdminSchedulingCaches();
+        return result;
       } catch (e) {
         if (e && e.status === 404) {
-          return await httpDelete('/admin/appointments/' + encodeURIComponent(id));
+          const result = await httpDelete('/admin/appointments/' + encodeURIComponent(id));
+          invalidateAdminSchedulingCaches();
+          return result;
         }
         throw e;
       }
@@ -820,11 +860,18 @@ const api = {
   },
 
   WaitingList: {
-    join: ({ clientId, date, time, serviceId }) =>
-        httpPost('/waiting-list', { clientId: clientId, desired_date: date, desired_time: time, serviceId: serviceId }),
+    join: async ({ clientId, date, time, serviceId }) => {
+        const result = await httpPost('/waiting-list', { clientId: clientId, desired_date: date, desired_time: time, serviceId: serviceId });
+        invalidateAdminSchedulingCaches();
+        return result;
+    },
     listByDate: (date) => httpGet('/waiting-list?date=' + encodeURIComponent(date || '')),
     listMine: () => httpGet('/waiting-list/mine'),
-    removeMine: (id) => httpDelete('/waiting-list/mine/' + encodeURIComponent(id)),
+    removeMine: async (id) => {
+      const result = await httpDelete('/waiting-list/mine/' + encodeURIComponent(id));
+      invalidateAdminSchedulingCaches();
+      return result;
+    },
   },
 
   BusinessHours: {
@@ -921,7 +968,9 @@ const api = {
       let lastErr = null;
       for (const call of attemptCalls) {
         try {
-          return await call();
+          const result = await call();
+          invalidateAdminSchedulingCaches();
+          return result;
         } catch (err) {
           lastErr = err;
           const status = err?.status ?? err?.response?.status;
@@ -934,7 +983,9 @@ const api = {
 
     appointments: {
       async delete(id) {
-        return httpDelete(`/admin/appointments/${id}`);
+        const result = await httpDelete(`/admin/appointments/${id}`);
+        invalidateAdminSchedulingCaches();
+        return result;
       },
       async createRecurring(id, intervalConfig) {
         const payload = {};
@@ -950,10 +1001,14 @@ const api = {
         } else {
           payload.intervalWeeks = intervalConfig;
         }
-        return httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, payload);
+        const result = await httpPost(`/admin/appointments/${encodeURIComponent(id)}/recurring`, payload);
+        invalidateAdminSchedulingCaches();
+        return result;
       },
       async cancelRecurring(id) {
-        return httpDelete(`/admin/recurring-appointments/${encodeURIComponent(id)}`);
+        const result = await httpDelete(`/admin/recurring-appointments/${encodeURIComponent(id)}`);
+        invalidateAdminSchedulingCaches();
+        return result;
       },
     },
 
@@ -973,24 +1028,32 @@ const api = {
 
       // נסיונות מדורגים: JSON camel -> FORM camel -> FORM snake
       add: async (startIso, endIso, reason, membersOnly = false) => {
-        return await httpPost('/admin/blocked-times', {
+        const result = await httpPost('/admin/blocked-times', {
           starts_at: String(startIso),
           ends_at:   String(endIso),
           reason:    reason ?? '',
           members_only: Boolean(membersOnly),
         });
+        invalidateAdminSchedulingCaches();
+        return result;
       },
 
       update: async (id, startIso, endIso, reason, membersOnly = false) => {
-        return await httpPut('/admin/blocked-times/' + encodeURIComponent(id), {
+        const result = await httpPut('/admin/blocked-times/' + encodeURIComponent(id), {
           starts_at: String(startIso),
           ends_at:   String(endIso),
           reason:    reason ?? '',
           members_only: Boolean(membersOnly),
         });
+        invalidateAdminSchedulingCaches();
+        return result;
       },
 
-      remove: (id) => httpDelete('/admin/blocked-times/' + encodeURIComponent(id)),
+      remove: async (id) => {
+        const result = await httpDelete('/admin/blocked-times/' + encodeURIComponent(id));
+        invalidateAdminSchedulingCaches();
+        return result;
+      },
     }
   },
 

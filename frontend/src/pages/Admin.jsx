@@ -2842,7 +2842,13 @@ const extractRecurringSchedules = (client) => {
     })
   ), [businessHoursByDay, memberWindowsByDay, stepMinutesByDay]);
 
-  const memberSpecificVisibleDays = useMemo(() => buildWeekDays(memberSpecificWeekOffset), [memberSpecificWeekOffset]);
+  const memberSpecificVisibleDays = useMemo(() => (
+    buildWeekDays(memberSpecificWeekOffset).filter((date) => {
+      const row = businessHoursByDay[date.getDay()];
+      if (!row) return false;
+      return row.isOpen !== false && Boolean(row.open && row.close);
+    })
+  ), [businessHoursByDay, memberSpecificWeekOffset]);
 
   const memberSpecificSlotsForSelectedDate = useMemo(() => {
     if (!memberSpecificSelectedDate) return [];
@@ -4321,7 +4327,7 @@ const extractRecurringSchedules = (client) => {
                                 <ChevronRight className="h-5 w-5" />
                               </Button>
                               <p className="text-sm font-medium text-gray-600">
-                                {format(memberSpecificVisibleDays[0], 'd.M', { locale: he })} - {format(memberSpecificVisibleDays[6], 'd.M', { locale: he })}
+                                {memberSpecificVisibleDays.length > 0 ? `${format(memberSpecificVisibleDays[0], 'd.M', { locale: he })} - ${format(memberSpecificVisibleDays[memberSpecificVisibleDays.length - 1], 'd.M', { locale: he })}` : 'אין ימים פתוחים בשבוע זה'}
                               </p>
                               <Button type="button" variant="ghost" size="icon" onClick={() => setMemberSpecificWeekOffset((prev) => prev + 1)} className="rounded-full">
                                 <ChevronLeft className="h-5 w-5" />
@@ -4339,13 +4345,13 @@ const extractRecurringSchedules = (client) => {
                                     type="button"
                                     disabled={isPastDay}
                                     onClick={() => setMemberSpecificSelectedDate(date)}
-                                    className={`rounded-lg border px-1.5 py-2 text-right transition min-h-[56px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-sm' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
+                                    className={`rounded-xl border px-2 py-2.5 text-right transition min-h-[66px] ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'border-black bg-black text-white shadow-sm' : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400'} ${isPastDay ? 'cursor-not-allowed opacity-40' : ''}`}
                                   >
                                     <div className="flex items-center justify-between">
-                                      <Calendar className="h-3 w-3" />
-                                      <span className="text-[10px]">{WEEKDAY_LABELS[date.getDay()]}</span>
+                                      <Calendar className="h-3.5 w-3.5" />
+                                      <span className="text-[11px]">{WEEKDAY_LABELS[date.getDay()]}</span>
                                     </div>
-                                    <p className="mt-1 text-xs font-bold">{format(date, 'dd/MM')}</p>
+                                    <p className="mt-1.5 text-[13px] font-bold">{format(date, 'dd/MM')}</p>
                                     <p className={`mt-1 text-xs ${memberSpecificSelectedDate && isSameDay(memberSpecificSelectedDate, date) ? 'text-white/80' : 'text-gray-500'}`}>
                                       {selectedCount > 0 ? `${selectedCount} שעות נבחרו` : 'לא נבחרו שעות'}
                                     </p>

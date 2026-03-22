@@ -142,13 +142,7 @@ export class RateLimitGuard implements CanActivate {
             routePath.startsWith('/settings/admin.updates');
 
         if (isAdminUiRoute) {
-            return [{
-                key: `admin-ui:ip:${ip}:${req.method.toUpperCase()}:${routePath}`,
-                limit: rateLimitConfig.adminUi.limit,
-                windowSec: rateLimitConfig.adminUi.windowSec,
-                maskedPhone,
-                maskedIp,
-            }];
+            return [];
         }
 
         return [{

@@ -1582,7 +1582,7 @@ const extractRecurringSchedules = (client) => {
     }
 
     return false;
-  }, [effectiveBusinessHoursRows]);
+  }, [businessHours]);
 
   useEffect(() => {
     if (didAutoAdvanceWeeklyCalendarRef.current) return;
@@ -1653,7 +1653,7 @@ const extractRecurringSchedules = (client) => {
       map[normalized.weekday] = normalized;
     });
     return map;
-  }, [effectiveBusinessHoursRows]);
+  }, [businessHours]);
 
   const weeklyAppointmentsBySlot = useMemo(() => {
     const map = new Map();

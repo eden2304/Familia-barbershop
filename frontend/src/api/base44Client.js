@@ -93,7 +93,25 @@ function __buildLocalRateLimitError(method, path) {
   return err;
 }
 
+
+function __isAdminRoute(path) {
+  const normalizedPath = String(path || '');
+  return normalizedPath === '/admin' || normalizedPath.startsWith('/admin/') || normalizedPath.startsWith('/settings/admin.updates');
+}
+
+function __hasAdminSession() {
+  return Boolean(getStoredAuthToken());
+}
+
+function __shouldBypassLocalRateLimit(path) {
+  return __isAdminRoute(path) && __hasAdminSession();
+}
+
 function __throwIfRateLimited(method, path) {
+  if (__shouldBypassLocalRateLimit(path)) {
+    __rateLimitBlockedUntilMs = 0;
+    return;
+  }
   if (__activeRateLimitSeconds() <= 0) return;
   throw __buildLocalRateLimitError(method, path);
 }
@@ -277,6 +295,9 @@ async function httpGet(path, options = {}) {
     // TTL cache SET
     if (!bypassCache && ttlMs > 0) __setCached(key, payload, ttlMs, path);
 
+    if (__shouldBypassLocalRateLimit(path)) {
+      __rateLimitBlockedUntilMs = 0;
+    }
     return payload;
   })();
 
@@ -313,6 +334,9 @@ async function httpPost(path, body) {
     console.error('[API POST ' + path + ']', err);
     throw err;
   }
+  if (__shouldBypassLocalRateLimit(path)) {
+    __rateLimitBlockedUntilMs = 0;
+  }
   return payload;
 }
 
@@ -335,6 +359,9 @@ async function httpPut(path, body) {
     console.error('[API PUT ' + path + ']', err);
     throw err;
   }
+  if (__shouldBypassLocalRateLimit(path)) {
+    __rateLimitBlockedUntilMs = 0;
+  }
   return payload;
 }
 
@@ -355,6 +382,9 @@ async function httpDelete(path) {
     const err = buildHttpError('DELETE', path, res.status, payload, res.headers);
     console.error('[API DELETE ' + path + ']', err);
     throw err;
+  }
+  if (__shouldBypassLocalRateLimit(path)) {
+    __rateLimitBlockedUntilMs = 0;
   }
   return payload;
 }
@@ -377,6 +407,9 @@ async function httpPatch(path, body) {
     const err = buildHttpError('PATCH', path, res.status, payload, res.headers);
     console.error('[API PATCH ' + path + ']', err);
     throw err;
+  }
+  if (__shouldBypassLocalRateLimit(path)) {
+    __rateLimitBlockedUntilMs = 0;
   }
   return payload;
 }

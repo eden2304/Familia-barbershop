@@ -3,6 +3,7 @@ export const DEFAULT_BOOKING_RULES = {
   memberMaxAdvanceDays: 14,
   memberOnlyServiceIds: [],
   memberOnlyWindows: [],
+  memberSpecificWindows: [],
 };
 
 export function clampAdvanceDays(value, fallback = 0) {
@@ -29,6 +30,79 @@ function normalizeTime(value) {
   if (minutes < 0) minutes = 0;
   if (minutes > 59) minutes = 59;
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+
+function isFutureSpecificWindow(date, endTime) {
+  const dateNorm = normalizeDate(date);
+  const endNorm = normalizeTime(endTime);
+  if (!dateNorm || !endNorm) return false;
+  const when = new Date(`${dateNorm}T${endNorm}:00`);
+  return Number.isFinite(when.getTime()) && when.getTime() > Date.now();
+}
+
+function normalizeDate(value) {
+  if (value === undefined || value === null) return null;
+  const str = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parsed = new Date(str);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeSpecificMemberWindows(candidate) {
+  const windows = [];
+
+  const pushWindow = (date, start, end) => {
+    const dateNorm = normalizeDate(date);
+    const startNorm = normalizeTime(start);
+    const endNorm = normalizeTime(end);
+    if (!dateNorm || !startNorm || !endNorm) return;
+    const startMinutes = parseInt(startNorm.slice(0, 2), 10) * 60 + parseInt(startNorm.slice(3), 10);
+    const endMinutes = parseInt(endNorm.slice(0, 2), 10) * 60 + parseInt(endNorm.slice(3), 10);
+    if (endMinutes <= startMinutes || !isFutureSpecificWindow(dateNorm, endNorm)) return;
+    const key = `${dateNorm}|${startNorm}|${endNorm}`;
+    if (windows.some((w) => w.__key === key)) return;
+    windows.push({ date: dateNorm, start: startNorm, end: endNorm, __key: key });
+  };
+
+  const explore = (value, fallbackDate) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach((entry) => explore(entry, fallbackDate));
+      return;
+    }
+    if (typeof value === "object") {
+      const date = value.date ?? value.day ?? value.fullDate ?? value.ymd ?? fallbackDate;
+      const start = value.start ?? value.from ?? value.open ?? value.start_time ?? value.startTime;
+      const end = value.end ?? value.to ?? value.close ?? value.end_time ?? value.endTime;
+      if (date != null || (start != null && end != null)) {
+        pushWindow(date, start, end);
+        return;
+      }
+      Object.entries(value).forEach(([maybeDate, nested]) => {
+        const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(maybeDate) ? maybeDate : fallbackDate;
+        explore(nested, parsedDate);
+      });
+    }
+  };
+
+  explore(candidate, undefined);
+
+  windows.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return a.start.localeCompare(b.start);
+  });
+
+  return windows.map((win, index) => ({
+    date: win.date,
+    start: win.start,
+    end: win.end,
+    id: `${win.date}-${win.start}-${win.end}-${index}`,
+  }));
 }
 
 function normalizeMemberWindows(candidate) {
@@ -131,6 +205,12 @@ export function normalizeBookingRules(raw) {
       source.memberWindows ??
       source.member_windows ??
       [];
+  const specificWindowCandidate =
+      source.memberSpecificWindows ??
+      source.member_specific_windows ??
+      source.specificMemberWindows ??
+      source.specific_member_windows ??
+      [];
 
   const publicMaxAdvanceDays = clampAdvanceDays(publicCandidate, DEFAULT_BOOKING_RULES.publicMaxAdvanceDays);
   const memberMaxAdvanceDays = clampAdvanceDays(memberCandidate, DEFAULT_BOOKING_RULES.memberMaxAdvanceDays);
@@ -148,12 +228,14 @@ export function normalizeBookingRules(raw) {
         )
       : [];
   const windows = normalizeMemberWindows(windowCandidate);
+  const specificWindows = normalizeSpecificMemberWindows(specificWindowCandidate);
 
   return {
     publicMaxAdvanceDays,
     memberMaxAdvanceDays,
     memberOnlyServiceIds: ids,
     memberOnlyWindows: windows,
+    memberSpecificWindows: specificWindows,
   };
 }
 
@@ -165,6 +247,11 @@ export function sanitizeBookingRulesForSave(rules) {
     memberOnlyServiceIds: normalized.memberOnlyServiceIds,
     memberOnlyWindows: normalized.memberOnlyWindows.map((win) => ({
       weekday: win.weekday,
+      start: win.start,
+      end: win.end,
+    })),
+    memberSpecificWindows: normalized.memberSpecificWindows.map((win) => ({
+      date: win.date,
       start: win.start,
       end: win.end,
     })),

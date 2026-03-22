@@ -61,6 +61,7 @@ function handleUnauthorized(status, path, payload) {
 
 // ---------------- Simple GET cache with TTL ----------------
 const __getCache = new Map();
+const __inflightGetRequests = new Map();
 const __storagePrefix = 'familia_api_cache::';
 let __rateLimitBlockedUntilMs = 0;
 let __lastRateLimitNoticeMs = 0;
@@ -135,6 +136,10 @@ function __defaultTtlMs(path) {
   const p = String(path || '');
   // זמינות משתנה מהר -> TTL קצר
   if (p.startsWith('/appointments/available')) return 15_000; // 15s
+  if (p.startsWith('/admin/appointments?date=')) return 5_000; // 5s
+  if (p.startsWith('/waiting-list?date=')) return 5_000; // 5s
+  if (p.startsWith('/admin/blocked-times')) return 5_000; // 5s
+  if (p.startsWith('/settings/admin.updates.feed')) return 5_000; // 5s
   // דברים יחסית סטטיים (30-120s)
   if (p.startsWith('/services')) return 60_000; // 60s
   if (p.startsWith('/products')) return 60_000; // 60s
@@ -199,6 +204,37 @@ function __writeStorageCache(key, value, ttlMs) {
   }
 }
 
+function __invalidateRealtimeCaches(path) {
+  const p = String(path || '');
+  if (!p) return;
+
+  if (p.startsWith('/appointments') || p.startsWith('/admin/appointments') || p.startsWith('/admin/recurring-appointments')) {
+    invalidateCacheByPathPrefix('/appointments/available');
+    invalidateCacheByPathPrefix('/admin/appointments');
+    invalidateCacheByPathPrefix('/clients/me/appointments');
+    invalidateCacheByPathPrefix('/waiting-list');
+    invalidateCacheByPathPrefix('/settings/admin.updates.feed');
+  }
+
+  if (p.startsWith('/waiting-list')) {
+    invalidateCacheByPathPrefix('/waiting-list');
+    invalidateCacheByPathPrefix('/settings/admin.updates.feed');
+  }
+
+  if (p.startsWith('/admin/blocked-times')) {
+    invalidateCacheByPathPrefix('/admin/blocked-times');
+    invalidateCacheByPathPrefix('/appointments/available');
+    invalidateCacheByPathPrefix('/admin/appointments');
+  }
+
+  if (p.startsWith('/admin/business-hours')) {
+    invalidateCacheByPathPrefix('/business-hours');
+    invalidateCacheByPathPrefix('/appointments/available');
+    invalidateCacheByPathPrefix('/admin/appointments');
+  }
+}
+
+
 function __setCached(key, value, ttlMs, path) {
   if (!ttlMs || ttlMs <= 0) return;
   __getCache.set(key, { value, expiresAt: Date.now() + ttlMs });
@@ -232,40 +268,51 @@ async function httpGet(path, options = {}) {
     }
   }
 
+  const inflight = __inflightGetRequests.get(key);
+  if (inflight) return inflight;
+
   __throwIfRateLimited('GET', path);
 
-  const res = await fetch(String(BASE_URL) + String(path), {
-    method: 'GET',
-    headers,
-    signal,
-    // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
-    cache: 'no-store',
-  });
+  const requestPromise = (async () => {
+    const res = await fetch(String(BASE_URL) + String(path), {
+      method: 'GET',
+      headers,
+      signal,
+      // ✅ מונע מצב שהדפדפן יחזיר 304 בלי body
+      cache: 'no-store',
+    });
 
-  // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
-  if (res.status === 304) {
-    const cached = __getCached(key, path);
-    if (cached !== undefined) return cached;
-    return null;
+    // ✅ אם בכל זאת הגיע 304 — נחזיר מה-cache שלנו
+    if (res.status === 304) {
+      const cached = __getCached(key, path);
+      if (cached !== undefined) return cached;
+      return null;
+    }
+
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (res.status === 404) return null;
+
+    const isJson = ct.indexOf('application/json') !== -1;
+    const payload = isJson ? await safeJson(res) : null;
+
+    if (!res.ok) {
+      handleUnauthorized(res.status, path, payload);
+      const err = buildHttpError('GET', path, res.status, payload, res.headers);
+      console.error('[API GET ' + path + ']', err);
+      throw err;
+    }
+
+    if (ttlMs > 0) __setCached(key, payload, ttlMs, path);
+
+    return payload;
+  })();
+
+  __inflightGetRequests.set(key, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    __inflightGetRequests.delete(key);
   }
-
-  const ct = (res.headers.get('content-type') || '').toLowerCase();
-  if (res.status === 404) return null;
-
-  const isJson = ct.indexOf('application/json') !== -1;
-  const payload = isJson ? await safeJson(res) : null;
-
-  if (!res.ok) {
-    handleUnauthorized(res.status, path, payload);
-    const err = buildHttpError('GET', path, res.status, payload, res.headers);
-    console.error('[API GET ' + path + ']', err);
-    throw err;
-  }
-
-  // TTL cache SET
-  if (ttlMs > 0) __setCached(key, payload, ttlMs, path);
-
-  return payload;
 }
 
 
@@ -288,6 +335,7 @@ async function httpPost(path, body) {
     console.error('[API POST ' + path + ']', err);
     throw err;
   }
+  __invalidateRealtimeCaches(path);
   return payload;
 }
 
@@ -310,6 +358,7 @@ async function httpPut(path, body) {
     console.error('[API PUT ' + path + ']', err);
     throw err;
   }
+  __invalidateRealtimeCaches(path);
   return payload;
 }
 
@@ -331,6 +380,7 @@ async function httpDelete(path) {
     console.error('[API DELETE ' + path + ']', err);
     throw err;
   }
+  __invalidateRealtimeCaches(path);
   return payload;
 }
 
@@ -353,6 +403,7 @@ async function httpPatch(path, body) {
     console.error('[API PATCH ' + path + ']', err);
     throw err;
   }
+  __invalidateRealtimeCaches(path);
   return payload;
 }
 
@@ -383,6 +434,7 @@ async function httpFormPost(path, data) {
     console.error('[API POST FORM ' + path + ']', err);
     throw err;
   }
+  __invalidateRealtimeCaches(path);
   return payload;
 }
 

@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
+import * as jwt from 'jsonwebtoken';
 import { RATE_LIMIT_POLICY_KEY, RateLimitPolicyName } from './rate-limit.decorator';
 import { RedisRateLimitStore } from './redis-rate-limit.store';
 import { normalizePhoneKey, rateLimitConfig } from './rate-limit.config';
@@ -20,6 +21,12 @@ export class RateLimitGuard implements CanActivate {
         const res = context.switchToHttp().getResponse<Response>();
 
         if (req.method.toUpperCase() === 'OPTIONS') return true;
+
+        const adminAuth = this.resolveAdminAuth(req);
+        if (adminAuth.isAdmin) {
+            req.user = { ...(req.user || {}), ...adminAuth.payload };
+            return true;
+        }
 
         const policy = this.reflector.getAllAndOverride<RateLimitPolicyName>(RATE_LIMIT_POLICY_KEY, [
             context.getHandler(),
@@ -66,6 +73,28 @@ export class RateLimitGuard implements CanActivate {
         }
 
         return true;
+    }
+
+    private resolveAdminAuth(req: Request & { user?: any }): { isAdmin: boolean; payload?: Record<string, any> } {
+        const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+        if (typeof authHeader !== 'string') return { isAdmin: false };
+
+        const [scheme, token] = authHeader.split(' ');
+        if (scheme?.toLowerCase() !== 'bearer' || !token) return { isAdmin: false };
+
+        const secret = String(process.env.JWT_SECRET || '').trim();
+        if (!secret) return { isAdmin: false };
+
+        try {
+            const decoded = jwt.verify(token, secret);
+            if (!decoded || typeof decoded !== 'object') return { isAdmin: false };
+            const payload = decoded as Record<string, any>;
+            const roles = Array.isArray(payload.roles) ? payload.roles : [];
+            const isAdmin = Boolean(payload.isAdmin) || roles.includes('admin');
+            return isAdmin ? { isAdmin: true, payload } : { isAdmin: false };
+        } catch {
+            return { isAdmin: false };
+        }
     }
 
     private applyHeaders(res: Response, limit: number, remaining: number, retryAfter: number) {

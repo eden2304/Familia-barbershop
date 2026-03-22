@@ -169,6 +169,26 @@ function getClosingDateFor(d, businessHours) {
 }
 
 
+
+const slotFitsWindow = (hhmm, durationMinutes, start, end) => {
+  const slotStart = timeStringToMinutes(hhmm);
+  const duration = Number(durationMinutes) || 0;
+  const slotEnd = slotStart == null ? null : slotStart + duration;
+  const startMinutes = timeStringToMinutes(start);
+  const endMinutes = timeStringToMinutes(end);
+  if (slotStart == null || slotEnd == null || startMinutes == null || endMinutes == null) return false;
+  return slotStart >= startMinutes && slotEnd <= endMinutes;
+};
+
+const isRuleBasedMemberOnlySlot = (dateObj, hhmm, durationMinutes, rules) => {
+  if (!dateObj || !hhmm || !rules) return false;
+  const weekday = dateObj.getDay();
+  const ymd = toYMD(dateObj);
+  const weeklyMatch = (rules.memberOnlyWindows || []).some((win) => Number(win.weekday) === weekday && slotFitsWindow(hhmm, durationMinutes, win.start, win.end));
+  if (weeklyMatch) return true;
+  return (rules.memberSpecificWindows || []).some((win) => win.date === ymd && slotFitsWindow(hhmm, durationMinutes, win.start, win.end));
+};
+
 function isFutureSlot(dateObj, hhmm) {
   // dateObj = today/date user selected (Date)
   // hhmm = "HH:MM"
@@ -432,9 +452,10 @@ export default function Book() {
               const raw = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember === true });
               const slots = extractSlotTimes(raw);
 
+              const durationMinutes = selectedService?.duration_minutes ?? selectedService?.durationMinutes ?? 0;
               const view = slots.map((slot) => ({
                 hhmm: slot.hhmm,
-                memberOnly: Boolean(slot.memberOnly),
+                memberOnly: Boolean(slot.memberOnly) || isRuleBasedMemberOnlySlot(d, slot.hhmm, durationMinutes, bookingRules),
                 formatted: slot.formatted ?? slot.hhmm,
               }));
 
@@ -581,9 +602,10 @@ export default function Book() {
     const ymd = toYMD(dateObj);
     try {
       const raw = await api.Appointment.getAvailable(serviceId, ymd, { isMember: clientIsMember === true });
+      const durationMinutes = selectedService?.duration_minutes ?? selectedService?.durationMinutes ?? 0;
       const slots = extractSlotTimes(raw).map((slot) => ({
         hhmm: slot.hhmm,
-        memberOnly: Boolean(slot.memberOnly),
+        memberOnly: Boolean(slot.memberOnly) || isRuleBasedMemberOnlySlot(dateObj, slot.hhmm, durationMinutes, bookingRules),
         formatted: slot.formatted ?? slot.hhmm,
       }));
       setAvailableByDate((prev) => ({ ...prev, [ymd]: slots }));

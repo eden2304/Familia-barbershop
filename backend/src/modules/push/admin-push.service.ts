@@ -131,7 +131,7 @@ export class AdminPushService {
             Buffer.from(JSON.stringify({
                 title: payload.title,
                 body: payload.body,
-                url: payload.url || '/admin/notifications',
+                url: payload.url || '/Admin',
                 tag: 'admin-updates',
             }), 'utf8'),
             p256dh,

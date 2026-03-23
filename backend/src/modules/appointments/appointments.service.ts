@@ -696,10 +696,12 @@ export class AppointmentsService {
             await this.settingsRepo.save(this.settingsRepo.create({ key, value: next }));
         }
 
+        const appointmentDate = startsAtIso.slice(0, 10);
+
         await this.adminPushService.sendAdminUpdateNotification({
             title: 'תור חדש',
             body: String(event.message || 'יש עדכון חדש במערכת').slice(0, 180),
-            url: '/admin/notifications',
+            url: `/Admin?notificationTarget=appointment&date=${encodeURIComponent(appointmentDate)}`,
         });
     }
 

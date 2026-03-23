@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Service } from "@/api/entities";
@@ -346,6 +346,7 @@ export default function Admin() { // Removed props
   const { showAlert, showConfirm } = useSystemPopup();
   const { sidebarOpen, setSidebarOpen } = useSidebar(); // Consume context
   const navigate = useNavigate();
+  const location = useLocation();
   // --- Admin access & auth ---
   const [canAccessAdmin, setCanAccessAdmin] = useState(false); // נקבע ע"י ה-guard מה-localStorage
   const [isCodeVerified, setIsCodeVerified] = useState(false); // נהיה true רק אחרי אימות קוד
@@ -557,6 +558,17 @@ export default function Admin() { // Removed props
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const notificationNavigation = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const target = String(params.get('notificationTarget') || '').trim();
+    const dateValue = String(params.get('date') || '').trim();
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : '';
+    return {
+      target,
+      date: validDate,
+      hasParams: Boolean(target || validDate),
+    };
+  }, [location.search]);
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
   const [weeklyDayHoursOverrides, setWeeklyDayHoursOverrides] = useState({});
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
@@ -1252,6 +1264,31 @@ export default function Admin() { // Removed props
     loadAppointmentsForWeek(selectedDate);
   }, [isAuthenticated, selectedDate, appointmentsViewMode]);
 
+  useEffect(() => {
+    if (!notificationNavigation.hasParams) return;
+
+    const nextDate = notificationNavigation.date
+      ? startOfDay(new Date(`${notificationNavigation.date}T12:00:00`))
+      : null;
+
+    if (nextDate && !Number.isNaN(nextDate.getTime())) {
+      setSelectedDate(nextDate);
+    }
+
+    if (notificationNavigation.target === 'waiting-list') {
+      setActiveTab('appointments');
+      setShowWaitingListView(true);
+      setAppointmentsViewMode('list');
+    } else {
+      setShowWaitingListView(false);
+      setActiveTab('appointments');
+      if (notificationNavigation.target === 'appointment') {
+        setAppointmentsViewMode('list');
+      }
+    }
+
+    navigate(location.pathname, { replace: true });
+  }, [location.pathname, navigate, notificationNavigation]);
 
   useEffect(() => {
     if (!isAuthenticated || activeTab !== 'updates') return;

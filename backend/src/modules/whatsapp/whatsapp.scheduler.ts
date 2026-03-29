@@ -11,9 +11,11 @@ import { sleep } from './whatsapp.utils';
 export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(WhatsAppReminderScheduler.name);
     private readonly cronExpr = process.env.WHATSAPP_REMINDER_CRON || '0 8 * * *';
+    private readonly earlyMorningCronExpr = process.env.WHATSAPP_REMINDER_EARLY_MORNING_CRON || '0 0 * * *';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly logRetentionDays = this.parsePositiveInt(process.env.WHATSAPP_LOG_RETENTION_DAYS, 3);
     private readonly cleanupEveryHours = this.parsePositiveInt(process.env.WHATSAPP_LOG_CLEANUP_EVERY_HOURS, 72);
+    private readonly earlyReminderCutoffHour = this.parseHour(process.env.WHATSAPP_REMINDER_EARLY_MORNING_CUTOFF_HOUR, 10);
     private timer: NodeJS.Timeout | null = null;
     private lastRunKey: string | null = null;
     private lastCleanupAt: DateTime | null = null;
@@ -44,6 +46,14 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         return parsed;
     }
 
+    private parseHour(value: string | undefined, fallback: number): number {
+        const parsed = Number.parseInt(String(value || ''), 10);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 23) {
+            return fallback;
+        }
+        return parsed;
+    }
+
     onModuleDestroy() {
         if (this.timer) {
             clearInterval(this.timer);
@@ -69,19 +79,29 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         }
 
         const now = DateTime.now().setZone(this.timeZone);
-        const { minute, hour } = this.parseMinuteHour(this.cronExpr);
+        const earlyMorningSchedule = this.parseMinuteHour(this.earlyMorningCronExpr);
+        const regularSchedule = this.parseMinuteHour(this.cronExpr);
 
-        if (now.hour !== hour || now.minute !== minute) {
+        const isEarlyMorningRun = now.hour === earlyMorningSchedule.hour && now.minute === earlyMorningSchedule.minute;
+        const isRegularRun = now.hour === regularSchedule.hour && now.minute === regularSchedule.minute;
+
+        if (!isEarlyMorningRun && !isRegularRun) {
             return;
         }
 
-        const runKey = now.toFormat('yyyy-LL-dd-HH-mm');
+        const mode = isEarlyMorningRun ? 'early' : 'regular';
+        const runKey = `${mode}-${now.toFormat('yyyy-LL-dd-HH-mm')}`;
         if (this.lastRunKey === runKey) {
             return;
         }
         this.lastRunKey = runKey;
 
-        await this.sendSameDayReminders();
+        if (isEarlyMorningRun) {
+            await this.sendSameDayReminders('early_morning');
+            return;
+        }
+
+        await this.sendSameDayReminders('regular');
     }
 
     private async cleanupMessageLogs() {
@@ -108,7 +128,7 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         }
     }
 
-    private async sendSameDayReminders() {
+    private async sendSameDayReminders(mode: 'early_morning' | 'regular') {
         const tz = this.whatsappService.getTimeZone();
         const now = DateTime.now().setZone(tz);
         const startOfDay = now.startOf('day').toUTC().toJSDate();
@@ -125,6 +145,18 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
             if (String(status || '').toLowerCase() === 'canceled') {
                 continue;
             }
+
+            const appointmentStart = DateTime.fromJSDate(appointment.startsAt, { zone: 'utc' }).setZone(tz);
+            const cutoff = appointmentStart.startOf('day').plus({ hours: this.earlyReminderCutoffHour });
+            const isEarlyMorningAppointment = appointmentStart <= cutoff;
+
+            if (mode === 'early_morning' && !isEarlyMorningAppointment) {
+                continue;
+            }
+            if (mode === 'regular' && isEarlyMorningAppointment) {
+                continue;
+            }
+
             await this.whatsappService.sendAppointmentReminderSameDay(appointment);
             await sleep(200);
         }

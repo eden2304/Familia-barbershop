@@ -11,7 +11,7 @@ import { sleep } from './whatsapp.utils';
 export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(WhatsAppReminderScheduler.name);
     private readonly cronExpr = process.env.WHATSAPP_REMINDER_CRON || '0 8 * * *';
-    private readonly earlyMorningCronExpr = process.env.WHATSAPP_REMINDER_EARLY_MORNING_CRON || '0 0 * * *';
+    private readonly earlyMorningCronExpr = process.env.WHATSAPP_REMINDER_EARLY_MORNING_CRON || '0 22 * * *';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly logRetentionDays = this.parsePositiveInt(process.env.WHATSAPP_LOG_RETENTION_DAYS, 3);
     private readonly cleanupEveryHours = this.parsePositiveInt(process.env.WHATSAPP_LOG_CLEANUP_EVERY_HOURS, 72);
@@ -97,11 +97,11 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         this.lastRunKey = runKey;
 
         if (isEarlyMorningRun) {
-            await this.sendSameDayReminders('early_morning');
+            await this.sendReminders('early_morning');
             return;
         }
 
-        await this.sendSameDayReminders('regular');
+        await this.sendReminders('regular');
     }
 
     private async cleanupMessageLogs() {
@@ -128,11 +128,12 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
         }
     }
 
-    private async sendSameDayReminders(mode: 'early_morning' | 'regular') {
+    private async sendReminders(mode: 'early_morning' | 'regular') {
         const tz = this.whatsappService.getTimeZone();
         const now = DateTime.now().setZone(tz);
-        const startOfDay = now.startOf('day').toUTC().toJSDate();
-        const endOfDay = now.endOf('day').toUTC().toJSDate();
+        const targetDay = mode === 'early_morning' ? now.plus({ days: 1 }) : now;
+        const startOfDay = targetDay.startOf('day').toUTC().toJSDate();
+        const endOfDay = targetDay.endOf('day').toUTC().toJSDate();
 
         const appointments = await this.apptRepo.find({
             where: { startsAt: Between(startOfDay, endOfDay) },
@@ -157,7 +158,11 @@ export class WhatsAppReminderScheduler implements OnModuleInit, OnModuleDestroy 
                 continue;
             }
 
-            await this.whatsappService.sendAppointmentReminderSameDay(appointment);
+            if (mode === 'early_morning') {
+                await this.whatsappService.sendAppointmentReminderPrevDay(appointment);
+            } else {
+                await this.whatsappService.sendAppointmentReminderSameDay(appointment);
+            }
             await sleep(200);
         }
     }

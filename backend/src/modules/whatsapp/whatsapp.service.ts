@@ -62,6 +62,18 @@ export class WhatsAppService {
         });
     }
 
+    async sendAppointmentReminderPrevDay(appointment: Appointment) {
+        const alreadySent = await this.logRepo.exist({
+            where: { appointmentId: appointment.id, templateName: 'reminder_prev_day' },
+        });
+        if (alreadySent) {
+            return this.logSkipped('reminder_prev_day', appointment, 'already_sent');
+        }
+        return this.sendAppointmentTemplate('reminder_prev_day', appointment, {
+            appointmentId: appointment.id,
+        });
+    }
+
     async sendAppointmentCanceled(appointment: Appointment) {
         return this.sendAppointmentTemplate('appointment_canceled', appointment, {
             appointmentId: appointment.id,
@@ -129,7 +141,7 @@ export class WhatsAppService {
     }
 
     private async sendAppointmentTemplate(
-        templateName: 'appointment_approved' | 'remainder_same_day' | 'appointment_canceled',
+        templateName: 'appointment_approved' | 'remainder_same_day' | 'reminder_prev_day' | 'appointment_canceled',
         appointment: Appointment,
         opts: { appointmentId?: string } = {},
     ) {

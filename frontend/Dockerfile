@@ -25,9 +25,11 @@ RUN npm run build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
-RUN npm i -g serve
-
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.mjs ./server.mjs
+COPY --from=build /app/package.json ./package.json
 
+ENV NODE_ENV=production
 ENV PORT=8080
-CMD ["sh", "-lc", "serve -s dist -l ${PORT}"]
+
+CMD ["node", "server.mjs"]

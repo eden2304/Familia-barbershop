@@ -89,12 +89,17 @@ function formatHealth(status) {
   };
 }
 
-function sendJson(res, statusCode, body) {
+function sendJson(req, res, statusCode, body) {
   const content = JSON.stringify(body);
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Length', Buffer.byteLength(content));
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+
   res.end(content);
 }
 
@@ -141,7 +146,7 @@ function resolveAssetPath(requestPath) {
   return candidate;
 }
 
-async function streamFile(res, filePath, statusCode = 200) {
+async function streamFile(res, filePath, statusCode = 200, sendBody = true) {
   try {
     const info = await stat(filePath);
     if (!info.isFile()) {
@@ -159,6 +164,11 @@ async function streamFile(res, filePath, statusCode = 200) {
       res.setHeader('Cache-Control', 'no-store');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+
+    if (!sendBody) {
+      res.end();
+      return true;
     }
 
     await new Promise((resolve, reject) => {
@@ -184,14 +194,14 @@ const server = createServer(async (req, res) => {
     const pathname = url.pathname;
 
     if (pathname === '/health/live') {
-      sendJson(res, 200, formatHealth('live'));
+      sendJson(req, res, 200, formatHealth('live'));
       return;
     }
 
     if (pathname === '/health/ready') {
       const state = await refreshReadyState();
       const statusCode = state.ready ? 200 : 503;
-      sendJson(res, statusCode, {
+      sendJson(req, res, statusCode, {
         ...formatHealth(state.ready ? 'ready' : 'not_ready'),
         ready: state.ready,
         reason: state.reason
@@ -207,7 +217,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (pathname === '/favicon.ico') {
-      const served = await streamFile(res, ICON_FILE);
+      const served = await streamFile(res, ICON_FILE, 200, method !== 'HEAD');
       if (served) {
         return;
       }
@@ -215,19 +225,19 @@ const server = createServer(async (req, res) => {
 
     const directFilePath = resolveAssetPath(pathname);
     if (directFilePath) {
-      const served = await streamFile(res, directFilePath);
+      const served = await streamFile(res, directFilePath, 200, method !== 'HEAD');
       if (served) {
         return;
       }
     }
 
-    const servedIndex = await streamFile(res, INDEX_FILE);
+    const servedIndex = await streamFile(res, INDEX_FILE, 200, method !== 'HEAD');
     if (servedIndex) {
       return;
     }
 
     res.statusCode = 503;
-    sendJson(res, 503, {
+    sendJson(req, res, 503, {
       ...formatHealth('not_ready'),
       ready: false,
       reason: 'index-not-available'
@@ -241,7 +251,7 @@ const server = createServer(async (req, res) => {
     });
 
     if (!res.headersSent) {
-      sendJson(res, 500, { error: 'internal_server_error' });
+      sendJson(req, res, 500, { error: 'internal_server_error' });
       return;
     }
 

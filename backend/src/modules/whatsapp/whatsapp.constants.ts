@@ -12,6 +12,10 @@ export const WHATSAPP_TEMPLATES = {
         name: 'remainder_same_day',
         params: ['clientName', 'date', 'time'] as const,
     },
+    reminder_prev_day: {
+        name: 'reminder_prev_day',
+        params: ['clientName', 'date', 'time'] as const,
+    },
     appointment_canceled: {
         name: 'appointment_canceled',
         params: ['clientName', 'date', 'time'] as const,

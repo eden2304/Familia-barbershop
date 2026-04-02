@@ -10,6 +10,7 @@ import VerificationModal from "../components/VerificationModal.jsx";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
 import LoadingScreen from "../components/LoadingScreen.jsx";
 import { fullName, serviceName, statusPill } from '@/lib/apt-utils';
+import { openAddToCalendar } from "@/lib/calendar-links";
 import api from "@/api/base44Client";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import { clearStoredClient, readStoredClient, writeStoredClient } from '@/utils/clientStorage';
@@ -264,6 +265,16 @@ export default function MyAppointmentsPage() {
     }
   };
 
+  const handleAddToCalendar = (appointment) => {
+    openAddToCalendar({
+      title: "תספורת בFamilia",
+      startAt: appointment?.startsAt,
+      endAt: appointment?.endsAt,
+      description: `התור שלך ב-Familia עבור ${serviceName(appointment)}`,
+      fallbackDurationMinutes: appointment?.service?.durationMinutes ?? 45,
+    });
+  };
+
   useEffect(() => {
     const hasLocks = Object.values(cancelLockByEntry).some((seconds) => Number(seconds) > 0);
     if (!hasLocks) return;
@@ -424,7 +435,14 @@ export default function MyAppointmentsPage() {
                                 <StatusChip apt={a} />
                               </div>
 
-                              <div className="mt-4 text-center">
+                              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                                <Button
+                                    onClick={() => handleAddToCalendar(a)}
+                                    className="rounded-full border border-slate-800 bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                                >
+                                  <Calendar className="ml-1 h-4 w-4" />
+                                  הוספה ליומן
+                                </Button>
                                 <Button
                                     onClick={() => handleCancelRequest(a)}
                                     variant="outline"

@@ -598,6 +598,7 @@ export default function Admin() { // Removed props
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
   const [armedDragAppointmentId, setArmedDragAppointmentId] = useState(null);
   const [dragTargetCell, setDragTargetCell] = useState(null);
+  const [isTouchHoldingAppointment, setIsTouchHoldingAppointment] = useState(false);
   const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
@@ -1916,6 +1917,7 @@ const extractRecurringSchedules = (client) => {
     clearLongPressTimer();
     touchDragStartRef.current = null;
     lastTouchPointRef.current = null;
+    setIsTouchHoldingAppointment(false);
     setArmedDragAppointmentId(null);
     setDragTargetCell(null);
     setDraggedAppointmentId(null);
@@ -1929,7 +1931,7 @@ const extractRecurringSchedules = (client) => {
   }, [clearLongPressTimer]);
 
   useEffect(() => {
-    if (!draggedAppointmentId) return;
+    if (!draggedAppointmentId && !isTouchHoldingAppointment) return;
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyTouchAction = document.body.style.touchAction;
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -1953,7 +1955,7 @@ const extractRecurringSchedules = (client) => {
       document.documentElement.style.overflow = previousHtmlOverflow;
       document.documentElement.style.touchAction = previousHtmlTouchAction;
     };
-  }, [draggedAppointmentId]);
+  }, [draggedAppointmentId, isTouchHoldingAppointment]);
 
   const autoScrollWeeklyCalendarWhileDragging = React.useCallback((point) => {
     if (!point || !draggedAppointmentId) return;
@@ -3870,12 +3872,16 @@ const extractRecurringSchedules = (client) => {
                                                 if (!isDraggableApt) return;
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
+                                                setIsTouchHoldingAppointment(true);
                                                 lastTouchPointRef.current = touchPoint;
                                                 startAppointmentLongPress(apt, touchPoint);
                                               }}
                                               onTouchMove={(event) => {
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
+                                                if (isTouchHoldingAppointment || draggedAppointmentId) {
+                                                  event.preventDefault();
+                                                }
                                                 lastTouchPointRef.current = touchPoint;
                                                 if (!isDraggableApt || !draggedAppointmentId) return;
                                                 moveCalendarDragPreview(touchPoint);

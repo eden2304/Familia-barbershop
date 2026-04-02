@@ -329,9 +329,9 @@ export default function Home() {
                         </div>
 
                         {futureRecurringLabel && (
-                          <div className="block max-w-full rounded-2xl border border-gray-300 bg-gradient-to-r from-gray-100 via-gray-50 to-white px-4 py-3 shadow-sm transition-all hover:shadow-md">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
+                          <div className="block w-full max-w-[300px] rounded-2xl border border-gray-300 bg-gradient-to-r from-gray-100 via-gray-50 to-white px-3 py-2.5 shadow-sm transition-all hover:shadow-md">
+                            <div className="flex flex-col items-end gap-2">
+                              <div className="w-full text-right">
                                 <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
                                 <p className="mt-1 text-sm text-gray-700">{futureRecurringLabel}</p>
                                 <Link to="/MyAppointmentsPage" className="mt-2 inline-block text-xs font-medium text-gray-700 underline underline-offset-2">
@@ -345,7 +345,7 @@ export default function Home() {
                                   handleAddUpcomingToCalendar();
                                 }}
                                 variant="outline"
-                                className="h-auto rounded-full border-gray-400 bg-white px-3 py-1.5 text-xs text-gray-900 hover:bg-gray-100"
+                                className="mt-1 h-auto rounded-full border-gray-400 bg-white px-3 py-1.5 text-xs text-gray-900 hover:bg-gray-100"
                               >
                                 <CalendarPlus className="ml-1 h-3.5 w-3.5" />
                                 הוספה ליומן

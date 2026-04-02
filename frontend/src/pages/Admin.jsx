@@ -3769,10 +3769,17 @@ const extractRecurringSchedules = (client) => {
                           <div className="min-w-[700px]">
                             <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
                               {weeklyCalendarColumns.map(({ day, dayKey }) => (
-                                <div key={`header-${dayKey}`} className={`sticky top-0 z-20 border-b border-l px-1 py-1 text-center text-xs font-semibold first:border-l-0 ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}>
+                                <button
+                                  key={`header-${dayKey}`}
+                                  type="button"
+                                  onClick={() => setSelectedDate(day)}
+                                  onDoubleClick={() => openDayHoursModal(day)}
+                                  title="לחיצה כפולה לעריכת שעות היום"
+                                  className={`sticky top-0 z-20 border-b border-l px-1 py-1 text-center text-xs font-semibold first:border-l-0 transition-colors hover:bg-gray-200/80 ${isSameDay(day, selectedDate) ? 'bg-gray-200' : 'bg-gray-100'}`}
+                                >
                                   <span className="block truncate">{format(day, 'EEE', { locale: he })}</span>
                                   <span className="block leading-none text-[11px]">{format(day, 'd/M')}</span>
-                                </div>
+                                </button>
                               ))}
                             </div>
 

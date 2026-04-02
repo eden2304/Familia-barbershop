@@ -358,6 +358,7 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  const [showNoBookingUpdatesDialog, setShowNoBookingUpdatesDialog] = useState(false);
   const [adminPhones, setAdminPhones] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
@@ -1334,6 +1335,11 @@ export default function Admin() { // Removed props
       loadAdminUpdates().catch(() => undefined);
     }, 30_000);
     return () => clearInterval(intervalId);
+  }, [isAuthenticated, activeTab]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    loadAdminUpdates().catch(() => undefined);
   }, [isAuthenticated, activeTab]);
 
   const sanitizeTimeInput = (value) => {
@@ -3129,6 +3135,23 @@ const extractRecurringSchedules = (client) => {
     };
   };
 
+  const isNoBookingUpdate = (item) => {
+    if (!item || typeof item !== 'object') return false;
+    if (String(item?.type || '') === 'visit_no_booking') return true;
+    const message = String(item?.message || '');
+    return message.includes('לא קבע תור');
+  };
+
+  const regularAdminUpdates = useMemo(
+    () => (adminUpdates || []).filter((item) => !isNoBookingUpdate(item)),
+    [adminUpdates]
+  );
+
+  const noBookingAdminUpdates = useMemo(
+    () => (adminUpdates || []).filter((item) => isNoBookingUpdate(item)),
+    [adminUpdates]
+  );
+
   const getUpdateHeadline = (item) => {
     if (item?.type === 'booking') {
       const explicitName = String(item?.clientName || '').trim();
@@ -4023,6 +4046,44 @@ const extractRecurringSchedules = (client) => {
                         <CardHeader className="flex flex-row items-center justify-between">
                           <CardTitle>עדכוני לקוחות</CardTitle>
                           <div className="flex items-center gap-2">
+                            <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  פה לא קבעו תור
+                                  {noBookingAdminUpdates.length > 0 && (
+                                    <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[11px] font-semibold text-amber-700">
+                                      {noBookingAdminUpdates.length}
+                                    </span>
+                                  )}
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent dir="rtl" className="sm:max-w-lg">
+                                <DialogHeader>
+                                  <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
+                                  <DialogDescription>
+                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+                                  {noBookingAdminUpdates.length === 0 ? (
+                                    <p className="text-sm text-gray-500">אין כרגע לקוחות ברשימה הזו.</p>
+                                  ) : (
+                                    noBookingAdminUpdates.map((item, idx) => {
+                                      const eventDate = item?.createdAt ? new Date(item.createdAt) : null;
+                                      const eventTimeLabel = eventDate && !Number.isNaN(eventDate.getTime())
+                                        ? format(eventDate, 'HH:mm dd/MM/yyyy')
+                                        : '';
+                                      return (
+                                        <div key={`${item?.createdAt || 'no-booking'}-${idx}`} className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2">
+                                          <p className="font-medium text-amber-900">{getUpdateHeadline(item)}</p>
+                                          <p className="text-xs text-amber-700 mt-1">{eventTimeLabel}</p>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                             <Button
                               variant="outline"
                               size="sm"
@@ -4062,10 +4123,10 @@ const extractRecurringSchedules = (client) => {
                                 <span>מתבצע רענון</span>
                               </div>
                             )}
-                            {adminUpdates.length === 0 ? (
+                            {regularAdminUpdates.length === 0 ? (
                                 <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
                             ) : (
-                                adminUpdates.map((item, idx) => {
+                                regularAdminUpdates.map((item, idx) => {
                                   const colorClass = item?.color === 'green'
                                       ? 'text-green-700'
                                       : item?.color === 'red'

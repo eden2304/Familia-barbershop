@@ -4109,31 +4109,7 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleEnablePushNotifications}
-                              disabled={pushBusy || pushEnabled}
-                              className="gap-1.5"
-                            >
-                              {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleClearAdminUpdates}
-                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
-                            >
-                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
-                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
-                            </Button>
-                          </div>
-                          <div className="flex justify-end">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
                             <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
                               <Button
                                 type="button"
@@ -4190,6 +4166,30 @@ const extractRecurringSchedules = (client) => {
                                 </div>
                               </DialogContent>
                             </Dialog>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleEnablePushNotifications}
+                                disabled={pushBusy || pushEnabled}
+                                className="gap-1.5"
+                              >
+                                {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleClearAdminUpdates}
+                                disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
+                              >
+                                {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
+                                {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent>

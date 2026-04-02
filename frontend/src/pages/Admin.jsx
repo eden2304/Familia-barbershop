@@ -4145,7 +4145,7 @@ const extractRecurringSchedules = (client) => {
                               </Button>
                             </div>
                           </div>
-                          <div className="flex justify-end">
+                          <div className="flex justify-end w-full" dir="ltr">
                             <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
                               <Button
                                 type="button"

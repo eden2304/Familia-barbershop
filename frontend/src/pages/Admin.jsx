@@ -607,7 +607,6 @@ export default function Admin() { // Removed props
   const touchDragStartRef = React.useRef(null);
   const lastTouchPointRef = React.useRef(null);
   const WEEKLY_DRAG_LONG_PRESS_MS = 520;
-  const WEEKLY_DRAG_CANCEL_MOVE_PX = 28;
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -3877,18 +3876,6 @@ const extractRecurringSchedules = (client) => {
                                               onTouchMove={(event) => {
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
-                                                if (!draggedAppointmentId && touchDragStartRef.current) {
-                                                  const elapsedFromPress = Date.now() - (touchDragStartRef.current.startedAt || 0);
-                                                  const moved = Math.hypot(
-                                                    touchPoint.clientX - touchDragStartRef.current.x,
-                                                    touchPoint.clientY - touchDragStartRef.current.y
-                                                  );
-                                                  if (moved > WEEKLY_DRAG_CANCEL_MOVE_PX && elapsedFromPress < WEEKLY_DRAG_LONG_PRESS_MS - 80) {
-                                                    clearLongPressTimer();
-                                                    touchDragStartRef.current = null;
-                                                    return;
-                                                  }
-                                                }
                                                 lastTouchPointRef.current = touchPoint;
                                                 if (!isDraggableApt || !draggedAppointmentId) return;
                                                 moveCalendarDragPreview(touchPoint);

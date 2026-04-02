@@ -25,7 +25,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -38,6 +37,7 @@ import {
   Clock,
   User,
   Phone,
+  MessageCircle,
   Edit,
   Trash2,
   Plus,
@@ -358,6 +358,7 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  const [showNoBookingUpdatesDialog, setShowNoBookingUpdatesDialog] = useState(false);
   const [adminPhones, setAdminPhones] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
@@ -1334,6 +1335,11 @@ export default function Admin() { // Removed props
       loadAdminUpdates().catch(() => undefined);
     }, 30_000);
     return () => clearInterval(intervalId);
+  }, [isAuthenticated, activeTab]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'updates') return;
+    loadAdminUpdates().catch(() => undefined);
   }, [isAuthenticated, activeTab]);
 
   const sanitizeTimeInput = (value) => {
@@ -2526,6 +2532,70 @@ const extractRecurringSchedules = (client) => {
     setClientDetailsModal({ isOpen: true, client: normalizedClient });
   };
 
+  const resolveClientFromUpdate = (item) => {
+    if (!item || typeof item !== 'object') return null;
+    const candidateClientId = item?.clientId ?? item?.client_id ?? item?.client?.id ?? item?.appointment?.clientId ?? item?.appointment?.client_id ?? item?.appointment?.client?.id;
+    if (candidateClientId != null) {
+      const fromId = (allClients || []).find((client) => String(client?.id) === String(candidateClientId));
+      if (fromId) return fromId;
+    }
+
+    const candidatePhone = normalizePhone(
+      item?.phone ??
+      item?.clientPhone ??
+      item?.client_phone ??
+      item?.client?.phone ??
+      item?.appointment?.phone ??
+      item?.appointment?.clientPhone ??
+      item?.appointment?.client_phone ??
+      ''
+    );
+    if (candidatePhone) {
+      const fromPhone = (allClients || []).find((client) => normalizePhone(client?.phone ?? client?.client_phone ?? '') === candidatePhone);
+      if (fromPhone) return fromPhone;
+    }
+
+    const fallbackName = String(
+      item?.clientName ??
+      item?.client?.name ??
+      item?.message?.replace?.(/\s*ביקר במערכת אבל לא קבע תור\s*$/, '') ??
+      ''
+    ).trim();
+    return {
+      id: candidateClientId ?? `no-booking-${candidatePhone || fallbackName}`,
+      first_name: fallbackName || 'לקוח',
+      last_name: '',
+      phone: candidatePhone,
+      client_phone: candidatePhone,
+    };
+  };
+
+  const toWhatsAppPhone = (rawPhone) => {
+    const digits = String(rawPhone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('972')) return digits;
+    if (digits.startsWith('0')) return `972${digits.slice(1)}`;
+    return digits;
+  };
+
+  const handleCallClient = (client) => {
+    const normalizedPhone = normalizePhone(client?.phone ?? client?.client_phone ?? '');
+    if (!normalizedPhone) {
+      toast({ title: 'אין מספר טלפון ללקוח', variant: 'destructive' });
+      return;
+    }
+    window.open(`tel:${normalizedPhone}`, '_self');
+  };
+
+  const handleOpenClientWhatsApp = (client) => {
+    const waPhone = toWhatsAppPhone(client?.phone ?? client?.client_phone ?? '');
+    if (!waPhone) {
+      toast({ title: 'אין מספר טלפון ללקוח', variant: 'destructive' });
+      return;
+    }
+    window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
+  };
+
   const closeClientDetailsModal = () => {
     setClientNameEditDraft({ first_name: "", last_name: "" });
     setIsEditingClientName(false);
@@ -3128,6 +3198,23 @@ const extractRecurringSchedules = (client) => {
       timeLabel: hasDate ? format(startsAtDate, 'HH:mm') : 'לא צוין',
     };
   };
+
+  const isNoBookingUpdate = (item) => {
+    if (!item || typeof item !== 'object') return false;
+    if (String(item?.type || '') === 'visit_no_booking') return true;
+    const message = String(item?.message || '');
+    return message.includes('לא קבע תור');
+  };
+
+  const regularAdminUpdates = useMemo(
+    () => (adminUpdates || []).filter((item) => !isNoBookingUpdate(item)),
+    [adminUpdates]
+  );
+
+  const noBookingAdminUpdates = useMemo(
+    () => (adminUpdates || []).filter((item) => isNoBookingUpdate(item)),
+    [adminUpdates]
+  );
 
   const getUpdateHeadline = (item) => {
     if (item?.type === 'booking') {
@@ -4020,8 +4107,66 @@ const extractRecurringSchedules = (client) => {
                 {activeTab === 'updates' && (
                     <div className="space-y-6">
                       <Card className="bg-white rounded-2xl shadow-sm">
-                        <CardHeader className="flex flex-row items-center justify-between">
+                        <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
+                          <div className="flex justify-end">
+                            <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                onClick={async () => {
+                                  await loadAdminUpdates();
+                                  setShowNoBookingUpdatesDialog(true);
+                                }}
+                              >
+                                  לא קבעו תור
+                                  {noBookingAdminUpdates.length > 0 && (
+                                    <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-red-100 px-1 text-[11px] font-semibold text-red-700">
+                                      {noBookingAdminUpdates.length}
+                                    </span>
+                                  )}
+                                </Button>
+                              <DialogContent dir="rtl" className="sm:max-w-lg">
+                                <DialogHeader>
+                                  <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
+                                  <DialogDescription>
+                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+                                  {noBookingAdminUpdates.length === 0 ? (
+                                    <p className="text-sm text-gray-500">אין כרגע לקוחות ברשימה הזו.</p>
+                                  ) : (
+                                    noBookingAdminUpdates.map((item, idx) => {
+                                      const eventDate = item?.createdAt ? new Date(item.createdAt) : null;
+                                      const eventTimeLabel = eventDate && !Number.isNaN(eventDate.getTime())
+                                        ? format(eventDate, 'HH:mm dd/MM/yyyy')
+                                        : '';
+                                      return (
+                                        <button
+                                          key={`${item?.createdAt || 'no-booking'}-${idx}`}
+                                          type="button"
+                                          className="w-full text-right border border-gray-200 bg-white rounded-xl px-3 py-2 hover:border-red-200 hover:bg-red-50/40 transition"
+                                          onClick={() => {
+                                            const targetClient = resolveClientFromUpdate(item);
+                                            if (targetClient) {
+                                              openClientDetails(targetClient);
+                                              setShowNoBookingUpdatesDialog(false);
+                                            }
+                                          }}
+                                        >
+                                          <p className="font-medium text-red-700">{getUpdateHeadline(item)}</p>
+                                          <p className="text-xs text-red-600 mt-1">{eventTimeLabel}</p>
+                                        </button>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
                           <div className="flex items-center gap-2">
                             <Button
                               variant="outline"
@@ -4062,10 +4207,10 @@ const extractRecurringSchedules = (client) => {
                                 <span>מתבצע רענון</span>
                               </div>
                             )}
-                            {adminUpdates.length === 0 ? (
+                            {regularAdminUpdates.length === 0 ? (
                                 <p className="text-sm text-gray-500">אין עדכונים להצגה כרגע.</p>
                             ) : (
-                                adminUpdates.map((item, idx) => {
+                                regularAdminUpdates.map((item, idx) => {
                                   const colorClass = item?.color === 'green'
                                       ? 'text-green-700'
                                       : item?.color === 'red'
@@ -5125,6 +5270,28 @@ const extractRecurringSchedules = (client) => {
                         <Phone className="w-4 h-4 text-gray-400" />
                         <span>{phoneDisplay || 'ללא מספר טלפון'}</span>
                       </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={() => handleOpenClientWhatsApp(client)}
+                        >
+                          <MessageCircle className="w-4 h-4 ml-1" />
+                          WhatsApp
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={() => handleCallClient(client)}
+                        >
+                          <Phone className="w-4 h-4 ml-1" />
+                          התקשר
+                        </Button>
+                      </div>
                       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                         <span>סה"כ תורים עתידיים: {upcomingCount}</span>
                         {Boolean(client.isBlocked ?? client.is_blocked) && (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { User, Home as HomeIcon, History, Navigation, Phone, Menu } from "lucide-react";
+import { User, Home as HomeIcon, History, Navigation, Phone, Menu, CalendarDays, Clock3, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
@@ -139,29 +139,68 @@ function MainLayout({ children, currentPageName }) {
 
       <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 z-50">
         <div className="flex justify-around items-center py-4 px-4">
-          <Link
-            to="/"
-            state={{ allowAdminHome: true }}
-            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}
-          >
-            <HomeIcon className="w-6 h-6"/>
-            <span className="text-xs font-medium">בית</span>
-          </Link>
-          
-          <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
-            <History className="h-6 w-6"/>
-            <span className="text-xs font-medium">התורים שלי</span>
-          </Link>
-          
-          <a href="https://waze.com/ul?q=הסתדרות%20201%20חולון" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
-            <Navigation className="w-6 h-6"/>
-            <span className="text-xs font-medium">איך מגיעים</span>
-          </a>
-          
-          <button onClick={handleCallClick} aria-label="שיחה למספר העסק" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
-            <Phone className="w-6 h-6"/>
-            <span className="text-xs font-medium">צור קשר</span>
-          </button>
+          {isAdmin ? (
+            <>
+              <Link
+                to="/"
+                state={{ allowAdminHome: true }}
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+              >
+                <HomeIcon className="w-6 h-6"/>
+                <span className="text-xs font-medium">בית</span>
+              </Link>
+
+              <Link
+                to="/Admin?notificationTarget=appointment&adminView=weekly"
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${(currentPageName === 'Admin') ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+              >
+                <CalendarDays className="h-6 w-6"/>
+                <span className="text-xs font-medium">יומן שבועי</span>
+              </Link>
+
+              <Link
+                to="/Admin?notificationTarget=waiting-list"
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${(currentPageName === 'Admin') ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+              >
+                <Clock3 className="w-6 h-6"/>
+                <span className="text-xs font-medium">רשימת ההמתנה</span>
+              </Link>
+
+              <Link
+                to="/Admin?adminTab=updates"
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${(currentPageName === 'Admin') ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+              >
+                <Bell className="w-6 h-6"/>
+                <span className="text-xs font-medium">עדכונים</span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/"
+                state={{ allowAdminHome: true }}
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'Home' ? 'text-black' : 'text-gray-500 hover:text-black'}`}
+              >
+                <HomeIcon className="w-6 h-6"/>
+                <span className="text-xs font-medium">בית</span>
+              </Link>
+              
+              <Link to="/MyAppointmentsPage" className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${currentPageName === 'MyAppointmentsPage' ? 'text-black' : 'text-gray-500 hover:text-black'}`}>
+                <History className="h-6 w-6"/>
+                <span className="text-xs font-medium">התורים שלי</span>
+              </Link>
+              
+              <a href="https://waze.com/ul?q=הסתדרות%20201%20חולון" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
+                <Navigation className="w-6 h-6"/>
+                <span className="text-xs font-medium">איך מגיעים</span>
+              </a>
+              
+              <button onClick={handleCallClick} aria-label="שיחה למספר העסק" className="flex flex-col items-center gap-1 p-2 rounded-lg transition-colors text-gray-500 hover:text-black">
+                <Phone className="w-6 h-6"/>
+                <span className="text-xs font-medium">צור קשר</span>
+              </button>
+            </>
+          )}
         </div>
       </footer>
     </div>

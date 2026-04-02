@@ -607,7 +607,7 @@ export default function Admin() { // Removed props
   const touchDragStartRef = React.useRef(null);
   const lastTouchPointRef = React.useRef(null);
   const WEEKLY_DRAG_LONG_PRESS_MS = 520;
-  const WEEKLY_DRAG_CANCEL_MOVE_PX = 12;
+  const WEEKLY_DRAG_CANCEL_MOVE_PX = 28;
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -1885,7 +1885,9 @@ const extractRecurringSchedules = (client) => {
   const startAppointmentLongPress = React.useCallback((appointment, point) => {
     if (!appointment || !canDragAppointmentInCalendar(appointment)) return;
     clearLongPressTimer();
-    touchDragStartRef.current = point ? { x: point.clientX, y: point.clientY, aptId: appointment.id } : null;
+    touchDragStartRef.current = point
+      ? { x: point.clientX, y: point.clientY, aptId: appointment.id, startedAt: Date.now() }
+      : null;
     longPressTimerRef.current = window.setTimeout(() => {
       setArmedDragAppointmentId(appointment.id);
       setDraggedAppointmentId(appointment.id);
@@ -3790,7 +3792,7 @@ const extractRecurringSchedules = (client) => {
                                           data-calendar-cell="1"
                                           data-day-date={dayKey}
                                           data-slot-minute={slotMinute}
-                                          className={`relative border-b min-h-10 p-0.5 transition-colors ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''} ${isDropTarget ? 'bg-amber-100 border-amber-500 shadow-[0_0_0_2px_rgba(245,158,11,0.4),inset_0_0_0_2px_rgba(245,158,11,0.75)]' : ''}`}
+                                          className={`relative border-b min-h-10 p-0.5 transition-colors ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''} ${isDropTarget ? 'border-amber-500 shadow-[0_0_0_2px_rgba(245,158,11,0.85)]' : ''}`}
                                           onDragOver={(e) => {
                                             if (!draggedAppointmentId) return;
                                             e.preventDefault();
@@ -3876,11 +3878,12 @@ const extractRecurringSchedules = (client) => {
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
                                                 if (!draggedAppointmentId && touchDragStartRef.current) {
+                                                  const elapsedFromPress = Date.now() - (touchDragStartRef.current.startedAt || 0);
                                                   const moved = Math.hypot(
                                                     touchPoint.clientX - touchDragStartRef.current.x,
                                                     touchPoint.clientY - touchDragStartRef.current.y
                                                   );
-                                                  if (moved > WEEKLY_DRAG_CANCEL_MOVE_PX) {
+                                                  if (moved > WEEKLY_DRAG_CANCEL_MOVE_PX && elapsedFromPress < WEEKLY_DRAG_LONG_PRESS_MS - 80) {
                                                     clearLongPressTimer();
                                                     touchDragStartRef.current = null;
                                                     return;

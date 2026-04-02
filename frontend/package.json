@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite preview --host 0.0.0.0 --port $PORT",
+    "start": "node server.mjs",
     "preview": "vite preview",
     "lint": "eslint ../../../Downloads/familia-barbershop-booking-efe0d6fd-2",
     "api": "node ../server/src/index.js"

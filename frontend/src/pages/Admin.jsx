@@ -4109,6 +4109,30 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleEnablePushNotifications}
+                              disabled={pushBusy || pushEnabled}
+                              className="gap-1.5"
+                            >
+                              {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                              {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearAdminUpdates}
+                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
+                            >
+                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
+                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
+                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                            </Button>
+                          </div>
                           <div className="flex justify-end">
                             <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
                               <Button
@@ -4121,13 +4145,13 @@ const extractRecurringSchedules = (client) => {
                                   setShowNoBookingUpdatesDialog(true);
                                 }}
                               >
-                                  לא קבעו תור
-                                  {noBookingAdminUpdates.length > 0 && (
-                                    <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-red-100 px-1 text-[11px] font-semibold text-red-700">
-                                      {noBookingAdminUpdates.length}
-                                    </span>
-                                  )}
-                                </Button>
+                                לא קבעו תור
+                                {noBookingAdminUpdates.length > 0 && (
+                                  <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-red-100 px-1 text-[11px] font-semibold text-red-700">
+                                    {noBookingAdminUpdates.length}
+                                  </span>
+                                )}
+                              </Button>
                               <DialogContent dir="rtl" className="sm:max-w-lg">
                                 <DialogHeader>
                                   <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
@@ -4166,30 +4190,6 @@ const extractRecurringSchedules = (client) => {
                                 </div>
                               </DialogContent>
                             </Dialog>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleEnablePushNotifications}
-                              disabled={pushBusy || pushEnabled}
-                              className="gap-1.5"
-                            >
-                              {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleClearAdminUpdates}
-                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
-                            >
-                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
-                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
-                            </Button>
                           </div>
                         </CardHeader>
                         <CardContent>

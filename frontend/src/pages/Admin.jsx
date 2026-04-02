@@ -596,11 +596,16 @@ export default function Admin() { // Removed props
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
   const [weeklyDayHoursOverrides, setWeeklyDayHoursOverrides] = useState({});
   const [draggedAppointmentId, setDraggedAppointmentId] = useState(null);
+  const [armedDragAppointmentId, setArmedDragAppointmentId] = useState(null);
+  const [dragTargetCell, setDragTargetCell] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
   const [pendingCalendarMove, setPendingCalendarMove] = useState(null);
   const [isSavingCalendarMove, setIsSavingCalendarMove] = useState(false);
   const didAutoAdvanceWeeklyCalendarRef = React.useRef(false);
   const selectedDateRef = React.useRef(selectedDate);
+  const longPressTimerRef = React.useRef(null);
+  const touchDragStartRef = React.useRef(null);
+  const lastTouchPointRef = React.useRef(null);
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -892,7 +897,6 @@ export default function Admin() { // Removed props
   const dayStripRef2 = React.useRef(null);
   const weeklyCalendarRef = React.useRef(null);
   const mainContentRef = React.useRef(null);
-  const touchDragStartRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
   const didInitialScrollRef = React.useRef(false);
@@ -1832,6 +1836,44 @@ const extractRecurringSchedules = (client) => {
     });
   };
 
+  const clearLongPressTimer = React.useCallback(() => {
+    if (!longPressTimerRef.current) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }, []);
+
+  const resolveCalendarCellFromPoint = React.useCallback((point) => {
+    if (!point) return null;
+    const target = document.elementFromPoint(point.clientX, point.clientY);
+    const cell = target?.closest?.('[data-calendar-cell="1"]');
+    if (!cell) return null;
+    const dayKey = cell.getAttribute('data-day-date');
+    const slotMinute = Number(cell.getAttribute('data-slot-minute'));
+    if (!dayKey || !Number.isFinite(slotMinute)) return null;
+    return { dayKey, slotMinute };
+  }, []);
+
+  const updateDragTargetFromPoint = React.useCallback((point) => {
+    const cell = resolveCalendarCellFromPoint(point);
+    setDragTargetCell(cell);
+    return cell;
+  }, [resolveCalendarCellFromPoint]);
+
+  const startAppointmentLongPress = React.useCallback((appointment, point) => {
+    if (!appointment || !canDragAppointmentInCalendar(appointment)) return;
+    clearLongPressTimer();
+    touchDragStartRef.current = point ? { x: point.clientX, y: point.clientY, aptId: appointment.id } : null;
+    longPressTimerRef.current = window.setTimeout(() => {
+      setArmedDragAppointmentId(appointment.id);
+      setDraggedAppointmentId(appointment.id);
+      const previewPoint = lastTouchPointRef.current || point;
+      if (previewPoint) {
+        startCalendarDragPreview(appointment, previewPoint);
+        updateDragTargetFromPoint(previewPoint);
+      }
+    }, 360);
+  }, [canDragAppointmentInCalendar, clearLongPressTimer, startCalendarDragPreview, updateDragTargetFromPoint]);
+
 
   const handleCalendarTouchDrop = React.useCallback((touchPoint) => {
     if (!draggedAppointmentId || !touchPoint) return;
@@ -1868,10 +1910,20 @@ const extractRecurringSchedules = (client) => {
   }, []);
 
   const clearTouchDragState = React.useCallback(() => {
+    clearLongPressTimer();
     touchDragStartRef.current = null;
+    lastTouchPointRef.current = null;
+    setArmedDragAppointmentId(null);
+    setDragTargetCell(null);
     setDraggedAppointmentId(null);
     endCalendarDragPreview();
-  }, [endCalendarDragPreview]);
+  }, [clearLongPressTimer, endCalendarDragPreview]);
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
 
   useEffect(() => {
     if (!draggedAppointmentId) return;
@@ -3729,20 +3781,29 @@ const extractRecurringSchedules = (client) => {
                                       const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
                                       const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
                                       const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
+                                      const isDropTarget = dragTargetCell?.dayKey === dayKey && dragTargetCell?.slotMinute === slotMinute;
                                       return (
                                         <div
                                           key={`${dayKey}-${slotMinute}`}
                                           data-calendar-cell="1"
                                           data-day-date={dayKey}
                                           data-slot-minute={slotMinute}
-                                          className={`relative border-b min-h-10 p-0.5 ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''}`}
+                                          className={`relative border-b min-h-10 p-0.5 transition-colors ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''} ${isDropTarget ? 'bg-amber-100 ring-2 ring-amber-400 ring-inset' : ''}`}
                                           onDragOver={(e) => {
                                             if (!draggedAppointmentId) return;
                                             e.preventDefault();
+                                            setDragTargetCell({ dayKey, slotMinute });
+                                          }}
+                                          onDragLeave={() => {
+                                            setDragTargetCell((prev) => (
+                                              prev?.dayKey === dayKey && prev?.slotMinute === slotMinute ? null : prev
+                                            ));
                                           }}
                                           onDrop={() => {
                                             if (!draggedAppointmentId) return;
                                             handleCalendarDrop(draggedAppointmentId, day, slotMinute);
+                                            setDragTargetCell(null);
+                                            setArmedDragAppointmentId(null);
                                             setDraggedAppointmentId(null);
                                           }}
                                           onClick={() => {
@@ -3765,11 +3826,28 @@ const extractRecurringSchedules = (client) => {
                                           {apt ? (
                                             <button
                                               type="button"
-                                              draggable={isDraggableApt}
-                                              onDragStart={(event) => {
-                                                if (!isDraggableApt) {
-                                                    return;
+                                              draggable={isDraggableApt && armedDragAppointmentId === apt.id}
+                                              onMouseDown={(event) => {
+                                                if (!isDraggableApt || event.button !== 0) return;
+                                                startAppointmentLongPress(apt, event);
+                                              }}
+                                              onMouseUp={() => {
+                                                if (!draggedAppointmentId) {
+                                                  clearLongPressTimer();
+                                                  setArmedDragAppointmentId(null);
                                                 }
+                                              }}
+                                              onMouseLeave={() => {
+                                                if (!draggedAppointmentId) {
+                                                  clearLongPressTimer();
+                                                }
+                                              }}
+                                              onDragStart={(event) => {
+                                                if (!isDraggableApt || armedDragAppointmentId !== apt.id) {
+                                                  event.preventDefault();
+                                                  return;
+                                                }
+                                                clearLongPressTimer();
                                                 setDraggedAppointmentId(apt.id);
                                                 startCalendarDragPreview(apt, event);
                                               }}
@@ -3779,6 +3857,9 @@ const extractRecurringSchedules = (client) => {
                                                 autoScrollWeeklyCalendarWhileDragging(event);
                                               }}
                                               onDragEnd={() => {
+                                                clearLongPressTimer();
+                                                setArmedDragAppointmentId(null);
+                                                setDragTargetCell(null);
                                                 setDraggedAppointmentId(null);
                                                 endCalendarDragPreview();
                                               }}
@@ -3786,32 +3867,22 @@ const extractRecurringSchedules = (client) => {
                                                 if (!isDraggableApt) return;
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
-                                                touchDragStartRef.current = { x: touchPoint.clientX, y: touchPoint.clientY, aptId: apt.id };
-                                                setDraggedAppointmentId(apt.id);
+                                                lastTouchPointRef.current = touchPoint;
+                                                startAppointmentLongPress(apt, touchPoint);
                                               }}
                                               onTouchMove={(event) => {
-                                                if (!isDraggableApt || !draggedAppointmentId) return;
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
-                                                const start = touchDragStartRef.current;
-                                                if (!start) return;
-                                                const moved = Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y);
-                                                if (moved < 10) return;
-                                                if (!dragPreview) {
-                                                  startCalendarDragPreview(apt, touchPoint);
-                                                } else {
-                                                  moveCalendarDragPreview(touchPoint);
-                                                }
+                                                lastTouchPointRef.current = touchPoint;
+                                                if (!isDraggableApt || !draggedAppointmentId) return;
+                                                moveCalendarDragPreview(touchPoint);
+                                                updateDragTargetFromPoint(touchPoint);
                                                 autoScrollWeeklyCalendarWhileDragging(touchPoint);
                                               }}
                                               onTouchEnd={(event) => {
-                                                if (!isDraggableApt || !draggedAppointmentId) return;
+                                                if (!isDraggableApt) return;
                                                 const touchPoint = event.changedTouches?.[0];
-                                                const start = touchDragStartRef.current;
-                                                const moved = (touchPoint && start)
-                                                  ? Math.hypot(touchPoint.clientX - start.x, touchPoint.clientY - start.y)
-                                                  : 0;
-                                                if (touchPoint && moved >= 10) {
+                                                if (touchPoint && draggedAppointmentId) {
                                                   handleCalendarTouchDrop(touchPoint);
                                                 }
                                                 clearTouchDragState();

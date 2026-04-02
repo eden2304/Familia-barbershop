@@ -11,7 +11,7 @@ self.addEventListener('push', (event) => {
     body: payload.body || 'יש עדכון חדש',
     tag: payload.tag || 'admin-updates',
     data: {
-      url: payload.url || '/admin/notifications',
+      url: payload.url || '/Admin',
     },
   };
 
@@ -20,7 +20,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification?.data?.url || '/admin/notifications';
+  const targetUrl = event.notification?.data?.url || '/Admin';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

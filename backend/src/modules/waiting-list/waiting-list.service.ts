@@ -266,7 +266,7 @@ export class WaitingListService {
         await this.adminPushService.sendAdminUpdateNotification({
             title: 'כניסה לרשימת ההמתנה',
             body: `${clientName} נכנס לרשימת ההמתנה (${slotParts.dateLabel} בשעה ${slotParts.timeLabel})`.slice(0, 180),
-            url: '/admin/notifications',
+            url: `/Admin?notificationTarget=waiting-list&date=${encodeURIComponent(entry.desiredDate)}`,
         });
     }
 

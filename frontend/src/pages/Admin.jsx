@@ -1931,7 +1931,7 @@ const extractRecurringSchedules = (client) => {
   }, [clearLongPressTimer]);
 
   useEffect(() => {
-    if (!draggedAppointmentId && !isTouchHoldingAppointment) return;
+    if (!draggedAppointmentId) return;
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyTouchAction = document.body.style.touchAction;
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -1955,7 +1955,7 @@ const extractRecurringSchedules = (client) => {
       document.documentElement.style.overflow = previousHtmlOverflow;
       document.documentElement.style.touchAction = previousHtmlTouchAction;
     };
-  }, [draggedAppointmentId, isTouchHoldingAppointment]);
+  }, [draggedAppointmentId]);
 
   const autoScrollWeeklyCalendarWhileDragging = React.useCallback((point) => {
     if (!point || !draggedAppointmentId) return;
@@ -3879,7 +3879,18 @@ const extractRecurringSchedules = (client) => {
                                               onTouchMove={(event) => {
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
-                                                if (isTouchHoldingAppointment || draggedAppointmentId) {
+                                                if (!draggedAppointmentId && touchDragStartRef.current) {
+                                                  const dx = touchPoint.clientX - touchDragStartRef.current.x;
+                                                  const dy = touchPoint.clientY - touchDragStartRef.current.y;
+                                                  const isHorizontalSwipe = Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.2;
+                                                  if (isHorizontalSwipe) {
+                                                    clearLongPressTimer();
+                                                    touchDragStartRef.current = null;
+                                                    setIsTouchHoldingAppointment(false);
+                                                    return;
+                                                  }
+                                                }
+                                                if (draggedAppointmentId) {
                                                   event.preventDefault();
                                                 }
                                                 lastTouchPointRef.current = touchPoint;
@@ -3906,7 +3917,7 @@ const extractRecurringSchedules = (client) => {
                                                 client: displayInfo?.client || apt.client,
                                               })}
                                               className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
-                                              style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'none', WebkitUserDrag: 'none' }}
+                                              style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
                                               <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                               <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>

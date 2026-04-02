@@ -606,6 +606,8 @@ export default function Admin() { // Removed props
   const longPressTimerRef = React.useRef(null);
   const touchDragStartRef = React.useRef(null);
   const lastTouchPointRef = React.useRef(null);
+  const WEEKLY_DRAG_LONG_PRESS_MS = 520;
+  const WEEKLY_DRAG_CANCEL_MOVE_PX = 12;
 
   // ====== חסימות זמנים (Admin.blocks) ======
   const [blocks, setBlocks] = useState([]);
@@ -1892,8 +1894,8 @@ const extractRecurringSchedules = (client) => {
         startCalendarDragPreview(appointment, previewPoint);
         updateDragTargetFromPoint(previewPoint);
       }
-    }, 360);
-  }, [canDragAppointmentInCalendar, clearLongPressTimer, startCalendarDragPreview, updateDragTargetFromPoint]);
+    }, WEEKLY_DRAG_LONG_PRESS_MS);
+  }, [WEEKLY_DRAG_LONG_PRESS_MS, canDragAppointmentInCalendar, clearLongPressTimer, startCalendarDragPreview, updateDragTargetFromPoint]);
 
 
   const handleCalendarTouchDrop = React.useCallback((touchPoint) => {
@@ -3788,7 +3790,7 @@ const extractRecurringSchedules = (client) => {
                                           data-calendar-cell="1"
                                           data-day-date={dayKey}
                                           data-slot-minute={slotMinute}
-                                          className={`relative border-b min-h-10 p-0.5 transition-colors ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''} ${isDropTarget ? 'bg-amber-100 ring-2 ring-amber-400 ring-inset' : ''}`}
+                                          className={`relative border-b min-h-10 p-0.5 transition-colors ${isSameDay(day, selectedDate) ? 'bg-gray-50/60' : ''} ${isDropTarget ? 'bg-amber-100 border-amber-500 shadow-[0_0_0_2px_rgba(245,158,11,0.4),inset_0_0_0_2px_rgba(245,158,11,0.75)]' : ''}`}
                                           onDragOver={(e) => {
                                             if (!draggedAppointmentId) return;
                                             e.preventDefault();
@@ -3873,6 +3875,17 @@ const extractRecurringSchedules = (client) => {
                                               onTouchMove={(event) => {
                                                 const touchPoint = event.touches?.[0];
                                                 if (!touchPoint) return;
+                                                if (!draggedAppointmentId && touchDragStartRef.current) {
+                                                  const moved = Math.hypot(
+                                                    touchPoint.clientX - touchDragStartRef.current.x,
+                                                    touchPoint.clientY - touchDragStartRef.current.y
+                                                  );
+                                                  if (moved > WEEKLY_DRAG_CANCEL_MOVE_PX) {
+                                                    clearLongPressTimer();
+                                                    touchDragStartRef.current = null;
+                                                    return;
+                                                  }
+                                                }
                                                 lastTouchPointRef.current = touchPoint;
                                                 if (!isDraggableApt || !draggedAppointmentId) return;
                                                 moveCalendarDragPreview(touchPoint);

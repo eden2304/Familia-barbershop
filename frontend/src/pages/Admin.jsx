@@ -564,19 +564,22 @@ export default function Admin() { // Removed props
     const target = String(params.get('notificationTarget') || '').trim();
     const adminTab = String(params.get('adminTab') || '').trim();
     const adminView = String(params.get('adminView') || '').trim();
+    const adminAction = String(params.get('adminAction') || '').trim();
     const dateValue = String(params.get('date') || '').trim();
     const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : '';
     const clientIdRaw = String(params.get('clientId') || '').trim();
     const clientId = /^\d+$/.test(clientIdRaw) ? Number(clientIdRaw) : null;
     const normalizedAdminTab = adminTab === 'updates' ? 'updates' : '';
     const normalizedAdminView = adminView === 'weekly' ? 'weekly' : '';
+    const normalizedAdminAction = adminAction === 'add-appointment' ? 'add-appointment' : '';
     return {
       target,
       adminTab: normalizedAdminTab,
       adminView: normalizedAdminView,
+      adminAction: normalizedAdminAction,
       date: validDate,
       clientId,
-      hasParams: Boolean(target || normalizedAdminTab || normalizedAdminView || validDate || clientId != null),
+      hasParams: Boolean(target || normalizedAdminTab || normalizedAdminView || normalizedAdminAction || validDate || clientId != null),
     };
   }, [location.search]);
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
@@ -1304,6 +1307,9 @@ export default function Admin() { // Removed props
       } else if (notificationNavigation.target === 'appointment') {
         setAppointmentsViewMode('list');
       }
+    }
+    if (notificationNavigation.adminAction === 'add-appointment') {
+      setShowAddAppointmentForm(true);
     }
 
     navigate(location.pathname, { replace: true });

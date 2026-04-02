@@ -267,7 +267,7 @@ export default function MyAppointmentsPage() {
 
   const handleAddToCalendar = (appointment) => {
     openAddToCalendar({
-      title: `${serviceName(appointment)} - Familia`,
+      title: "תספורת בFamilia",
       startAt: appointment?.startsAt,
       endAt: appointment?.endsAt,
       description: `התור שלך ב-Familia עבור ${serviceName(appointment)}`,
@@ -439,7 +439,7 @@ export default function MyAppointmentsPage() {
                                 <Button
                                     onClick={() => handleAddToCalendar(a)}
                                     variant="outline"
-                                    className="rounded-full border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                                    className="rounded-full border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200"
                                 >
                                   <Calendar className="ml-1 h-4 w-4" />
                                   הוספה ליומן

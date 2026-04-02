@@ -78,7 +78,7 @@ const downloadIcsFile = (icsContent, filename = "familia-appointment.ics") => {
 };
 
 export const openAddToCalendar = ({
-  title = "תור ב-Familia",
+  title = "תספורת בFamilia",
   startAt,
   endAt,
   description = "התור שלך במספרת Familia",

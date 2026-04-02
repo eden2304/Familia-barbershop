@@ -3897,6 +3897,7 @@ const extractRecurringSchedules = (client) => {
                                                 clearTouchDragState();
                                               }}
                                               onTouchCancel={clearTouchDragState}
+                                              onContextMenu={(event) => event.preventDefault()}
                                               onClick={() => setSelectedAppointment({
                                                 ...apt,
                                                 client_name: displayInfo?.name || apt.client_name,
@@ -3905,7 +3906,7 @@ const extractRecurringSchedules = (client) => {
                                                 client: displayInfo?.client || apt.client,
                                               })}
                                               className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
-                                              style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                              style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'none', WebkitUserDrag: 'none' }}
                                             >
                                               <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                               <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>

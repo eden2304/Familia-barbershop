@@ -1859,6 +1859,27 @@ const extractRecurringSchedules = (client) => {
     return cell;
   }, [resolveCalendarCellFromPoint]);
 
+  const startCalendarDragPreview = React.useCallback((appointment, point) => {
+    if (!appointment || !point) return;
+    const title = getAppointmentDisplayInfo(appointment).name || 'לקוח';
+    const time = format(new Date(appointment.starts_at), 'HH:mm');
+    setDragPreview({
+      title,
+      time,
+      x: point.clientX,
+      y: point.clientY,
+    });
+  }, [getAppointmentDisplayInfo]);
+
+  const moveCalendarDragPreview = React.useCallback((point) => {
+    if (!point) return;
+    setDragPreview((prev) => prev ? ({ ...prev, x: point.clientX, y: point.clientY }) : prev);
+  }, []);
+
+  const endCalendarDragPreview = React.useCallback(() => {
+    setDragPreview(null);
+  }, []);
+
   const startAppointmentLongPress = React.useCallback((appointment, point) => {
     if (!appointment || !canDragAppointmentInCalendar(appointment)) return;
     clearLongPressTimer();
@@ -1887,27 +1908,6 @@ const extractRecurringSchedules = (client) => {
     if (Number.isNaN(dayDate.getTime())) return;
     handleCalendarDrop(draggedAppointmentId, dayDate, slotValue);
   }, [draggedAppointmentId, handleCalendarDrop]);
-
-  const startCalendarDragPreview = React.useCallback((appointment, point) => {
-    if (!appointment || !point) return;
-    const title = getAppointmentDisplayInfo(appointment).name || 'לקוח';
-    const time = format(new Date(appointment.starts_at), 'HH:mm');
-    setDragPreview({
-      title,
-      time,
-      x: point.clientX,
-      y: point.clientY,
-    });
-  }, [getAppointmentDisplayInfo]);
-
-  const moveCalendarDragPreview = React.useCallback((point) => {
-    if (!point) return;
-    setDragPreview((prev) => prev ? ({ ...prev, x: point.clientX, y: point.clientY }) : prev);
-  }, []);
-
-  const endCalendarDragPreview = React.useCallback(() => {
-    setDragPreview(null);
-  }, []);
 
   const clearTouchDragState = React.useCallback(() => {
     clearLongPressTimer();

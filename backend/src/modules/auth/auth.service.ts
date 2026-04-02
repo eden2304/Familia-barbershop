@@ -463,10 +463,18 @@ export class AuthService {
             await this.settingRepo.save(this.settingRepo.create({ key, value: next }));
         }
 
+        const clientId = Number(event?.clientId);
+        const isClientVisitUpdate = String(event?.type) === 'login' || String(event?.type) === 'visit_no_booking';
+        const notificationUrl = isClientVisitUpdate && Number.isFinite(clientId)
+            ? `/Admin?notificationTarget=client-login&clientId=${encodeURIComponent(String(clientId))}`
+            : isClientVisitUpdate
+                ? '/Admin?notificationTarget=client-login'
+                : '/Admin';
+
         await this.adminPushService.sendAdminUpdateNotification({
             title: 'עדכון חדש',
             body: String(event?.message || 'יש עדכון חדש במערכת').slice(0, 180),
-            url: '/Admin',
+            url: notificationUrl,
         });
     }
 

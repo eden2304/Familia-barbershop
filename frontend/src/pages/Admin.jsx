@@ -558,15 +558,19 @@ export default function Admin() { // Removed props
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const [pendingNotificationClientId, setPendingNotificationClientId] = useState(null);
   const notificationNavigation = useMemo(() => {
     const params = new URLSearchParams(location.search);
     const target = String(params.get('notificationTarget') || '').trim();
     const dateValue = String(params.get('date') || '').trim();
     const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : '';
+    const clientIdRaw = String(params.get('clientId') || '').trim();
+    const clientId = /^\d+$/.test(clientIdRaw) ? Number(clientIdRaw) : null;
     return {
       target,
       date: validDate,
-      hasParams: Boolean(target || validDate),
+      clientId,
+      hasParams: Boolean(target || validDate || clientId != null),
     };
   }, [location.search]);
   const [weeklyAppointmentsData, setWeeklyAppointmentsData] = useState([]);
@@ -1279,6 +1283,10 @@ export default function Admin() { // Removed props
       setActiveTab('appointments');
       setShowWaitingListView(true);
       setAppointmentsViewMode('list');
+    } else if (notificationNavigation.target === 'client-login') {
+      setShowWaitingListView(false);
+      setActiveTab('clients');
+      setPendingNotificationClientId(notificationNavigation.clientId);
     } else {
       setShowWaitingListView(false);
       setActiveTab('appointments');
@@ -1289,6 +1297,19 @@ export default function Admin() { // Removed props
 
     navigate(location.pathname, { replace: true });
   }, [location.pathname, navigate, notificationNavigation]);
+
+  useEffect(() => {
+    if (!isAuthenticated || pendingNotificationClientId == null) return;
+    const client = (allClients || []).find((item) => Number(item?.id) === Number(pendingNotificationClientId));
+    if (client) {
+      openClientDetails(client);
+      setPendingNotificationClientId(null);
+      return;
+    }
+    if (Array.isArray(allClients) && allClients.length > 0) {
+      setPendingNotificationClientId(null);
+    }
+  }, [allClients, isAuthenticated, pendingNotificationClientId]);
 
   useEffect(() => {
     if (!isAuthenticated || activeTab !== 'updates') return;

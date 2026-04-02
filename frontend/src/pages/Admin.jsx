@@ -25,7 +25,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -135,6 +134,17 @@ const normalizePhoneForAdminUpdates = (value = '') => {
   if (digits.startsWith('0')) return digits;
   return digits;
 };
+
+const WhatsAppIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M20.52 3.48A11.86 11.86 0 0 0 12.07 0C5.5 0 .16 5.34.16 11.91c0 2.1.55 4.15 1.59 5.96L0 24l6.3-1.65a11.9 11.9 0 0 0 5.77 1.47h.01c6.57 0 11.91-5.34 11.91-11.91 0-3.18-1.24-6.17-3.47-8.43Zm-8.45 18.33h-.01a9.9 9.9 0 0 1-5.04-1.38l-.36-.22-3.74.98 1-3.65-.24-.37a9.88 9.88 0 0 1-1.52-5.26c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.12 1.03 6.98 2.9a9.82 9.82 0 0 1 2.9 6.99c0 5.45-4.44 9.9-9.89 9.9Zm5.43-7.42c-.3-.15-1.78-.88-2.06-.98-.28-.1-.48-.15-.68.15-.2.3-.78.97-.95 1.17-.18.2-.35.23-.65.08-.3-.15-1.27-.47-2.41-1.49-.89-.8-1.49-1.78-1.66-2.08-.18-.3-.02-.46.13-.61.13-.13.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.03-.53-.08-.15-.68-1.65-.94-2.25-.25-.6-.5-.5-.68-.51h-.58c-.2 0-.53.08-.8.38-.28.3-1.05 1.03-1.05 2.5 0 1.48 1.08 2.91 1.23 3.11.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.71.64.72.23 1.37.2 1.89.12.58-.09 1.78-.73 2.03-1.44.25-.7.25-1.3.18-1.43-.08-.13-.28-.2-.58-.35Z" />
+  </svg>
+);
 
 
 const isAdminUpdateEntry = (item, adminPhoneSet, adminClientIdSet) => {
@@ -2532,6 +2542,70 @@ const extractRecurringSchedules = (client) => {
     setClientDetailsModal({ isOpen: true, client: normalizedClient });
   };
 
+  const resolveClientFromUpdate = (item) => {
+    if (!item || typeof item !== 'object') return null;
+    const candidateClientId = item?.clientId ?? item?.client_id ?? item?.client?.id ?? item?.appointment?.clientId ?? item?.appointment?.client_id ?? item?.appointment?.client?.id;
+    if (candidateClientId != null) {
+      const fromId = (allClients || []).find((client) => String(client?.id) === String(candidateClientId));
+      if (fromId) return fromId;
+    }
+
+    const candidatePhone = normalizePhone(
+      item?.phone ??
+      item?.clientPhone ??
+      item?.client_phone ??
+      item?.client?.phone ??
+      item?.appointment?.phone ??
+      item?.appointment?.clientPhone ??
+      item?.appointment?.client_phone ??
+      ''
+    );
+    if (candidatePhone) {
+      const fromPhone = (allClients || []).find((client) => normalizePhone(client?.phone ?? client?.client_phone ?? '') === candidatePhone);
+      if (fromPhone) return fromPhone;
+    }
+
+    const fallbackName = String(
+      item?.clientName ??
+      item?.client?.name ??
+      item?.message?.replace?.(/\s*ביקר במערכת אבל לא קבע תור\s*$/, '') ??
+      ''
+    ).trim();
+    return {
+      id: candidateClientId ?? `no-booking-${candidatePhone || fallbackName}`,
+      first_name: fallbackName || 'לקוח',
+      last_name: '',
+      phone: candidatePhone,
+      client_phone: candidatePhone,
+    };
+  };
+
+  const toWhatsAppPhone = (rawPhone) => {
+    const digits = String(rawPhone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('972')) return digits;
+    if (digits.startsWith('0')) return `972${digits.slice(1)}`;
+    return digits;
+  };
+
+  const handleCallClient = (client) => {
+    const normalizedPhone = normalizePhone(client?.phone ?? client?.client_phone ?? '');
+    if (!normalizedPhone) {
+      toast({ title: 'אין מספר טלפון ללקוח', variant: 'destructive' });
+      return;
+    }
+    window.open(`tel:${normalizedPhone}`, '_self');
+  };
+
+  const handleOpenClientWhatsApp = (client) => {
+    const waPhone = toWhatsAppPhone(client?.phone ?? client?.client_phone ?? '');
+    if (!waPhone) {
+      toast({ title: 'אין מספר טלפון ללקוח', variant: 'destructive' });
+      return;
+    }
+    window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
+  };
+
   const closeClientDetailsModal = () => {
     setClientNameEditDraft({ first_name: "", last_name: "" });
     setIsEditingClientName(false);
@@ -4043,20 +4117,53 @@ const extractRecurringSchedules = (client) => {
                 {activeTab === 'updates' && (
                     <div className="space-y-6">
                       <Card className="bg-white rounded-2xl shadow-sm">
-                        <CardHeader className="flex flex-row items-center justify-between">
+                        <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
-                          <div className="flex items-center gap-2">
+                          <div className="flex justify-start" dir="ltr">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleEnablePushNotifications}
+                                disabled={pushBusy || pushEnabled}
+                                className="gap-1.5"
+                              >
+                                {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleClearAdminUpdates}
+                                disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
+                              >
+                                {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
+                                {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="flex justify-end w-full" dir="ltr">
                             <Dialog open={showNoBookingUpdatesDialog} onOpenChange={setShowNoBookingUpdatesDialog}>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  פה לא קבעו תור
-                                  {noBookingAdminUpdates.length > 0 && (
-                                    <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[11px] font-semibold text-amber-700">
-                                      {noBookingAdminUpdates.length}
-                                    </span>
-                                  )}
-                                </Button>
-                              </DialogTrigger>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                onClick={async () => {
+                                  await loadAdminUpdates();
+                                  setShowNoBookingUpdatesDialog(true);
+                                }}
+                              >
+                                לא קבעו תור
+                                {noBookingAdminUpdates.length > 0 && (
+                                  <span className="mr-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-red-100 px-1 text-[11px] font-semibold text-red-700">
+                                    {noBookingAdminUpdates.length}
+                                  </span>
+                                )}
+                              </Button>
                               <DialogContent dir="rtl" className="sm:max-w-lg">
                                 <DialogHeader>
                                   <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
@@ -4074,38 +4181,27 @@ const extractRecurringSchedules = (client) => {
                                         ? format(eventDate, 'HH:mm dd/MM/yyyy')
                                         : '';
                                       return (
-                                        <div key={`${item?.createdAt || 'no-booking'}-${idx}`} className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2">
-                                          <p className="font-medium text-amber-900">{getUpdateHeadline(item)}</p>
-                                          <p className="text-xs text-amber-700 mt-1">{eventTimeLabel}</p>
-                                        </div>
+                                        <button
+                                          key={`${item?.createdAt || 'no-booking'}-${idx}`}
+                                          type="button"
+                                          className="w-full text-right border border-gray-200 bg-white rounded-xl px-3 py-2 hover:border-red-200 hover:bg-red-50/40 transition"
+                                          onClick={() => {
+                                            const targetClient = resolveClientFromUpdate(item);
+                                            if (targetClient) {
+                                              openClientDetails(targetClient);
+                                              setShowNoBookingUpdatesDialog(false);
+                                            }
+                                          }}
+                                        >
+                                          <p className="font-medium text-red-700">{getUpdateHeadline(item)}</p>
+                                          <p className="text-xs text-red-600 mt-1">{eventTimeLabel}</p>
+                                        </button>
                                       );
                                     })
                                   )}
                                 </div>
                               </DialogContent>
                             </Dialog>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleEnablePushNotifications}
-                              disabled={pushBusy || pushEnabled}
-                              className="gap-1.5"
-                            >
-                              {pushBusy && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {pushEnabled ? 'Push Enabled' : 'Enable Push Notifications'}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleClearAdminUpdates}
-                              disabled={isRefreshingUpdates || isClearingUpdates || adminUpdates.length === 0}
-                            >
-                              {isClearingUpdates ? 'מוחק…' : 'נקה הכל'}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => loadAdminUpdates({ withSpinner: true })} disabled={isRefreshingUpdates || isClearingUpdates} className="gap-1.5">
-                              {isRefreshingUpdates && <Loader2 className="w-4 h-4 animate-spin" />}
-                              {isRefreshingUpdates ? 'מרענן…' : 'רענון'}
-                            </Button>
                           </div>
                         </CardHeader>
                         <CardContent>
@@ -5186,6 +5282,28 @@ const extractRecurringSchedules = (client) => {
                         <Phone className="w-4 h-4 text-gray-400" />
                         <span>{phoneDisplay || 'ללא מספר טלפון'}</span>
                       </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                          onClick={() => handleOpenClientWhatsApp(client)}
+                        >
+                          <WhatsAppIcon className="w-4 h-4 ml-1" />
+                          WhatsApp
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                          onClick={() => handleCallClient(client)}
+                        >
+                          <Phone className="w-4 h-4 ml-1" />
+                          התקשר
+                        </Button>
+                      </div>
                       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                         <span>סה"כ תורים עתידיים: {upcomingCount}</span>
                         {Boolean(client.isBlocked ?? client.is_blocked) && (

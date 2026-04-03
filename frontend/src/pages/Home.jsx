@@ -329,7 +329,7 @@ export default function Home() {
                         </div>
 
                         {futureRecurringLabel && (
-                          <div className="block w-full max-w-md rounded-3xl border border-gray-300 bg-gradient-to-r from-gray-100 via-white to-gray-50 px-4 py-4 shadow-md transition-all hover:shadow-lg">
+                          <div className="block w-full max-w-md rounded-3xl bg-gradient-to-r from-gray-100 via-white to-gray-50 px-4 py-4 shadow-md transition-all hover:shadow-lg">
                             <div className="space-y-3">
                               <div>
                                 <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
@@ -345,7 +345,7 @@ export default function Home() {
                                     event.preventDefault();
                                     handleAddUpcomingToCalendar();
                                   }}
-                                  className="h-auto rounded-full border border-slate-800 bg-slate-800 px-3 py-1.5 text-xs text-white hover:bg-slate-700"
+                                  className="h-auto rounded-full bg-slate-800 px-3 py-1.5 text-xs text-white shadow-sm hover:bg-slate-700"
                                 >
                                   <CalendarPlus className="ml-1 h-3.5 w-3.5" />
                                   הוספה ליומן

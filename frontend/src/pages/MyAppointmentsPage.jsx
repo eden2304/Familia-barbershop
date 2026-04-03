@@ -438,7 +438,7 @@ export default function MyAppointmentsPage() {
                               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                                 <Button
                                     onClick={() => handleAddToCalendar(a)}
-                                    className="rounded-full border border-slate-800 bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                                    className="rounded-full bg-slate-800 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-700"
                                 >
                                   <Calendar className="ml-1 h-4 w-4" />
                                   הוספה ליומן

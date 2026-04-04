@@ -5249,7 +5249,6 @@ const extractRecurringSchedules = (client) => {
                     ]
                     : activeTab === 'appointments'
                       ? [
-                        { label: "הוספת תור", icon: Plus, action: () => { setShowQuickActionsModal(false); setShowAddAppointmentForm(true); } },
                         { label: "רשימת המתנה", icon: Clock, action: () => { setShowQuickActionsModal(false); setShowWaitingListView(true); } },
                         { label: "חסימת תורים", icon: Ban, action: () => { setShowQuickActionsModal(false); setShowBlockingForm(true); } },
                         { label: "הודעה ללקוחות", icon: MessageSquare, action: () => {

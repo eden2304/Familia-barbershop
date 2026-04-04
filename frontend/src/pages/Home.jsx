@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Star, ChevronLeft, ChevronRight, Instagram, X, CalendarPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -332,13 +332,16 @@ export default function Home() {
                           <div className="block w-full max-w-md rounded-3xl bg-gradient-to-r from-gray-100 via-white to-gray-50 px-4 py-4 shadow-md transition-all hover:shadow-lg">
                             <div className="space-y-3">
                               <div>
-                                <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
-                                <p className="mt-1 text-sm text-gray-700">{futureRecurringLabel}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate("/MyAppointmentsPage")}
+                                  className="block text-right"
+                                >
+                                  <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
+                                  <p className="mt-1 text-sm text-gray-700">{futureRecurringLabel}</p>
+                                </button>
                               </div>
-                              <div className="flex items-center justify-between gap-2">
-                                <Link to="/MyAppointmentsPage" className="text-xs font-medium text-gray-700 underline underline-offset-2">
-                                  מעבר לתורים שלי
-                                </Link>
+                              <div className="flex items-center justify-end gap-2">
                                 <Button
                                   type="button"
                                   onClick={(event) => {

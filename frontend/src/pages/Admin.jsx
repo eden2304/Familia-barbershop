@@ -1816,6 +1816,13 @@ const extractRecurringSchedules = (client) => {
     setSelectedDate((prev) => addDays(prev, 7));
   }, []);
 
+  const handleAppointmentsViewModeChange = React.useCallback((nextMode) => {
+    if (nextMode === 'list' && appointmentsViewMode === 'calendar') {
+      setSelectedDate((prev) => startOfWeek(prev, { weekStartsOn: 0 }));
+    }
+    setAppointmentsViewMode(nextMode);
+  }, [appointmentsViewMode]);
+
   const weeklyCalendarDays = useMemo(
       () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
@@ -3733,7 +3740,7 @@ const extractRecurringSchedules = (client) => {
                               size="sm"
                               variant={appointmentsViewMode === 'list' ? 'default' : 'ghost'}
                               className="gap-1.5"
-                              onClick={() => setAppointmentsViewMode('list')}
+                              onClick={() => handleAppointmentsViewModeChange('list')}
                           >
                             <List className="w-4 h-4" />
                             רשימה
@@ -3743,7 +3750,7 @@ const extractRecurringSchedules = (client) => {
                               size="sm"
                               variant={appointmentsViewMode === 'calendar' ? 'default' : 'ghost'}
                               className="gap-1.5"
-                              onClick={() => setAppointmentsViewMode('calendar')}
+                              onClick={() => handleAppointmentsViewModeChange('calendar')}
                           >
                             <LayoutGrid className="w-4 h-4" />
                             יומן שבועי

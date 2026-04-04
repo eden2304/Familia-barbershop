@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Star, ChevronLeft, ChevronRight, Instagram, X } from "lucide-react";
+import { Star, ChevronLeft, ChevronRight, Instagram, X, CalendarPlus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 import { he } from "date-fns/locale";
@@ -12,6 +12,7 @@ import LoadingScreen from "../components/LoadingScreen.jsx";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
 import api from "@/api/base44Client";
 import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
+import { openAddToCalendar } from "@/lib/calendar-links";
 import { clearStoredClient, readStoredClient, writeStoredClient } from "@/utils/clientStorage";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
@@ -240,6 +241,19 @@ export default function Home() {
     return `${format(startsAt, 'EEEE, d בMMMM', { locale: he })} בשעה ${format(startsAt, 'HH:mm')}`;
   }, [futureRecurringAppointment]);
 
+  const handleAddUpcomingToCalendar = () => {
+    const startsAt = getAppointmentDate(futureRecurringAppointment);
+    if (!startsAt) return;
+
+    openAddToCalendar({
+      title: "תספורת בFamilia",
+      startAt: startsAt,
+      endAt: futureRecurringAppointment?.endsAt ?? futureRecurringAppointment?.ends_at,
+      description: "התור הקרוב שלך ב-Familia",
+      fallbackDurationMinutes: futureRecurringAppointment?.service?.durationMinutes ?? 45,
+    });
+  };
+
   return (
       <>
         {showLoadingScreen && <LoadingScreen />}
@@ -315,13 +329,33 @@ export default function Home() {
                         </div>
 
                         {futureRecurringLabel && (
-                          <Link
-                            to="/MyAppointmentsPage"
-                            className="block max-w-full rounded-2xl bg-gray-100 px-4 py-3 transition-colors hover:bg-gray-200"
-                          >
-                            <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
-                            <p className="mt-1 text-sm text-gray-600">{futureRecurringLabel}</p>
-                          </Link>
+                          <div className="block w-full max-w-md rounded-3xl bg-gradient-to-r from-gray-100 via-white to-gray-50 px-4 py-4 shadow-md transition-all hover:shadow-lg">
+                            <div className="space-y-3">
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate("/MyAppointmentsPage")}
+                                  className="block text-right"
+                                >
+                                  <p className="text-sm font-semibold text-gray-900">יש לך תור עתידי</p>
+                                  <p className="mt-1 text-sm text-gray-700">{futureRecurringLabel}</p>
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    handleAddUpcomingToCalendar();
+                                  }}
+                                  className="h-auto rounded-full bg-slate-800 px-3 py-1.5 text-xs text-white shadow-sm hover:bg-slate-700"
+                                >
+                                  <CalendarPlus className="ml-1 h-3.5 w-3.5" />
+                                  הוספה ליומן
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                       <div className="flex flex-col gap-2">

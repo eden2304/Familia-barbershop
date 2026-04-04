@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { User, Home as HomeIcon, History, Navigation, Phone, Menu, CalendarDays, Clock3, Bell, Plus } from "lucide-react";
+import { User, Home as HomeIcon, History, Navigation, Phone, Menu, CalendarDays, Clock3, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, useSidebar } from "@/components/SidebarContext";
 import { getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
@@ -148,14 +148,6 @@ function MainLayout({ children, currentPageName }) {
               >
                 <HomeIcon className="w-6 h-6"/>
                 <span className="text-xs font-medium">בית</span>
-              </Link>
-
-              <Link
-                to="/Admin?adminAction=add-appointment"
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${(currentPageName === 'Admin') ? 'text-black' : 'text-gray-500 hover:text-black'}`}
-              >
-                <Plus className="h-6 w-6"/>
-                <span className="text-xs font-medium">הוספת תור</span>
               </Link>
 
               <Link

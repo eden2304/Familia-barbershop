@@ -373,6 +373,8 @@ export default function Admin() { // Removed props
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
   const [isClearingUpdates, setIsClearingUpdates] = useState(false);
   const [updatesPullDistance, setUpdatesPullDistance] = useState(0);
+  const [isRefreshingAppointments, setIsRefreshingAppointments] = useState(false);
+  const [appointmentsPullDistance, setAppointmentsPullDistance] = useState(0);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [services, setServices] = useState([]);
@@ -905,6 +907,10 @@ export default function Admin() { // Removed props
   const updatesListRef = React.useRef(null);
   const updatesTouchStartYRef = React.useRef(0);
   const updatesDidTriggerRef = React.useRef(false);
+  const appointmentsTouchStartYRef = React.useRef(0);
+  const appointmentsDidTriggerRef = React.useRef(false);
+  const wasAppointmentsTabActiveRef = React.useRef(false);
+  const lastAppointmentsRefreshAtRef = React.useRef(0);
 
   const scrollSelected = React.useCallback((align = 'center', behavior = 'auto') => {
     const idx = daysForPicker.findIndex(d => isSameDay(d, selectedDate));
@@ -1279,6 +1285,46 @@ export default function Admin() { // Removed props
     selectedDateRef.current = selectedDate;
   }, [selectedDate]);
 
+  const refreshAppointmentsData = React.useCallback(async ({ withSpinner = false } = {}) => {
+    if (!isAuthenticated) return;
+    const isAppointmentsScreen = activeTab === 'appointments' && !showWaitingListView;
+    if (!isAppointmentsScreen || isRefreshingAppointments) return;
+    if (withSpinner) setIsRefreshingAppointments(true);
+    try {
+      await Promise.all([
+        loadData(),
+        reloadBlocks(),
+      ]);
+      if (appointmentsViewMode === 'calendar') {
+        const date = selectedDateRef.current;
+        const weekStart = startOfWeek(date, { weekStartsOn: 0 });
+        const days = Array.from({ length: 6 }, (_, idx) => addDays(weekStart, idx));
+        await Promise.all([
+          loadAppointmentsForWeek(date),
+          loadWeeklyDayHours(days),
+        ]);
+      } else {
+        await loadAppointmentsForDate(selectedDateRef.current);
+      }
+      lastAppointmentsRefreshAtRef.current = Date.now();
+    } finally {
+      if (withSpinner) setIsRefreshingAppointments(false);
+      setAppointmentsPullDistance(0);
+      appointmentsDidTriggerRef.current = false;
+    }
+  }, [
+    activeTab,
+    appointmentsViewMode,
+    isAuthenticated,
+    isRefreshingAppointments,
+    loadAppointmentsForDate,
+    loadAppointmentsForWeek,
+    loadData,
+    loadWeeklyDayHours,
+    reloadBlocks,
+    showWaitingListView,
+  ]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
     loadAppointmentsForDate(selectedDate);
@@ -1293,6 +1339,32 @@ export default function Admin() { // Removed props
     if (!isAuthenticated || appointmentsViewMode !== 'calendar') return;
     loadAppointmentsForWeek(selectedDate);
   }, [isAuthenticated, selectedDate, appointmentsViewMode]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const isAppointmentsScreen = activeTab === 'appointments' && !showWaitingListView;
+    if (isAppointmentsScreen && !wasAppointmentsTabActiveRef.current) {
+      refreshAppointmentsData({ withSpinner: true }).catch(() => undefined);
+    }
+    wasAppointmentsTabActiveRef.current = isAppointmentsScreen;
+  }, [activeTab, isAuthenticated, refreshAppointmentsData, showWaitingListView]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handleVisibilityOrFocus = () => {
+      const isAppointmentsScreen = activeTab === 'appointments' && !showWaitingListView;
+      if (!isAppointmentsScreen) return;
+      const now = Date.now();
+      if (now - lastAppointmentsRefreshAtRef.current < 15_000) return;
+      refreshAppointmentsData({ withSpinner: true }).catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [activeTab, isAuthenticated, refreshAppointmentsData, showWaitingListView]);
 
   useEffect(() => {
     if (!notificationNavigation.hasParams) return;
@@ -3253,6 +3325,30 @@ const extractRecurringSchedules = (client) => {
     setUpdatesPullDistance(0);
   };
 
+  const handleAppointmentsTouchStart = (event) => {
+    appointmentsTouchStartYRef.current = event.touches?.[0]?.clientY ?? 0;
+    appointmentsDidTriggerRef.current = false;
+  };
+
+  const handleAppointmentsTouchMove = (event) => {
+    const container = mainContentRef.current;
+    if (!container) return;
+    const currentY = event.touches?.[0]?.clientY ?? 0;
+    const delta = currentY - appointmentsTouchStartYRef.current;
+    if (container.scrollTop <= 0 && delta > 0 && !isRefreshingAppointments) {
+      setAppointmentsPullDistance(Math.min(delta, 90));
+    }
+  };
+
+  const handleAppointmentsTouchEnd = async () => {
+    if (appointmentsPullDistance >= 70 && !isRefreshingAppointments && !appointmentsDidTriggerRef.current) {
+      appointmentsDidTriggerRef.current = true;
+      await refreshAppointmentsData({ withSpinner: true });
+      return;
+    }
+    setAppointmentsPullDistance(0);
+  };
+
   const getBookingSummary = (item) => {
     if (item?.type !== 'booking') return null;
     const startsAtRaw = item?.appointment?.startsAt || item?.startsAt;
@@ -3623,7 +3719,12 @@ const extractRecurringSchedules = (client) => {
                 )}
 
                 {!showWaitingListView && activeTab === 'appointments' && (
-                    <div className="space-y-6 relative">
+                    <div
+                      className="space-y-6 relative"
+                      onTouchStart={handleAppointmentsTouchStart}
+                      onTouchMove={handleAppointmentsTouchMove}
+                      onTouchEnd={handleAppointmentsTouchEnd}
+                    >
                       <div className="flex items-center justify-between gap-3 mb-4">
                         <h2 className="text-2xl font-bold text-gray-800">ניהול תורים</h2>
                         <div className="inline-flex items-center rounded-xl bg-gray-100 p-1">
@@ -3649,6 +3750,17 @@ const extractRecurringSchedules = (client) => {
                           </Button>
                         </div>
                       </div>
+                      <div className="text-center text-xs text-gray-400 -mt-3">
+                        {isRefreshingAppointments
+                          ? 'טוען נתוני תורים…'
+                          : (appointmentsPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון')}
+                      </div>
+                      {isRefreshingAppointments && (
+                        <div className="flex items-center justify-center gap-2 text-xs text-gray-500 -mt-3">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>מתבצע רענון</span>
+                        </div>
+                      )}
 
                       {appointmentsViewMode === 'list' && (
                         <div className="mb-4">

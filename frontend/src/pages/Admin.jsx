@@ -3273,13 +3273,72 @@ const extractRecurringSchedules = (client) => {
     return message.includes('לא קבע תור');
   };
 
+  const getUpdateClientIdentity = (item) => {
+    if (!item || typeof item !== 'object') return '';
+    const candidateClientId = item?.clientId
+      ?? item?.client_id
+      ?? item?.client?.id
+      ?? item?.appointment?.clientId
+      ?? item?.appointment?.client_id
+      ?? item?.appointment?.client?.id;
+    if (candidateClientId != null && String(candidateClientId).trim() !== '') {
+      return `id:${String(candidateClientId).trim()}`;
+    }
+
+    const candidatePhone = normalizePhone(
+      item?.phone
+      ?? item?.clientPhone
+      ?? item?.client_phone
+      ?? item?.client?.phone
+      ?? item?.appointment?.phone
+      ?? item?.appointment?.clientPhone
+      ?? item?.appointment?.client_phone
+      ?? ''
+    );
+    if (candidatePhone) return `phone:${candidatePhone}`;
+
+    const fallbackName = String(
+      item?.clientName
+      ?? item?.client?.name
+      ?? item?.message?.replace?.(/\s*(ביקר במערכת אבל לא קבע תור|קבע תור)\s*$/, '')
+      ?? ''
+    ).trim().toLowerCase();
+    return fallbackName ? `name:${fallbackName}` : '';
+  };
+
   const regularAdminUpdates = useMemo(
     () => (adminUpdates || []).filter((item) => !isNoBookingUpdate(item)),
     [adminUpdates]
   );
 
   const noBookingAdminUpdates = useMemo(
-    () => (adminUpdates || []).filter((item) => isNoBookingUpdate(item)),
+    () => {
+      const updates = Array.isArray(adminUpdates) ? adminUpdates : [];
+      const clientsWhoBooked = new Set();
+      const noBookingSeen = new Set();
+      const uniqueNoBooking = [];
+
+      updates.forEach((item) => {
+        const clientKey = getUpdateClientIdentity(item);
+
+        if (String(item?.type || '') === 'booking') {
+          if (clientKey) clientsWhoBooked.add(clientKey);
+          return;
+        }
+
+        if (!isNoBookingUpdate(item)) return;
+        if (!clientKey) {
+          uniqueNoBooking.push(item);
+          return;
+        }
+        if (clientsWhoBooked.has(clientKey) || noBookingSeen.has(clientKey)) return;
+
+        noBookingSeen.add(clientKey);
+        uniqueNoBooking.push(item);
+      });
+
+      return uniqueNoBooking;
+    },
     [adminUpdates]
   );
 

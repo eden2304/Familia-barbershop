@@ -775,25 +775,10 @@ export class AppointmentsService {
             return [];
         }
 
-        const offset = this.israelOffsetForDate(dateStr);
-
+        const { bh: effective, offset, jsDow } = await this.getBusinessHoursForDate(dateStr);
         const dayLocalStart = new Date(`${dateStr}T00:00:00${offset}`);
         const dayLocalEnd = new Date(`${dateStr}T23:59:59${offset}`);
-
-        const jsDow = new Date(`${dateStr}T12:00:00${offset}`).getDay();
-        const bh = await this.bhRepo.findOne({ where: { weekday: jsDow } });
-        const override = await this.bhOverrideRepo.findOne({ where: { date: dateStr } });
-        const effective = override
-            ? {
-                ...bh,
-                open: override.open,
-                close: override.close,
-                slotIntervalMinutes: override.slotIntervalMinutes,
-            }
-            : bh;
-
         const interval = Number(effective?.slotIntervalMinutes ?? 30) || 30;
-
         const openStr = String(effective?.open ?? '').trim();
         const closeStr = String(effective?.close ?? '').trim();
         const hasBaseWindow = Boolean(openStr && closeStr && openStr !== closeStr);

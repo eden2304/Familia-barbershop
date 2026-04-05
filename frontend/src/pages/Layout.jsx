@@ -119,29 +119,6 @@ function MainLayout({ children, currentPageName }) {
       <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none">
         <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
-            {isAdmin ? (
-              <button
-                onClick={handleCopySiteLink}
-                aria-label="העתקת קישור לאתר"
-                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
-              >
-                {isSiteLinkCopied ? <Check className="w-6 h-6 text-green-400" /> : <Link2 className="w-6 h-6" />}
-              </button>
-            ) : (
-              <div />
-            )}
-          </div>
-
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center select-none">
-            <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
-              alt="Familia Logo"
-              className="h-10 w-auto max-w-[200px] object-contain"
-              draggable={false}
-            />
-          </div>
-
-          <div className="w-10 h-10 flex items-center justify-center relative z-20">
             {isAdmin && currentPageName === 'Admin' ? (
               <Button
                 variant="ghost"
@@ -159,6 +136,29 @@ function MainLayout({ children, currentPageName }) {
               >
                 <User className="w-6 h-6" />
               </Link>
+            ) : (
+              <div />
+            )}
+          </div>
+
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center select-none">
+            <img
+              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"
+              alt="Familia Logo"
+              className="h-10 w-auto max-w-[200px] object-contain"
+              draggable={false}
+            />
+          </div>
+
+          <div className="w-10 h-10 flex items-center justify-center relative z-20">
+            {isAdmin ? (
+              <button
+                onClick={handleCopySiteLink}
+                aria-label="העתקת קישור לאתר"
+                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
+              >
+                {isSiteLinkCopied ? <Check className="w-6 h-6 text-green-400" /> : <Link2 className="w-6 h-6" />}
+              </button>
             ) : (
               <div />
             )}

@@ -878,7 +878,10 @@ export default function Admin() { // Removed props
 
 
 // יומיים אחורה מימין ל"היום", ואז הימים קדימה
-  const DAYS_FORWARD = 14;
+  const DAYS_FORWARD = 21;
+  const PULL_TO_REFRESH_THRESHOLD = 110;
+  const PULL_TO_REFRESH_MAX = 150;
+  const PULL_TO_REFRESH_START = 16;
 
   const daysForPicker = useMemo(() => {
     const today = startOfDay(new Date());
@@ -3345,12 +3348,17 @@ const extractRecurringSchedules = (client) => {
     const currentY = event.touches?.[0]?.clientY ?? 0;
     const delta = currentY - appointmentsTouchStartYRef.current;
     if (container.scrollTop <= 0 && delta > 0 && !isRefreshingAppointments) {
-      setAppointmentsPullDistance(Math.min(delta, 90));
+      const effectivePull = delta - PULL_TO_REFRESH_START;
+      if (effectivePull <= 0) {
+        setAppointmentsPullDistance(0);
+        return;
+      }
+      setAppointmentsPullDistance(Math.min(effectivePull, PULL_TO_REFRESH_MAX));
     }
   };
 
   const handleAppointmentsTouchEnd = async () => {
-    if (appointmentsPullDistance >= 70 && !isRefreshingAppointments && !appointmentsDidTriggerRef.current) {
+    if (appointmentsPullDistance >= PULL_TO_REFRESH_THRESHOLD && !isRefreshingAppointments && !appointmentsDidTriggerRef.current) {
       appointmentsDidTriggerRef.current = true;
       await refreshAppointmentsData({ withSpinner: true });
       return;
@@ -3734,6 +3742,24 @@ const extractRecurringSchedules = (client) => {
                       onTouchMove={handleAppointmentsTouchMove}
                       onTouchEnd={handleAppointmentsTouchEnd}
                     >
+                      <div
+                        className="flex justify-center overflow-hidden transition-all duration-200"
+                        style={{
+                          height: isRefreshingAppointments
+                            ? 56
+                            : Math.min((appointmentsPullDistance / PULL_TO_REFRESH_THRESHOLD) * 56, 56),
+                          opacity: isRefreshingAppointments
+                            ? 1
+                            : Math.min(appointmentsPullDistance / PULL_TO_REFRESH_THRESHOLD, 1),
+                        }}
+                        aria-hidden="true"
+                      >
+                        <img
+                          src="/logo.png"
+                          alt=""
+                          className={`h-10 w-10 object-contain mt-2 ${isRefreshingAppointments ? 'animate-spin' : ''}`}
+                        />
+                      </div>
                       <div className="flex items-center justify-between gap-3 mb-4">
                         <h2 className="text-2xl font-bold text-gray-800">ניהול תורים</h2>
                         <div className="inline-flex items-center rounded-xl bg-gray-100 p-1">
@@ -3762,7 +3788,7 @@ const extractRecurringSchedules = (client) => {
                       <div className="text-center text-xs text-gray-400 -mt-3">
                         {isRefreshingAppointments
                           ? 'טוען נתוני תורים…'
-                          : (appointmentsPullDistance >= 70 ? 'שחרר כדי לרענן' : 'גלול למעלה ומשוך לרענון')}
+                          : (appointmentsPullDistance >= PULL_TO_REFRESH_THRESHOLD ? 'שחרר כדי לרענן' : 'משוך למטה עד שהלוגו נחשף כדי לרענן')}
                       </div>
                       {isRefreshingAppointments && (
                         <div className="flex items-center justify-center gap-2 text-xs text-gray-500 -mt-3">

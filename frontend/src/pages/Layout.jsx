@@ -130,13 +130,12 @@ function MainLayout({ children, currentPageName }) {
                 <Menu className="w-6 h-6" />
               </Button>
             ) : isAdmin ? (
-              <button
-                onClick={handleCopySiteLink}
-                aria-label="העתקת קישור לאתר"
+              <Link
+                to={createPageUrl("Admin")}
                 className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
               >
-                {isSiteLinkCopied ? <Check className="w-6 h-6 text-green-400" /> : <Link2 className="w-6 h-6" />}
-              </button>
+                <User className="w-6 h-6" />
+              </Link>
             ) : (
               <div />
             )}
@@ -152,7 +151,7 @@ function MainLayout({ children, currentPageName }) {
           </div>
 
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
-            {isAdmin && currentPageName === 'Admin' ? (
+            {isAdmin ? (
               <button
                 onClick={handleCopySiteLink}
                 aria-label="העתקת קישור לאתר"
@@ -160,13 +159,6 @@ function MainLayout({ children, currentPageName }) {
               >
                 {isSiteLinkCopied ? <Check className="w-6 h-6 text-green-400" /> : <Link2 className="w-6 h-6" />}
               </button>
-            ) : isAdmin ? (
-              <Link
-                to={createPageUrl("Admin")}
-                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
-              >
-                <User className="w-6 h-6" />
-              </Link>
             ) : (
               <div />
             )}

@@ -222,6 +222,7 @@ export default function Book() {
 
   // זמינות מהשרת: {'yyyy-MM-dd': ['HH:MM', ...]}
   const [availableByDate, setAvailableByDate] = useState({});
+  const [hasAppointmentsByDate, setHasAppointmentsByDate] = useState({});
   const [loadingSlots, setLoadingSlots] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
@@ -431,6 +432,7 @@ export default function Book() {
     const svcId = selectedService?.id;
     if (!svcId) {
       setAvailableByDate({});
+      setHasAppointmentsByDate({});
       return;
     }
 
@@ -444,12 +446,16 @@ export default function Book() {
             const ymd = toYMD(d);
 
             if (!isWithinBookingWindow(d)) {
-              return [ymd, []];
+              return [ymd, { slots: [], hasAppointments: false }];
             }
 
             try {
-              // ✅ קריאה אחת בלבד
-              const raw = await api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember === true });
+              const [raw, occupiedRaw] = await Promise.all([
+                api.Appointment.getAvailable(svcId, ymd, { isMember: clientIsMember === true }),
+                fetch(`${API_URL}/appointments/occupied?date=${encodeURIComponent(ymd)}`)
+                    .then((res) => (res.ok ? res.json() : []))
+                    .catch(() => []),
+              ]);
               const slots = extractSlotTimes(raw);
 
               const durationMinutes = selectedService?.duration_minutes ?? selectedService?.durationMinutes ?? 0;
@@ -458,19 +464,25 @@ export default function Book() {
                 memberOnly: Boolean(slot.memberOnly) || isRuleBasedMemberOnlySlot(d, slot.hhmm, durationMinutes, bookingRules),
                 formatted: slot.formatted ?? slot.hhmm,
               }));
+              const hasAppointments = Array.isArray(occupiedRaw) && occupiedRaw.length > 0;
 
-              return [ymd, view];
+              return [ymd, { slots: view, hasAppointments }];
 
             } catch (e) {
               console.warn("availability failed for", ymd, e);
-              return [ymd, []];
+              return [ymd, { slots: [], hasAppointments: false }];
             }
           })
       )
           .then((entries) => {
-            const map = {};
-            for (const [k, v] of entries) map[k] = v;
-            setAvailableByDate(map);
+            const slotsMap = {};
+            const appointmentsMap = {};
+            for (const [k, payload] of entries) {
+              slotsMap[k] = payload?.slots || [];
+              appointmentsMap[k] = Boolean(payload?.hasAppointments);
+            }
+            setAvailableByDate(slotsMap);
+            setHasAppointmentsByDate(appointmentsMap);
           })
           .finally(() => setLoadingSlots(false));
     }, 300); // ⏱ debounce 300ms
@@ -960,6 +972,7 @@ export default function Book() {
 
                     <div className="space-y-3 flex-1 max-h-none">
                       {weekDays.map((date, i) => {
+                        const ymd = toYMD(date);
                         const dayIsPast = isBefore(date, startOfDay(new Date()));
                         const isSaturday = date.getDay() === 6;
 
@@ -971,7 +984,17 @@ export default function Book() {
                             })();
 
                         const beyondWindow = !isWithinBookingWindow(date);
-                        const disabled = isSaturday || dayIsPast || isAfterClosingToday || loadingSlots || beyondWindow;
+                        const slotsForDay = availableByDate[ymd] || [];
+                        const hasAnyAppointments = Boolean(hasAppointmentsByDate[ymd]);
+                        const isClosedWithoutAnyActivity =
+                            !loadingSlots &&
+                            !isSaturday &&
+                            !dayIsPast &&
+                            !isAfterClosingToday &&
+                            !beyondWindow &&
+                            slotsForDay.length === 0 &&
+                            !hasAnyAppointments;
+                        const disabled = isSaturday || dayIsPast || isAfterClosingToday || loadingSlots || beyondWindow || isClosedWithoutAnyActivity;
                         const dayName = DAYS_IN_WEEK.find((d) => d.key === date.getDay())?.name;
                         const title =
                             beyondWindow
@@ -982,6 +1005,8 @@ export default function Book() {
                                     ? "שבת - אין תורים"
                                     : isAfterClosingToday
                                         ? "היום כבר אחרי שעת הסגירה"
+                                        : isClosedWithoutAnyActivity
+                                            ? "אין קבלת תורים ביום הזה"
                                         : undefined;
 
                         return (

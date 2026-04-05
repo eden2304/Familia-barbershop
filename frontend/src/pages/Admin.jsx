@@ -1223,17 +1223,19 @@ export default function Admin() { // Removed props
     }
   };
 
-  const loadData = async () => {
+  const loadData = async ({ withScreenLoader = true, includeAppointmentsForSelectedDate = true } = {}) => {
     const requestDate = new Date(selectedDateRef.current);
     try {
-      setLoading(true);
+      if (withScreenLoader) setLoading(true);
 
       const [
         allAppointmentsData, servicesData, testimonialsData,
         galleryData, hoursData, clientsData, backgroundVideosData,
         productsData, bookingRulesSetting
       ] = await Promise.all([
-        AdminApi.appointmentsByDate(selectedDate).catch(() => []),
+        includeAppointmentsForSelectedDate
+          ? AdminApi.appointmentsByDate(selectedDateRef.current).catch(() => [])
+          : Promise.resolve(null),
         listAdminPreferred(Service, "order_index").catch(() => []),
         listAdminPreferred(Testimonial, "order_index").catch(() => []),
         listAdminPreferred(GalleryImage, "order_index").catch(() => []),
@@ -1255,7 +1257,7 @@ export default function Admin() { // Removed props
         };
       });
 
-      if (isSameDay(requestDate, selectedDateRef.current)) {
+      if (includeAppointmentsForSelectedDate && isSameDay(requestDate, selectedDateRef.current)) {
         setAppointments(normalizeAppointmentsForDay(allAppointmentsData));
       }
       setServices(servicesData || []);
@@ -1277,7 +1279,7 @@ export default function Admin() { // Removed props
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
-      setLoading(false);
+      if (withScreenLoader) setLoading(false);
     }
   };
 
@@ -1292,7 +1294,7 @@ export default function Admin() { // Removed props
     if (withSpinner) setIsRefreshingAppointments(true);
     try {
       await Promise.all([
-        loadData(),
+        loadData({ withScreenLoader: false, includeAppointmentsForSelectedDate: false }),
         reloadBlocks(),
       ]);
       if (appointmentsViewMode === 'calendar') {

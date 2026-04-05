@@ -879,8 +879,8 @@ export default function Admin() { // Removed props
 
 // יומיים אחורה מימין ל"היום", ואז הימים קדימה
   const DAYS_FORWARD = 21;
-  const PULL_TO_REFRESH_THRESHOLD = 110;
-  const PULL_TO_REFRESH_MAX = 150;
+  const PULL_TO_REFRESH_THRESHOLD = 145;
+  const PULL_TO_REFRESH_MAX = 190;
   const PULL_TO_REFRESH_START = 16;
 
   const daysForPicker = useMemo(() => {
@@ -3819,15 +3819,9 @@ const extractRecurringSchedules = (client) => {
                           </Button>
                         </div>
                       </div>
-                      <div className="text-center text-xs text-gray-400 -mt-3">
-                        {isRefreshingAppointments
-                          ? 'טוען נתוני תורים…'
-                          : (appointmentsPullDistance >= PULL_TO_REFRESH_THRESHOLD ? 'מרענן…' : 'משוך למטה עד שהשעון יתמלא כדי לרענן')}
-                      </div>
                       {isRefreshingAppointments && (
-                        <div className="flex items-center justify-center gap-2 text-xs text-gray-500 -mt-3">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>מתבצע רענון</span>
+                        <div className="flex items-center justify-center -mt-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />
                         </div>
                       )}
 

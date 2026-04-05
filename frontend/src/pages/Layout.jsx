@@ -119,7 +119,17 @@ function MainLayout({ children, currentPageName }) {
       <nav className="fixed top-4 left-4 right-4 z-50 bg-black rounded-full px-6 py-3 shadow-2xl pointer-events-none">
         <div className="flex items-center justify-between max-w-7xl mx-auto h-12 relative">
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
-            {isAdmin ? (
+            {isAdmin && currentPageName === 'Admin' ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(prev => !prev)}
+                aria-label="פתיחה או סגירה של תפריט ניהול"
+                className="text-white hover:text-gray-300 relative z-20 pointer-events-auto"
+              >
+                <Menu className="w-6 h-6" />
+              </Button>
+            ) : isAdmin ? (
               <button
                 onClick={handleCopySiteLink}
                 aria-label="העתקת קישור לאתר"
@@ -143,15 +153,13 @@ function MainLayout({ children, currentPageName }) {
 
           <div className="w-10 h-10 flex items-center justify-center relative z-20">
             {isAdmin && currentPageName === 'Admin' ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setSidebarOpen(prev => !prev)}
-                aria-label="פתיחה או סגירה של תפריט ניהול"
-                className="text-white hover:text-gray-300 relative z-20 pointer-events-auto"
+              <button
+                onClick={handleCopySiteLink}
+                aria-label="העתקת קישור לאתר"
+                className="p-2 text-white hover:text-gray-300 rounded-full transition-colors relative z-20 pointer-events-auto"
               >
-                <Menu className="w-6 h-6" />
-              </Button>
+                {isSiteLinkCopied ? <Check className="w-6 h-6 text-green-400" /> : <Link2 className="w-6 h-6" />}
+              </button>
             ) : isAdmin ? (
               <Link
                 to={createPageUrl("Admin")}

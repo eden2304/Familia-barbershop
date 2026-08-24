@@ -262,12 +262,6 @@ export class AuthService {
             `OTP issued for ${maskPhone(norm)}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
         );
 
-        // Local/dev convenience only: when WhatsApp didn't actually deliver the code,
-        // there is no other way to complete login through the real UI. Never runs in production.
-        if (process.env.NODE_ENV !== 'production' && whatsappResult.status !== 'sent') {
-            this.logger.warn(`[DEV ONLY] OTP code for ${maskPhone(norm)}: ${code}`);
-        }
-
         return { ok: true };
     }
 

@@ -105,7 +105,7 @@ export class AdminAppointmentsController {
         return rows.map((a: any) => {
             const clientName =
                 a?.clientName ??
-                (a?.client ? `${a.client.firstName ?? ''} ${a.client.lastName ?? ''}`.trim() : '') ??
+                (a?.client ? `${a.client.firstName ?? a.client.first_name ?? ''} ${a.client.lastName ?? a.client.last_name ?? ''}`.trim() : '') ??
                 '';
 
             const phone =

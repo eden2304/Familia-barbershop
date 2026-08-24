@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt'; // ✅
+import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { Client } from '../../clients/client.entity';
@@ -21,9 +22,16 @@ import { AdminPushModule } from '../push/admin-push.module';
         TypeOrmModule.forFeature([Client, Setting, AdminPhone, Appointment, RefreshToken]),
         WhatsAppModule,
         AdminPushModule,
-        JwtModule.register({
-            secret: process.env.JWT_SECRET,          // חובה שזה יהיה אותו SECRET של כל המערכת
-            signOptions: { expiresIn: '30d' },       // או מה שבא לך
+        JwtModule.registerAsync({
+            // registerAsync + ConfigService: SECRET must match the one AuthService signs with.
+            // JwtModule.register() reads process.env.JWT_SECRET at module-import time, which runs
+            // before ConfigModule has loaded .env — verifyAsync() then always fails against a
+            // stale/empty secret. registerAsync defers the read to DI-instantiation time instead.
+            useFactory: (config: ConfigService) => ({
+                secret: config.get<string>('JWT_SECRET'),
+                signOptions: { expiresIn: '30d' },
+            }),
+            inject: [ConfigService],
         }),
     ],
     controllers: [AuthController],

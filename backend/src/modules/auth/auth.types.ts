@@ -1,7 +1,7 @@
 export type AuthRole = 'client' | 'admin';
 
 export interface AuthTokenPayload {
-    sub: number;
+    sub: string;
     phone: string;
     roles: AuthRole[];
     isAdmin: boolean;

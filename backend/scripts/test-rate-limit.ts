@@ -108,5 +108,38 @@ class FailingStoreStub {
   const lock = await redisStore.recordFailure('fail-ip', 'lock-ip', 2, 60, 300);
   assert.equal(lock.locked, true);
 
+  // Redis unreachable: every store method must degrade gracefully (fail-open)
+  // instead of throwing, so clients and the admin never hit a 500/limiter error.
+  const downStore = new RedisRateLimitStore();
+  // Mirrors what the real cmd() throws to callers once it has tripped its
+  // "redis is unreachable" breaker on a connection error.
+  (downStore as any).cmd = async () => { throw new Error('RATE_LIMIT_REDIS_UNAVAILABLE'); };
+
+  const downConsume = await downStore.consume('any:key', 5, 60);
+  assert.equal(downConsume.isBlocked, false, 'consume must not block when redis is down');
+  assert.equal(downConsume.remaining, 5, 'consume should report full budget when redis is down');
+
+  assert.equal(await downStore.isLocked('admin-verify:lock:1.2.3.4'), 0, 'isLocked must return 0 when redis is down');
+
+  const downFailure = await downStore.recordFailure('c', 'l', 2, 60, 300);
+  assert.equal(downFailure.locked, false, 'recordFailure must not lock when redis is down');
+
+  await downStore.lock('l', 10); // must not throw
+  await downStore.clear('c'); // must not throw
+
+  // Guard must let the request through when the store degrades.
+  const degradedGuard = new RateLimitGuard(new ReflectorStub('admin-verify') as any, downStore as any);
+  const degradedResult = await degradedGuard.canActivate({
+    switchToHttp: () => ({
+      getRequest: () => ({ method: 'POST', body: {}, headers: {}, ip: '9.9.9.9', originalUrl: '/admin/verify-code' }),
+      getResponse: () => ({ setHeader: () => undefined }),
+    }),
+    getHandler: () => null,
+    getClass: () => null,
+  } as any);
+  assert.equal(degradedResult, true, 'guard must fail-open when redis is down');
+
+  console.log('redis-down fail-open tests passed');
+
   console.log('rate-limit tests passed');
 })();

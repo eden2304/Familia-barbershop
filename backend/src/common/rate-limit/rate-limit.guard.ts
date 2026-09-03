@@ -47,7 +47,7 @@ export class RateLimitGuard implements CanActivate {
                     throw error;
                 }
                 const message = error instanceof Error ? error.message : 'unknown';
-                if (message !== 'RATE_LIMIT_REDIS_DISABLED') {
+                if (message !== 'RATE_LIMIT_REDIS_DISABLED' && message !== 'RATE_LIMIT_REDIS_UNAVAILABLE') {
                     this.logger.error(JSON.stringify({
                         event: 'rate_limit_redis_error',
                         route: req.originalUrl,

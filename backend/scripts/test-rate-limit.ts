@@ -53,6 +53,35 @@ class FailingStoreStub {
     assert.ok(Number(resHeaders['RateLimit-Reset']) > Math.floor(Date.now() / 1000));
   }
 
+  // Authenticated admins must never be throttled, whatever the policy or store state.
+  const adminBypassGuard = new RateLimitGuard(new ReflectorStub('booking-create') as any, new StoreStub() as any);
+  for (const user of [{ roles: ['admin'] }, { isAdmin: true }, { roles: ['client', 'admin'] }]) {
+    const adminResult = await adminBypassGuard.canActivate({
+      switchToHttp: () => ({
+        getRequest: () => ({ method: 'POST', body: { phone: '0501234567' }, headers: {}, ip: '1.2.3.4', originalUrl: '/appointments', user }),
+        getResponse: () => ({ setHeader: () => undefined }),
+      }),
+      getHandler: () => null,
+      getClass: () => null,
+    } as any);
+    assert.equal(adminResult, true, 'admin request must bypass rate limiting');
+  }
+
+  // A plain authenticated client is still subject to the limiter.
+  try {
+    await adminBypassGuard.canActivate({
+      switchToHttp: () => ({
+        getRequest: () => ({ method: 'POST', body: { phone: '0501234567' }, headers: {}, ip: '1.2.3.4', originalUrl: '/appointments', user: { roles: ['client'] } }),
+        getResponse: () => ({ setHeader: () => undefined }),
+      }),
+      getHandler: () => null,
+      getClass: () => null,
+    } as any);
+    assert.fail('client should still be throttled');
+  } catch (e) {
+    assert.ok(e instanceof HttpException);
+  }
+
   const failOpenGuard = new RateLimitGuard(new ReflectorStub('global') as any, new FailingStoreStub() as any);
   const failOpenResult = await failOpenGuard.canActivate({
     switchToHttp: () => ({

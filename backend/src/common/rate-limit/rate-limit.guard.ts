@@ -21,6 +21,13 @@ export class RateLimitGuard implements CanActivate {
 
         if (req.method.toUpperCase() === 'OPTIONS') return true;
 
+        // Authenticated admins are never throttled. Rate limiting exists to blunt
+        // anonymous abuse (OTP spam, booking floods), not to constrain the business
+        // owner adding appointments or managing the system. JwtAuthGuard runs before
+        // this guard (AuthModule is imported before RateLimitModule) and has already
+        // populated req.user for every non-public route.
+        if (this.isAdminRequest(req)) return true;
+
         const policy = this.reflector.getAllAndOverride<RateLimitPolicyName>(RATE_LIMIT_POLICY_KEY, [
             context.getHandler(),
             context.getClass(),
@@ -66,6 +73,13 @@ export class RateLimitGuard implements CanActivate {
         }
 
         return true;
+    }
+
+    private isAdminRequest(req: Request & { user?: any }): boolean {
+        const user = req.user;
+        if (!user) return false;
+        if (user.isAdmin === true) return true;
+        return Array.isArray(user.roles) && user.roles.includes('admin');
     }
 
     private applyHeaders(res: Response, limit: number, remaining: number, retryAfter: number) {

@@ -10,6 +10,11 @@ type PendingCommand = {
 
 type ParsedResp = { value: any; nextOffset: number };
 
+// Keep these short: rate limiting must never add meaningful latency, and when
+// Redis is unreachable we want to discover that fast and fall back to fail-open.
+const CONNECT_TIMEOUT_MS = 1500;
+const COMMAND_TIMEOUT_MS = 1500;
+
 class RedisTcpClient {
     private socket: Socket | tls.TLSSocket | null = null;
     private readonly pending: PendingCommand[] = [];
@@ -93,11 +98,52 @@ class RedisTcpClient {
         return Buffer.concat(chunks);
     }
 
+    private rejectAllPending(error: Error) {
+        while (this.pending.length > 0) {
+            this.pending.shift()?.reject(error);
+        }
+    }
+
+    private teardownSocket(target: Socket | tls.TLSSocket | null) {
+        if (!target) return;
+        target.removeAllListeners();
+        target.destroy();
+        if (this.socket === target) {
+            this.socket = null;
+        }
+    }
+
     private async ensureConnected(): Promise<void> {
         if (this.socket && !this.socket.destroyed) return;
         if (this.connectPromise) return this.connectPromise;
 
         this.connectPromise = new Promise<void>((resolve, reject) => {
+            let settled = false;
+            let timer: NodeJS.Timeout | null = null;
+
+            const clearTimer = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+            };
+
+            const fail = (error: Error) => {
+                if (settled) return;
+                settled = true;
+                clearTimer();
+                this.teardownSocket(this.socket);
+                this.rejectAllPending(error);
+                reject(error);
+            };
+
+            const succeed = () => {
+                if (settled) return;
+                settled = true;
+                clearTimer();
+                resolve();
+            };
+
             try {
                 const parsed = new URL(this.redisUrl);
                 const isTls = parsed.protocol === 'rediss:';
@@ -106,6 +152,8 @@ class RedisTcpClient {
                 const db = parsed.pathname && parsed.pathname !== '/' ? Number(parsed.pathname.replace('/', '')) : 0;
                 const username = decodeURIComponent(parsed.username || '');
                 const password = decodeURIComponent(parsed.password || '');
+
+                timer = setTimeout(() => fail(new Error('Redis connection timeout')), CONNECT_TIMEOUT_MS);
 
                 const onConnected = async () => {
                     try {
@@ -119,9 +167,9 @@ class RedisTcpClient {
                         if (db > 0) {
                             await this.command(['SELECT', String(db)]);
                         }
-                        resolve();
+                        succeed();
                     } catch (error) {
-                        reject(error instanceof Error ? error : new Error('Redis auth/select failed'));
+                        fail(error instanceof Error ? error : new Error('Redis auth/select failed'));
                     }
                 };
 
@@ -135,23 +183,27 @@ class RedisTcpClient {
                     this.flushPending();
                 });
                 socket.on('error', (error) => {
-                    while (this.pending.length > 0) {
-                        this.pending.shift()?.reject(error);
+                    if (settled) {
+                        // Error after a successful connect: drop the socket so the
+                        // next command reconnects, and reject anything in flight.
+                        this.rejectAllPending(error);
+                        this.teardownSocket(socket);
+                    } else {
+                        fail(error);
                     }
                 });
                 socket.on('close', () => {
-                    while (this.pending.length > 0) {
-                        this.pending.shift()?.reject(new Error('Redis socket closed'));
+                    this.rejectAllPending(new Error('Redis socket closed'));
+                    if (this.socket === socket) {
+                        this.socket = null;
                     }
-                    this.socket = null;
                 });
 
                 socket.once('connect', () => {
                     void onConnected();
                 });
-                socket.once('error', (error) => reject(error));
             } catch (error) {
-                reject(error instanceof Error ? error : new Error('Redis connection setup failed'));
+                fail(error instanceof Error ? error : new Error('Redis connection setup failed'));
             }
         }).finally(() => {
             this.connectPromise = null;
@@ -167,11 +219,35 @@ class RedisTcpClient {
         }
 
         return new Promise<any>((resolve, reject) => {
-            this.pending.push({ resolve, reject });
+            let timer: NodeJS.Timeout | null = null;
+
+            const entry: PendingCommand = {
+                resolve: (value) => {
+                    if (timer) clearTimeout(timer);
+                    resolve(value);
+                },
+                reject: (error) => {
+                    if (timer) clearTimeout(timer);
+                    reject(error);
+                },
+            };
+
+            const drop = () => {
+                const idx = this.pending.indexOf(entry);
+                if (idx !== -1) this.pending.splice(idx, 1);
+            };
+
+            timer = setTimeout(() => {
+                drop();
+                reject(new Error('Redis command timeout'));
+            }, COMMAND_TIMEOUT_MS);
+
+            this.pending.push(entry);
             this.socket!.write(this.encodeCommand(args), (error) => {
                 if (error) {
-                    const pending = this.pending.pop();
-                    pending?.reject(error);
+                    drop();
+                    if (timer) clearTimeout(timer);
+                    reject(error);
                 }
             });
         });
@@ -198,11 +274,20 @@ export type ConsumeResult = {
     isBlocked: boolean;
 };
 
+// While Redis is unreachable we pause talking to it for this long, then let a
+// single request probe it again. This keeps request latency flat during an
+// outage (no per-request connect attempts) and recovers automatically.
+const UNAVAILABLE_COOLDOWN_MS = 30_000;
+
 @Injectable()
 export class RedisRateLimitStore implements OnApplicationShutdown {
     private readonly logger = new Logger(RedisRateLimitStore.name);
     private static sharedClient: RedisTcpClient | null = null;
+    // Permanent (until restart): the URL/credentials are wrong, retrying is pointless.
     private static disabledByAuthFailure = false;
+    // Transient: Redis is down/unreachable. Auto-clears once it answers again.
+    private static unavailableUntil = 0;
+    private static loggedUnavailable = false;
 
     private get enabled(): boolean {
         return Boolean(rateLimitConfig.redis.url) && !RedisRateLimitStore.disabledByAuthFailure;
@@ -233,12 +318,46 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
         return RedisRateLimitStore.sharedClient;
     }
 
+    private get inCooldown(): boolean {
+        return Date.now() < RedisRateLimitStore.unavailableUntil;
+    }
+
+    private tripUnavailable(message: string) {
+        RedisRateLimitStore.unavailableUntil = Date.now() + UNAVAILABLE_COOLDOWN_MS;
+        if (!RedisRateLimitStore.loggedUnavailable) {
+            RedisRateLimitStore.loggedUnavailable = true;
+            this.logger.warn(JSON.stringify({
+                event: 'rate_limit_redis_unavailable',
+                message,
+                note: `pausing redis rate limiting for ${UNAVAILABLE_COOLDOWN_MS / 1000}s; requests fail-open`,
+            }));
+        }
+    }
+
+    private clearUnavailable() {
+        if (RedisRateLimitStore.unavailableUntil || RedisRateLimitStore.loggedUnavailable) {
+            this.logger.log(JSON.stringify({ event: 'rate_limit_redis_recovered' }));
+        }
+        RedisRateLimitStore.unavailableUntil = 0;
+        RedisRateLimitStore.loggedUnavailable = false;
+    }
+
     private async cmd(...command: (string | number)[]): Promise<any> {
         if (RedisRateLimitStore.disabledByAuthFailure) {
             throw new Error('RATE_LIMIT_REDIS_DISABLED');
         }
+        if (!this.enabled) {
+            throw new Error('RATE_LIMIT_REDIS_UNAVAILABLE');
+        }
+        if (this.inCooldown) {
+            throw new Error('RATE_LIMIT_REDIS_UNAVAILABLE');
+        }
         try {
-            return await this.client.command(command.map((item) => String(item)));
+            const result = await this.client.command(command.map((item) => String(item)));
+            if (RedisRateLimitStore.unavailableUntil || RedisRateLimitStore.loggedUnavailable) {
+                this.clearUnavailable();
+            }
+            return result;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             if (message.includes('NOAUTH') || message.includes('WRONGPASS')) {
@@ -253,8 +372,16 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
                 RedisRateLimitStore.disabledByAuthFailure = true;
                 throw new Error('RATE_LIMIT_REDIS_DISABLED');
             }
-            throw error;
+            // Connection refused / timeout / socket closed / etc: Redis is
+            // effectively down. Pause and let callers fall back to fail-open.
+            this.tripUnavailable(message);
+            throw new Error('RATE_LIMIT_REDIS_UNAVAILABLE');
         }
+    }
+
+    private isDegraded(error: unknown): boolean {
+        const message = error instanceof Error ? error.message : String(error);
+        return message === 'RATE_LIMIT_REDIS_DISABLED' || message === 'RATE_LIMIT_REDIS_UNAVAILABLE';
     }
 
     private withPrefix(key: string): string {
@@ -262,55 +389,97 @@ export class RedisRateLimitStore implements OnApplicationShutdown {
     }
 
     async consume(key: string, limit: number, windowSec: number): Promise<ConsumeResult> {
-        const redisKey = this.withPrefix(key);
-        const totalHits = Number(await this.cmd('INCR', redisKey));
-        if (totalHits === 1) {
-            await this.cmd('EXPIRE', redisKey, windowSec);
-        }
-        const ttl = Math.max(1, Number(await this.cmd('TTL', redisKey)));
-        const remaining = Math.max(0, limit - totalHits);
-        const isBlocked = totalHits > limit;
+        try {
+            const redisKey = this.withPrefix(key);
+            const totalHits = Number(await this.cmd('INCR', redisKey));
+            if (totalHits === 1) {
+                await this.cmd('EXPIRE', redisKey, windowSec);
+            }
+            const ttl = Math.max(1, Number(await this.cmd('TTL', redisKey)));
+            const remaining = Math.max(0, limit - totalHits);
+            const isBlocked = totalHits > limit;
 
-        return {
-            totalHits,
-            remaining,
-            retryAfterSeconds: ttl,
-            resetSeconds: ttl,
-            isBlocked,
-        };
+            return {
+                totalHits,
+                remaining,
+                retryAfterSeconds: ttl,
+                resetSeconds: ttl,
+                isBlocked,
+            };
+        } catch (error) {
+            if (!this.isDegraded(error)) {
+                this.logger.error(JSON.stringify({ event: 'rate_limit_redis_error', action: 'consume', message: String(error) }));
+            }
+            // Fail-open: never block a real user because the limiter is unavailable.
+            return {
+                totalHits: 0,
+                remaining: limit,
+                retryAfterSeconds: 0,
+                resetSeconds: 0,
+                isBlocked: false,
+            };
+        }
     }
 
     async isLocked(key: string): Promise<number> {
-        const redisKey = this.withPrefix(key);
-        const ttl = Number(await this.cmd('TTL', redisKey));
-        return ttl > 0 ? ttl : 0;
+        try {
+            const redisKey = this.withPrefix(key);
+            const ttl = Number(await this.cmd('TTL', redisKey));
+            return ttl > 0 ? ttl : 0;
+        } catch (error) {
+            if (!this.isDegraded(error)) {
+                this.logger.error(JSON.stringify({ event: 'rate_limit_redis_error', action: 'isLocked', message: String(error) }));
+            }
+            return 0;
+        }
     }
 
     async lock(key: string, lockSec: number): Promise<void> {
-        const redisKey = this.withPrefix(key);
-        await this.cmd('SET', redisKey, '1', 'EX', lockSec);
+        try {
+            const redisKey = this.withPrefix(key);
+            await this.cmd('SET', redisKey, '1', 'EX', lockSec);
+        } catch (error) {
+            if (!this.isDegraded(error)) {
+                this.logger.error(JSON.stringify({ event: 'rate_limit_redis_error', action: 'lock', message: String(error) }));
+            }
+        }
     }
 
     async recordFailure(counterKey: string, lockKey: string, threshold: number, windowSec: number, lockSec: number): Promise<{ count: number; locked: boolean; retryAfterSeconds: number }> {
-        const failRedisKey = this.withPrefix(counterKey);
-        const count = Number(await this.cmd('INCR', failRedisKey));
-        if (count === 1) {
-            await this.cmd('EXPIRE', failRedisKey, windowSec);
-        }
+        try {
+            const failRedisKey = this.withPrefix(counterKey);
+            const count = Number(await this.cmd('INCR', failRedisKey));
+            if (count === 1) {
+                await this.cmd('EXPIRE', failRedisKey, windowSec);
+            }
 
-        if (count >= threshold) {
-            await this.lock(lockKey, lockSec);
-            return { count, locked: true, retryAfterSeconds: lockSec };
-        }
+            if (count >= threshold) {
+                await this.lock(lockKey, lockSec);
+                return { count, locked: true, retryAfterSeconds: lockSec };
+            }
 
-        return { count, locked: false, retryAfterSeconds: 0 };
+            return { count, locked: false, retryAfterSeconds: 0 };
+        } catch (error) {
+            if (!this.isDegraded(error)) {
+                this.logger.error(JSON.stringify({ event: 'rate_limit_redis_error', action: 'recordFailure', message: String(error) }));
+            }
+            return { count: 0, locked: false, retryAfterSeconds: 0 };
+        }
     }
 
     async clear(key: string): Promise<void> {
-        await this.cmd('DEL', this.withPrefix(key));
+        try {
+            await this.cmd('DEL', this.withPrefix(key));
+        } catch (error) {
+            if (!this.isDegraded(error)) {
+                this.logger.error(JSON.stringify({ event: 'rate_limit_redis_error', action: 'clear', message: String(error) }));
+            }
+        }
     }
 
     async onApplicationShutdown(): Promise<void> {
+        RedisRateLimitStore.unavailableUntil = 0;
+        RedisRateLimitStore.loggedUnavailable = false;
         if (!RedisRateLimitStore.sharedClient) return;
         await RedisRateLimitStore.sharedClient.quit();
         RedisRateLimitStore.sharedClient = null;

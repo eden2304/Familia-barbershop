@@ -37,6 +37,19 @@ export class Client {
         this.is_blocked = value;
     }
 
+    // Most recent appointment ever booked for this client. Persisted so it
+    // survives appointment pruning / end-of-day deletion — only ever moves forward.
+    @Column({ type: 'timestamp with time zone', name: 'last_appointment_at', nullable: true })
+    last_appointment_at: Date | null;
+
+    get lastAppointmentAt(): Date | null {
+        return this.last_appointment_at ?? null;
+    }
+
+    set lastAppointmentAt(value: Date | null) {
+        this.last_appointment_at = value ?? null;
+    }
+
     @CreateDateColumn({type: 'timestamp with time zone'})
     created_at: Date;
 }

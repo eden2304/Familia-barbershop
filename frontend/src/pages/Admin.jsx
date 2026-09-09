@@ -68,6 +68,8 @@ import {
   Loader2,
   LayoutGrid,
   List,
+  Banknote,
+  CreditCard,
 } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, differenceInCalendarDays } from "date-fns";
@@ -1912,7 +1914,39 @@ const extractRecurringSchedules = (client) => {
     if (currentStart.getTime() === nextStart.getTime()) {
       return;
     }
+
+    // Is there already an appointment overlapping the target slot? If so, offer a
+    // swap instead of blocking the move.
+    const targetAppointment = (weeklyAppointmentsData || []).find((other) => {
+      if (String(other?.id) === String(appointment.id)) return false;
+      if (other?.status === 'canceled' || other?.status === 'blocked') return false;
+      const otherStart = new Date(other.starts_at ?? other.startsAt);
+      const otherEnd = new Date(other.ends_at ?? other.endsAt ?? otherStart);
+      if (Number.isNaN(otherStart.getTime())) return false;
+      return otherStart < nextEnd && otherEnd > nextStart;
+    });
+
+    if (targetAppointment) {
+      const targetStart = new Date(targetAppointment.starts_at ?? targetAppointment.startsAt);
+      setPendingCalendarMove({
+        mode: 'swap',
+        appointmentId: appointment.id,
+        targetId: targetAppointment.id,
+        aName: getAppointmentDisplayInfo(appointment).name,
+        bName: getAppointmentDisplayInfo(targetAppointment).name,
+        aService: serviceById(appointment.service_id ?? appointment.serviceId)?.name || '',
+        bService: serviceById(targetAppointment.service_id ?? targetAppointment.serviceId)?.name || '',
+        aFromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
+        bFromLabel: format(targetStart, 'EEE dd/MM HH:mm', { locale: he }),
+        // keep newStart/newEnd so shared guards / week reload still work
+        newStart: nextStart,
+        newEnd: nextEnd,
+      });
+      return;
+    }
+
     setPendingCalendarMove({
+      mode: 'move',
       appointmentId: appointment.id,
       clientName: getAppointmentDisplayInfo(appointment).name,
       fromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
@@ -2027,7 +2061,13 @@ const extractRecurringSchedules = (client) => {
     document.documentElement.style.touchAction = 'none';
 
     const blockNativeScrollWhileDragging = (event) => {
-      event.preventDefault();
+      // If a scroll gesture was already underway when the drag started, these
+      // touchmove events arrive with cancelable=false; calling preventDefault()
+      // on them does nothing except spam a "[Intervention] Ignored attempt to
+      // cancel a touchmove event" message. Only cancel what is cancelable.
+      if (event.cancelable) {
+        event.preventDefault();
+      }
     };
 
     document.addEventListener('touchmove', blockNativeScrollWhileDragging, { passive: false });
@@ -2091,6 +2131,26 @@ const extractRecurringSchedules = (client) => {
 
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
+
+    if (pendingCalendarMove.mode === 'swap') {
+      if (!pendingCalendarMove.targetId) return;
+      try {
+        setIsSavingCalendarMove(true);
+        await AdminApi.appointments.swap(pendingCalendarMove.appointmentId, pendingCalendarMove.targetId);
+        toast({ title: 'התורים הוחלפו בהצלחה' });
+        const anchor = pendingCalendarMove.newStart;
+        setPendingCalendarMove(null);
+        await Promise.all([loadData(), loadAppointmentsForWeek(anchor)]);
+      } catch (error) {
+        console.error('Failed to swap appointments from weekly calendar', error);
+        const description = error?.payload?.message || 'נסה שוב בעוד רגע.';
+        toast({ title: 'החלפת התורים נכשלה', description, variant: 'destructive' });
+      } finally {
+        setIsSavingCalendarMove(false);
+      }
+      return;
+    }
+
     try {
       setIsSavingCalendarMove(true);
       if (AdminApi?.reschedule) {
@@ -4131,9 +4191,10 @@ const extractRecurringSchedules = (client) => {
                                                     return;
                                                   }
                                                 }
-                                                if (draggedAppointmentId) {
-                                                  event.preventDefault();
-                                                }
+                                                // Native scroll during a drag is already blocked by the
+                                                // non-passive document 'touchmove' listener in the effect above.
+                                                // Calling preventDefault() here hits React's passive listener and
+                                                // just spams "Unable to preventDefault inside passive event listener".
                                                 lastTouchPointRef.current = touchPoint;
                                                 if (!isDraggableApt || !draggedAppointmentId) return;
                                                 moveCalendarDragPreview(touchPoint);
@@ -4157,9 +4218,22 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
+                                              {(() => {
+                                                const pm = apt.payment_method ?? apt.paymentMethod;
+                                                if (pm !== 'cash' && pm !== 'credit') return null;
+                                                const PayIcon = pm === 'cash' ? Banknote : CreditCard;
+                                                return (
+                                                  <span
+                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-0.5 ${isDraggableApt ? 'bg-white/20 text-white' : 'bg-black/10 text-gray-600'}`}
+                                                    title={pm === 'cash' ? 'תשלום במזומן' : 'תשלום בכרטיס אשראי'}
+                                                  >
+                                                    <PayIcon className="h-[18px] w-[18px]" />
+                                                  </span>
+                                                );
+                                              })()}
                                               <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                               <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                             </button>
@@ -5919,15 +5993,42 @@ const extractRecurringSchedules = (client) => {
               </Button>
 
               <DialogHeader className="space-y-1 pt-4 text-center sm:text-center">
-                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">אישור שינוי תור</DialogTitle>
-                <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
-                  התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
-                </DialogDescription>
+                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">
+                  {pendingCalendarMove?.mode === 'swap' ? 'החלפת תורים' : 'אישור שינוי תור'}
+                </DialogTitle>
+                {pendingCalendarMove?.mode === 'swap' ? (
+                  <DialogDescription asChild>
+                    <div className="mx-auto max-w-[17rem] space-y-2 text-[0.95rem] leading-6 text-slate-600">
+                      <p>המשבצת כבר תפוסה. להחליף בין שני התורים?</p>
+                      <div className="space-y-2 rounded-xl bg-slate-50 p-3 text-right text-[0.9rem]">
+                        <div>
+                          <div className="font-semibold text-slate-900">{pendingCalendarMove?.aName || 'לקוח'}</div>
+                          <div className="text-slate-500">
+                            {pendingCalendarMove?.aService ? `${pendingCalendarMove.aService} · ` : ''}{pendingCalendarMove?.aFromLabel}
+                            {' → '}{pendingCalendarMove?.bFromLabel}
+                          </div>
+                        </div>
+                        <div className="border-t border-slate-200" />
+                        <div>
+                          <div className="font-semibold text-slate-900">{pendingCalendarMove?.bName || 'לקוח'}</div>
+                          <div className="text-slate-500">
+                            {pendingCalendarMove?.bService ? `${pendingCalendarMove.bService} · ` : ''}{pendingCalendarMove?.bFromLabel}
+                            {' → '}{pendingCalendarMove?.aFromLabel}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </DialogDescription>
+                ) : (
+                  <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
+                    התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+                  </DialogDescription>
+                )}
               </DialogHeader>
 
               <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-2">
                 <Button size="sm" className="h-10 w-full rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
-                  {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+                  {isSavingCalendarMove ? 'שומר…' : (pendingCalendarMove?.mode === 'swap' ? 'אישור החלפה' : 'אישור')}
                 </Button>
                 <Button size="sm" className="mt-0 h-10 w-full rounded-xl border-slate-200 px-5 text-sm font-medium" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
                   ביטול

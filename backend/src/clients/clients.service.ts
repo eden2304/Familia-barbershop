@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, Not } from 'typeorm';
 import { Client } from './client.entity';
@@ -49,11 +49,23 @@ function toNumericId(raw: any): number | null {
 }
 
 @Injectable()
-export class ClientsService {
+export class ClientsService implements OnModuleInit {
+    private readonly logger = new Logger(ClientsService.name);
+
     constructor(
         @InjectRepository(Client) private repo: Repository<Client>,
         @InjectDataSource() private readonly ds: DataSource,
     ) {}
+
+    // Safety net so a deploy works even if migrations have not been run yet:
+    // make sure the column the Client entity now maps actually exists.
+    async onModuleInit() {
+        try {
+            await this.ds.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "last_appointment_at" timestamptz`);
+        } catch (error) {
+            this.logger.warn(`Failed ensuring clients.last_appointment_at column: ${error instanceof Error ? error.message : error}`);
+        }
+    }
 
     private async findByAnyId(candidate: any): Promise<Client | null> {
         if (candidate === undefined || candidate === null) return null;
@@ -223,7 +235,10 @@ export class ClientsService {
                    c.phone,
                    coalesce(c.is_member,false) as is_member,
                    coalesce(c.is_blocked,false) as is_blocked,
-                   (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
+                   greatest(
+                       c.last_appointment_at,
+                       (select max(a.starts_at) from appointments a where a.client_id = c.id)
+                   ) as last_appointment_at,
                    coalesce(json_agg(
                        json_build_object(
                          'id', r.id,

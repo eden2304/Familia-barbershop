@@ -9,6 +9,7 @@ import { BusinessHoursOverride } from '../../entities/business-hours-override.en
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsController } from './appointments.controller';
 import { ClientsController } from './clients.controller';
+import { CashCleanupScheduler } from './cash-cleanup.scheduler';
 import { Setting } from '../../entities/setting.entity';
 import { AuthModule } from '../auth/auth.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
@@ -21,7 +22,7 @@ import { AdminPushModule } from '../push/admin-push.module';
         WhatsAppModule,
         AdminPushModule,
     ],
-    providers: [AppointmentsService],
+    providers: [AppointmentsService, CashCleanupScheduler],
     controllers: [AppointmentsController, ClientsController],
 })
 export class AppointmentsModule {}

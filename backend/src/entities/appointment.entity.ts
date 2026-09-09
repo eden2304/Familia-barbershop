@@ -27,6 +27,10 @@ export class Appointment {
     @Column({ name: 'status', type: 'varchar', length: 16, default: 'booked' })
     status: string;
 
+    // 'cash' | 'credit' | null (null = legacy / admin-created without a choice)
+    @Column({ name: 'payment_method', type: 'varchar', length: 16, nullable: true })
+    paymentMethod: string | null;
+
     // ❌ הסר/הער את זה:
     // @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
     // createdAt: Date;

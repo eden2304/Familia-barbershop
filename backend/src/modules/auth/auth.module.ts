@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt'; // ✅
 import { AuthController } from './auth.controller';
@@ -21,9 +22,17 @@ import { AdminPushModule } from '../push/admin-push.module';
         TypeOrmModule.forFeature([Client, Setting, AdminPhone, Appointment, RefreshToken]),
         WhatsAppModule,
         AdminPushModule,
-        JwtModule.register({
-            secret: process.env.JWT_SECRET,          // חובה שזה יהיה אותו SECRET של כל המערכת
-            signOptions: { expiresIn: '30d' },       // או מה שבא לך
+        // resolve the secret through ConfigService so it is read AFTER
+        // ConfigModule has loaded .env — a plain register() captures
+        // process.env.JWT_SECRET at import time, before .env is applied,
+        // which breaks token verification when the var lives only in .env.
+        JwtModule.registerAsync({
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+                secret: config.get<string>('JWT_SECRET') || process.env.JWT_SECRET,
+                signOptions: { expiresIn: '30d' },
+            }),
         }),
     ],
     controllers: [AuthController],

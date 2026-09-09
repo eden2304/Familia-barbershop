@@ -80,6 +80,8 @@ export class AppointmentsController {
             (date && body.time ? `${date}T${body.time}:00` : undefined);
 
         const note = body.note ?? body.client_note ?? null;
+        const paymentMethod =
+            body.paymentMethod ?? body.payment_method ?? body?.client?.paymentMethod ?? null;
 
         if (!serviceId) throw new BadRequestException('serviceId is required');
         if (!startsAtISO) throw new BadRequestException('startsAt or (date+time) are required');
@@ -94,6 +96,7 @@ export class AppointmentsController {
             startsAtISO,
             note: note ?? undefined,
             requestId: body.requestId ?? body.request_id ?? undefined,
+            paymentMethod: paymentMethod ?? undefined,
         };
 
         const isAdmin = Boolean(req.user?.roles?.includes('admin'));
@@ -108,6 +111,8 @@ export class AppointmentsController {
                 clientId: saved.client?.id,
                 startsAt: saved.startsAt,
                 endsAt: saved.endsAt,
+                paymentMethod: saved.paymentMethod ?? null,
+                payment_method: saved.paymentMethod ?? null,
             },
         };
     }

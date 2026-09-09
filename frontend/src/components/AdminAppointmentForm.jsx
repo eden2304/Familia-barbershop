@@ -3,7 +3,7 @@ import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Sparkles, UserRound, X } from "lucide-react";
+import { Banknote, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard, Sparkles, UserRound, X } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
@@ -84,6 +84,7 @@ export default function AdminAppointmentForm({
     client_name: "",
     phone: "",
   });
+  const [paymentMethod, setPaymentMethod] = useState(null); // 'cash' | 'credit'
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [availableByDate, setAvailableByDate] = useState({});
@@ -241,6 +242,10 @@ export default function AdminAppointmentForm({
       await showAlert("נא למלא את כל השדות");
       return;
     }
+    if (!paymentMethod) {
+      await showAlert("נא לבחור אמצעי תשלום");
+      return;
+    }
 
     setLoading(true);
 
@@ -255,11 +260,13 @@ export default function AdminAppointmentForm({
         phone: normalizedPhone,
         starts_at: startTime.toISOString(),
         ends_at: endTime.toISOString(),
-        status: "booked"
+        status: "booked",
+        payment_method: paymentMethod,
       };
 
       await onSubmit(appointmentData);
       setFormData({ client_name: "", phone: "" });
+      setPaymentMethod(null);
       setSelectedService(null);
       if (!lockDateTime) {
         setSelectedDay(null);
@@ -394,6 +401,32 @@ export default function AdminAppointmentForm({
                   )}
                 </div>
                 <Input type="tel" placeholder="טלפון" value={formData.phone} onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))} required className="h-12 text-right" />
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("cash")}
+                    className={`flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-sm font-semibold transition-colors ${
+                      paymentMethod === "cash"
+                        ? "border-black bg-black text-white"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    מזומן
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("credit")}
+                    className={`flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-sm font-semibold transition-colors ${
+                      paymentMethod === "credit"
+                        ? "border-black bg-black text-white"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    כרטיס אשראי
+                  </button>
+                </div>
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={onCancel} className="flex-1 rounded-full py-3">ביטול</Button>
                   <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800">

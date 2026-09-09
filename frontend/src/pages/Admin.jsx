@@ -4133,9 +4133,10 @@ const extractRecurringSchedules = (client) => {
                                                     return;
                                                   }
                                                 }
-                                                if (draggedAppointmentId) {
-                                                  event.preventDefault();
-                                                }
+                                                // Native scroll during a drag is already blocked by the
+                                                // non-passive document 'touchmove' listener in the effect above.
+                                                // Calling preventDefault() here hits React's passive listener and
+                                                // just spams "Unable to preventDefault inside passive event listener".
                                                 lastTouchPointRef.current = touchPoint;
                                                 if (!isDraggableApt || !draggedAppointmentId) return;
                                                 moveCalendarDragPreview(touchPoint);

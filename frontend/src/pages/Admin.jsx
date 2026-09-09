@@ -1914,7 +1914,39 @@ const extractRecurringSchedules = (client) => {
     if (currentStart.getTime() === nextStart.getTime()) {
       return;
     }
+
+    // Is there already an appointment overlapping the target slot? If so, offer a
+    // swap instead of blocking the move.
+    const targetAppointment = (weeklyAppointmentsData || []).find((other) => {
+      if (String(other?.id) === String(appointment.id)) return false;
+      if (other?.status === 'canceled' || other?.status === 'blocked') return false;
+      const otherStart = new Date(other.starts_at ?? other.startsAt);
+      const otherEnd = new Date(other.ends_at ?? other.endsAt ?? otherStart);
+      if (Number.isNaN(otherStart.getTime())) return false;
+      return otherStart < nextEnd && otherEnd > nextStart;
+    });
+
+    if (targetAppointment) {
+      const targetStart = new Date(targetAppointment.starts_at ?? targetAppointment.startsAt);
+      setPendingCalendarMove({
+        mode: 'swap',
+        appointmentId: appointment.id,
+        targetId: targetAppointment.id,
+        aName: getAppointmentDisplayInfo(appointment).name,
+        bName: getAppointmentDisplayInfo(targetAppointment).name,
+        aService: serviceById(appointment.service_id ?? appointment.serviceId)?.name || '',
+        bService: serviceById(targetAppointment.service_id ?? targetAppointment.serviceId)?.name || '',
+        aFromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
+        bFromLabel: format(targetStart, 'EEE dd/MM HH:mm', { locale: he }),
+        // keep newStart/newEnd so shared guards / week reload still work
+        newStart: nextStart,
+        newEnd: nextEnd,
+      });
+      return;
+    }
+
     setPendingCalendarMove({
+      mode: 'move',
       appointmentId: appointment.id,
       clientName: getAppointmentDisplayInfo(appointment).name,
       fromLabel: format(currentStart, 'EEE dd/MM HH:mm', { locale: he }),
@@ -2099,6 +2131,26 @@ const extractRecurringSchedules = (client) => {
 
   const submitCalendarMove = async () => {
     if (!pendingCalendarMove?.appointmentId || !pendingCalendarMove.newStart || !pendingCalendarMove.newEnd) return;
+
+    if (pendingCalendarMove.mode === 'swap') {
+      if (!pendingCalendarMove.targetId) return;
+      try {
+        setIsSavingCalendarMove(true);
+        await AdminApi.appointments.swap(pendingCalendarMove.appointmentId, pendingCalendarMove.targetId);
+        toast({ title: 'התורים הוחלפו בהצלחה' });
+        const anchor = pendingCalendarMove.newStart;
+        setPendingCalendarMove(null);
+        await Promise.all([loadData(), loadAppointmentsForWeek(anchor)]);
+      } catch (error) {
+        console.error('Failed to swap appointments from weekly calendar', error);
+        const description = error?.payload?.message || 'נסה שוב בעוד רגע.';
+        toast({ title: 'החלפת התורים נכשלה', description, variant: 'destructive' });
+      } finally {
+        setIsSavingCalendarMove(false);
+      }
+      return;
+    }
+
     try {
       setIsSavingCalendarMove(true);
       if (AdminApi?.reschedule) {
@@ -5941,15 +5993,42 @@ const extractRecurringSchedules = (client) => {
               </Button>
 
               <DialogHeader className="space-y-1 pt-4 text-center sm:text-center">
-                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">אישור שינוי תור</DialogTitle>
-                <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
-                  התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
-                </DialogDescription>
+                <DialogTitle className="text-lg font-extrabold text-slate-900 sm:text-[1.2rem]">
+                  {pendingCalendarMove?.mode === 'swap' ? 'החלפת תורים' : 'אישור שינוי תור'}
+                </DialogTitle>
+                {pendingCalendarMove?.mode === 'swap' ? (
+                  <DialogDescription asChild>
+                    <div className="mx-auto max-w-[17rem] space-y-2 text-[0.95rem] leading-6 text-slate-600">
+                      <p>המשבצת כבר תפוסה. להחליף בין שני התורים?</p>
+                      <div className="space-y-2 rounded-xl bg-slate-50 p-3 text-right text-[0.9rem]">
+                        <div>
+                          <div className="font-semibold text-slate-900">{pendingCalendarMove?.aName || 'לקוח'}</div>
+                          <div className="text-slate-500">
+                            {pendingCalendarMove?.aService ? `${pendingCalendarMove.aService} · ` : ''}{pendingCalendarMove?.aFromLabel}
+                            {' → '}{pendingCalendarMove?.bFromLabel}
+                          </div>
+                        </div>
+                        <div className="border-t border-slate-200" />
+                        <div>
+                          <div className="font-semibold text-slate-900">{pendingCalendarMove?.bName || 'לקוח'}</div>
+                          <div className="text-slate-500">
+                            {pendingCalendarMove?.bService ? `${pendingCalendarMove.bService} · ` : ''}{pendingCalendarMove?.bFromLabel}
+                            {' → '}{pendingCalendarMove?.aFromLabel}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </DialogDescription>
+                ) : (
+                  <DialogDescription className="mx-auto max-w-[17rem] whitespace-pre-line text-[0.97rem] leading-6 text-slate-600 sm:text-base">
+                    התור של {pendingCalendarMove?.clientName || 'לקוח'} יועבר מ-{pendingCalendarMove?.fromLabel} ל-{pendingCalendarMove?.toLabel}.
+                  </DialogDescription>
+                )}
               </DialogHeader>
 
               <DialogFooter className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-2">
                 <Button size="sm" className="h-10 w-full rounded-xl bg-slate-950 px-6 text-sm font-semibold text-white hover:bg-slate-800" onClick={submitCalendarMove} disabled={isSavingCalendarMove}>
-                  {isSavingCalendarMove ? 'שומר…' : 'אישור'}
+                  {isSavingCalendarMove ? 'שומר…' : (pendingCalendarMove?.mode === 'swap' ? 'אישור החלפה' : 'אישור')}
                 </Button>
                 <Button size="sm" className="mt-0 h-10 w-full rounded-xl border-slate-200 px-5 text-sm font-medium" variant="outline" onClick={() => setPendingCalendarMove(null)} disabled={isSavingCalendarMove}>
                   ביטול

@@ -15,7 +15,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { DateTime } from 'luxon';
@@ -238,6 +238,94 @@ export class AdminAppointmentsController {
     @Patch('appointments/:id/reschedule')
     async rescheduleByPatch(@Param('id') id: string, @Body() body: any) {
         return this.handleReschedule(id, body);
+    }
+
+    // Swap the times of two existing appointments. Used by the weekly calendar
+    // when an appointment is dropped onto a slot that is already taken.
+    @Post('appointments/swap')
+    async swap(@Body() body: any) {
+        const aId = body?.aId ?? body?.appointmentId ?? body?.id ?? body?.sourceId ?? body?.firstId;
+        const bId = body?.bId ?? body?.targetId ?? body?.withId ?? body?.otherId ?? body?.secondId;
+        if (!aId || !bId) throw new BadRequestException('Missing appointment ids to swap');
+        if (String(aId) === String(bId)) throw new BadRequestException('Cannot swap an appointment with itself');
+
+        const durationMs = (appt: Appointment): number => {
+            const start = new Date(appt.startsAt).getTime();
+            const end = appt.endsAt ? new Date(appt.endsAt).getTime() : NaN;
+            const span = Number.isFinite(end) ? end - start : 0;
+            if (span > 0) return span;
+            const minutes = Number(appt.service?.durationMinutes ?? 30) || 30;
+            return Math.max(minutes, 15) * 60_000;
+        };
+
+        try {
+            const outcome = await this.ds.transaction(async (manager) => {
+                const repo = manager.getRepository(Appointment);
+                const a = await repo.findOne({ where: { id: aId }, relations: ['client', 'service'] });
+                const b = await repo.findOne({ where: { id: bId }, relations: ['client', 'service'] });
+                if (!a || !b) throw new NotFoundException('Appointment not found');
+
+                const aPrevStart = new Date(a.startsAt);
+                const bPrevStart = new Date(b.startsAt);
+                const aNewStart = new Date(bPrevStart);
+                const aNewEnd = new Date(aNewStart.getTime() + durationMs(a));
+                const bNewStart = new Date(aPrevStart);
+                const bNewEnd = new Date(bNewStart.getTime() + durationMs(b));
+
+                const collidesWithThird = async (start: Date, end: Date): Promise<boolean> => {
+                    const clash = await repo
+                        .createQueryBuilder('x')
+                        .where('x.id != :aId', { aId })
+                        .andWhere('x.id != :bId', { bId })
+                        .andWhere(`x.status IN ('booked', 'completed', 'blocked')`)
+                        .andWhere('x.startsAt < :end', { end })
+                        .andWhere('x.endsAt > :start', { start })
+                        .getOne();
+                    return Boolean(clash);
+                };
+                if ((await collidesWithThird(aNewStart, aNewEnd)) || (await collidesWithThird(bNewStart, bNewEnd))) {
+                    throw new HttpException(
+                        { error: 'SWAP_BLOCKED', message: 'לא ניתן להחליף: אחת המשבצות מתנגשת עם תור אחר.' },
+                        HttpStatus.CONFLICT,
+                    );
+                }
+
+                // The overlap exclusion constraint is not deferrable, so park A far
+                // in the past, move B into A's slot, then bring A back into B's slot.
+                const parkStart = new Date(aPrevStart.getTime() - 1000 * 60 * 60 * 24 * 3650);
+                await repo.update({ id: aId }, { startsAt: parkStart, endsAt: new Date(parkStart.getTime() + durationMs(a)) });
+                await repo.update({ id: bId }, { startsAt: bNewStart, endsAt: bNewEnd });
+                await repo.update({ id: aId }, { startsAt: aNewStart, endsAt: aNewEnd });
+
+                return { aPrevStart, bPrevStart, aNewStart, aNewEnd, bNewStart, bNewEnd };
+            });
+
+            try {
+                const a = await this.apptRepo.findOne({ where: { id: aId }, relations: ['client', 'service'] });
+                const b = await this.apptRepo.findOne({ where: { id: bId }, relations: ['client', 'service'] });
+                if (a) await this.whatsappService.sendAppointmentRescheduled(a, outcome.aPrevStart);
+                if (b) await this.whatsappService.sendAppointmentRescheduled(b, outcome.bPrevStart);
+            } catch (error) {
+                console.warn('WhatsApp send failed (appointment swap).');
+            }
+
+            return {
+                ok: true,
+                swapped: [
+                    { id: aId, startsAt: outcome.aNewStart, endsAt: outcome.aNewEnd },
+                    { id: bId, startsAt: outcome.bNewStart, endsAt: outcome.bNewEnd },
+                ],
+            };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            if (error instanceof QueryFailedError) {
+                throw new HttpException(
+                    { error: 'SWAP_BLOCKED', message: 'לא ניתן להחליף בין התורים האלה.' },
+                    HttpStatus.CONFLICT,
+                );
+            }
+            throw error;
+        }
     }
 
     @Get('clients/:id/appointments')

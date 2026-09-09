@@ -1028,6 +1028,11 @@ const api = {
         invalidateAdminSchedulingCaches();
         return result;
       },
+      async swap(aId, bId) {
+        const result = await httpPost('/admin/appointments/swap', { aId, bId });
+        invalidateAdminSchedulingCaches();
+        return result;
+      },
       async createRecurring(id, intervalConfig) {
         const payload = {};
         if (intervalConfig && typeof intervalConfig === 'object') {

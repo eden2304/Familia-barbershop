@@ -2029,7 +2029,13 @@ const extractRecurringSchedules = (client) => {
     document.documentElement.style.touchAction = 'none';
 
     const blockNativeScrollWhileDragging = (event) => {
-      event.preventDefault();
+      // If a scroll gesture was already underway when the drag started, these
+      // touchmove events arrive with cancelable=false; calling preventDefault()
+      // on them does nothing except spam a "[Intervention] Ignored attempt to
+      // cancel a touchmove event" message. Only cancel what is cancelable.
+      if (event.cancelable) {
+        event.preventDefault();
+      }
     };
 
     document.addEventListener('touchmove', blockNativeScrollWhileDragging, { passive: false });

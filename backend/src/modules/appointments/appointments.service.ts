@@ -645,6 +645,7 @@ export class AppointmentsService {
         }
 
         await this.clearPendingNoBookingForClient((saved.client as any)?.id);
+        await this.bumpClientLastAppointment((saved.client as any)?.id, startAt);
         await this.appendBookingAdminUpdate(saved);
 
         try {
@@ -657,6 +658,24 @@ export class AppointmentsService {
         });
     }
 
+
+    // Keep clients.last_appointment_at pointing at the most recent appointment ever
+    // booked for a client. It only moves forward and is never touched by pruning,
+    // so the "last appointment" date survives even after the appointment row is gone.
+    private async bumpClientLastAppointment(clientId: number | string | undefined, startsAt: Date) {
+        if (clientId == null) return;
+        if (!(startsAt instanceof Date) || Number.isNaN(startsAt.getTime())) return;
+        try {
+            await this.dataSource.query(
+                `update clients
+                 set last_appointment_at = greatest(coalesce(last_appointment_at, to_timestamp(0)), $2::timestamptz)
+                 where id = $1`,
+                [clientId, startsAt.toISOString()],
+            );
+        } catch (error) {
+            this.logger.warn(`Failed to update client last_appointment_at: ${error instanceof Error ? error.message : error}`);
+        }
+    }
 
     private async clearPendingNoBookingForClient(clientId: number | string | undefined) {
         const id = Number(clientId);

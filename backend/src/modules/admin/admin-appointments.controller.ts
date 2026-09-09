@@ -300,9 +300,22 @@ export class AdminAppointmentsController {
                 return { aPrevStart, bPrevStart, aNewStart, aNewEnd, bNewStart, bNewEnd };
             });
 
+            const a = await this.apptRepo.findOne({ where: { id: aId }, relations: ['client', 'service'] });
+            const b = await this.apptRepo.findOne({ where: { id: bId }, relations: ['client', 'service'] });
+
+            const bumpLast = async (clientId: any, when: Date) => {
+                if (clientId == null) return;
+                await this.ds.query(
+                    `update clients
+                     set last_appointment_at = greatest(coalesce(last_appointment_at, to_timestamp(0)), $2::timestamptz)
+                     where id = $1`,
+                    [clientId, when],
+                ).catch(() => undefined);
+            };
+            await bumpLast((a?.client as any)?.id, outcome.aNewStart);
+            await bumpLast((b?.client as any)?.id, outcome.bNewStart);
+
             try {
-                const a = await this.apptRepo.findOne({ where: { id: aId }, relations: ['client', 'service'] });
-                const b = await this.apptRepo.findOne({ where: { id: bId }, relations: ['client', 'service'] });
                 if (a) await this.whatsappService.sendAppointmentRescheduled(a, outcome.aPrevStart);
                 if (b) await this.whatsappService.sendAppointmentRescheduled(b, outcome.bPrevStart);
             } catch (error) {
@@ -573,6 +586,17 @@ export class AdminAppointmentsController {
                 createdIds.push(insertRows[0].id);
             }
         }
+
+        // Persist the latest appointment date on the client (survives pruning).
+        const latestStart = occurrences.length
+            ? occurrences[occurrences.length - 1].start
+            : new Date(base.starts_at);
+        await this.ds.query(
+            `update clients
+             set last_appointment_at = greatest(coalesce(last_appointment_at, to_timestamp(0)), $2::timestamptz)
+             where id = $1`,
+            [clientId, latestStart],
+        ).catch(() => undefined);
 
         if (clientPhone) {
             try {

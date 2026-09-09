@@ -190,6 +190,17 @@ async function main() {
       );
     }
 
+    // ---- persist each demo client's "last appointment" date (deterministic on re-run) ----
+    const lastApptClientIds = demoClientIds.concat(admin ? [admin.id] : []);
+    await db.query(
+      `update clients c
+       set last_appointment_at = (
+         select max(a.starts_at) from appointments a where a.client_id = c.id
+       )
+       where c.id = any($1::uuid[])`,
+      [lastApptClientIds],
+    );
+
     // ---- a blocked slot today 14:00–15:00 ----
     await db.query(
       `insert into blocked_times (starts_at, ends_at, reason, members_only)

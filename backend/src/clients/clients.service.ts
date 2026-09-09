@@ -223,7 +223,10 @@ export class ClientsService {
                    c.phone,
                    coalesce(c.is_member,false) as is_member,
                    coalesce(c.is_blocked,false) as is_blocked,
-                   (select max(a.starts_at) from appointments a where a.client_id = c.id) as last_appointment_at,
+                   greatest(
+                       c.last_appointment_at,
+                       (select max(a.starts_at) from appointments a where a.client_id = c.id)
+                   ) as last_appointment_at,
                    coalesce(json_agg(
                        json_build_object(
                          'id', r.id,

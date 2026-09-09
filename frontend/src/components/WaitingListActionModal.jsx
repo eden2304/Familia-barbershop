@@ -46,11 +46,8 @@ export default function WaitingListActionModal({ isOpen, onClose, entry, service
       await showAlert("אין מספר טלפון תקין ללקוח הזה");
       return;
     }
-    const firstName = String(entry.client_name || "").trim().split(/\s+/)[0] || "";
-    const greeting = firstName ? `היי ${firstName},` : "היי,";
-    const serviceLabel = service?.name ? ` ל${service.name}` : "";
-    const text = `${greeting} כאן פמיליה לגבי רשימת ההמתנה${serviceLabel}.`;
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    // Open a clean chat with no pre-filled message.
+    window.open(`https://wa.me/${number}`, "_blank", "noopener,noreferrer");
   };
 
   const handleBookOriginalTime = async () => {

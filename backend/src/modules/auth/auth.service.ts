@@ -424,6 +424,12 @@ export class AuthService {
         const lastName = ((client as any)?.lastName ?? client.last_name ?? '').toString().trim();
         const clientName = `${firstName} ${lastName}`.trim() || client.phone;
         const clientId = Number(client.id);
+        // The admin "visit" feed keys entries by a numeric client id. On deployments
+        // where clients use non-numeric ids (e.g. uuid) this tracking does not apply,
+        // and pushing NaN/0 ids downstream makes later lookups blow up. Skip cleanly.
+        if (!Number.isInteger(clientId) || clientId <= 0) {
+            return;
+        }
         if (await this.wasRecentlyLogged(clientId)) {
             return;
         }
@@ -492,7 +498,11 @@ export class AuthService {
 
     async trackClientVisit(payload: AuthTokenPayload | undefined) {
         if (!payload?.sub) return { ok: true, tracked: false };
-        const client = await this.clientRepo.findOne({ where: { id: Number(payload.sub) } });
+        const numericId = Number(payload.sub);
+        if (!Number.isInteger(numericId) || numericId <= 0) {
+            return { ok: true, tracked: false };
+        }
+        const client = await this.clientRepo.findOne({ where: { id: numericId } });
         if (!client) return { ok: true, tracked: false };
         await this.logClientLoginUpdates(client);
         return { ok: true, tracked: true };
@@ -508,7 +518,7 @@ export class AuthService {
                 loginAt: String(item?.loginAt ?? ''),
                 dueAt: String(item?.dueAt ?? ''),
             }))
-            .filter((item: PendingNoBookingEvent) => Number.isFinite(item.clientId) && Boolean(item.clientName) && Boolean(item.dueAt));
+            .filter((item: PendingNoBookingEvent) => Number.isInteger(item.clientId) && item.clientId > 0 && Boolean(item.clientName) && Boolean(item.dueAt));
     }
 
     private async savePendingNoBookingEvents(events: PendingNoBookingEvent[]) {

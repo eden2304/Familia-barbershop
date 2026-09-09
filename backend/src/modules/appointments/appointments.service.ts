@@ -38,6 +38,14 @@ export interface CreateAppointmentDto {
     startsAtISO: string;
     note?: string;
     requestId?: string;
+    paymentMethod?: string | null;
+}
+
+export function normalizePaymentMethod(value: any): 'cash' | 'credit' | null {
+    const norm = String(value ?? '').trim().toLowerCase();
+    if (norm === 'cash') return 'cash';
+    if (norm === 'credit' || norm === 'card' || norm === 'credit_card') return 'credit';
+    return null;
 }
 
 interface BookingRules {
@@ -608,6 +616,7 @@ export class AppointmentsService {
             service,
             startsAt: startAt,
             endsAt: endAt, // יש לך nullable: true בטבלה, אבל אנחנו ממלאים ערך
+            paymentMethod: normalizePaymentMethod(dto.paymentMethod),
             // note: dto.note ?? null,
         });
 

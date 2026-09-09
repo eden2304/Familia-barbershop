@@ -68,6 +68,8 @@ import {
   Loader2,
   LayoutGrid,
   List,
+  Banknote,
+  CreditCard,
 } from "lucide-react";
 import { useSystemPopup } from "@/components/SystemPopupProvider";
 import { format, addDays, startOfWeek, isSameDay, startOfDay, subDays, isAfter, setHours, setMinutes, isBefore, isSameHour, isSameMinute, isSameSecond, addMinutes, differenceInDays, differenceInCalendarDays } from "date-fns";
@@ -4157,9 +4159,22 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`w-full rounded-md text-right px-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-4' : 'pl-1'} ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
+                                              {(() => {
+                                                const pm = apt.payment_method ?? apt.paymentMethod;
+                                                if (pm !== 'cash' && pm !== 'credit') return null;
+                                                const PayIcon = pm === 'cash' ? Banknote : CreditCard;
+                                                return (
+                                                  <span
+                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-[1px] ${isDraggableApt ? 'bg-white/15 text-white' : 'bg-black/10 text-gray-600'}`}
+                                                    title={pm === 'cash' ? 'תשלום במזומן' : 'תשלום בכרטיס אשראי'}
+                                                  >
+                                                    <PayIcon className="h-3 w-3" />
+                                                  </span>
+                                                );
+                                              })()}
                                               <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
                                               <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                             </button>

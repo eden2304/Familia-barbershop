@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, ChevronRight } from 'lucide-react';
+import { Scissors, Calendar, Clock, Phone, MessageCircle, Trash2, Repeat, Send, ChevronRight, Banknote, CreditCard } from 'lucide-react';
 import { format, addMinutes, addDays, isAfter, isBefore, parse, startOfDay, isSameDay } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
@@ -285,6 +285,17 @@ export default function AppointmentActionsModal({
           <div className="flex items-center gap-3 text-gray-600"><Scissors className="w-4 h-4" /><span>שירות</span></div>
           <span className="font-bold text-gray-800">{service?.name || serviceName(appointment) || 'לא ידוע'}</span>
         </div>
+        {(() => {
+          const pm = appointment.payment_method ?? appointment.paymentMethod;
+          if (pm !== 'cash' && pm !== 'credit') return null;
+          const PayIcon = pm === 'cash' ? Banknote : CreditCard;
+          return (
+            <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl">
+              <div className="flex items-center gap-3 text-gray-600"><PayIcon className="w-4 h-4" /><span>אמצעי תשלום</span></div>
+              <span className="font-bold text-gray-800">{pm === 'cash' ? 'מזומן' : 'כרטיס אשראי'}</span>
+            </div>
+          );
+        })()}
         <div className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-xl">
           <div className="flex items-center gap-3 text-gray-600"><Calendar className="w-4 h-4" /><span>תאריך</span></div>
           <Button

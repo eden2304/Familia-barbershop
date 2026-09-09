@@ -620,6 +620,7 @@ function normAppointment(x) {
   const out = Object.assign({}, x,
       both(x, 'starts_at', 'startsAt', x.starts_at),
       both(x, 'ends_at',   'endsAt',   x.ends_at),
+      both({ payment_method: x.payment_method ?? x.paymentMethod ?? null }, 'payment_method', 'paymentMethod', null),
       both({ client_name:  x.client_name  ?? x.clientName  ?? nestedName  }, 'client_name',  'clientName',  ''),
       both({ client_phone: x.client_phone ?? x.clientPhone ?? x.phone ?? nestedPhone }, 'client_phone', 'clientPhone', '')
   );
@@ -840,6 +841,12 @@ const api = {
         throw new Error('NAME_REQUIRED');
       }
 
+      const paymentMethodRaw =
+          payload.paymentMethod ?? payload.payment_method ?? null;
+      const paymentMethod = paymentMethodRaw
+          ? String(paymentMethodRaw).trim().toLowerCase()
+          : null;
+
       const publicBody = {
         serviceId,
         date, // YYYY-MM-DD
@@ -850,6 +857,7 @@ const api = {
         is_guest: true,
         // גיבוי כפול (לא חובה, אבל עוזר לשרתים שמצפים לשדות שטוחים):
         phone,
+        ...(paymentMethod ? { paymentMethod, payment_method: paymentMethod } : {}),
       };
 
       const res = await httpPost('/appointments', publicBody);

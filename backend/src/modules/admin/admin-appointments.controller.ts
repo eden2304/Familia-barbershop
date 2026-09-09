@@ -121,6 +121,7 @@ export class AdminAppointmentsController {
 
             const startsAt = a.startsAt;
             const endsAt = a.endsAt;
+            const paymentMethod = a.paymentMethod ?? null;
 
             return {
                 id: a.id,
@@ -132,6 +133,7 @@ export class AdminAppointmentsController {
                 serviceId,
                 clientName,
                 phone,
+                paymentMethod,
 
                 // snake (מה שהמון קוד ישן מצפה)
                 starts_at: startsAt,
@@ -139,6 +141,7 @@ export class AdminAppointmentsController {
                 service_id: serviceId,
                 client_name: clientName,
                 client_phone: phone,
+                payment_method: paymentMethod,
             };
         });
     }
@@ -245,7 +248,7 @@ export class AdminAppointmentsController {
 
         const rows = await this.ds.query(
             `
-            select a.id, a.starts_at, a.ends_at, a.status, a.note,
+            select a.id, a.starts_at, a.ends_at, a.status, a.note, a.payment_method,
                    s.id as service_id, s.name as service_name, s.duration_minutes,
                    c.id as client_id, c.first_name, c.last_name, c.phone
             from appointments a
@@ -269,12 +272,14 @@ export class AdminAppointmentsController {
                 serviceId: a.service_id,
                 clientName,
                 phone: a.phone ?? '',
+                paymentMethod: a.payment_method ?? null,
 
                 starts_at: a.starts_at,
                 ends_at: a.ends_at,
                 service_id: a.service_id,
                 client_name: clientName,
                 client_phone: a.phone ?? '',
+                payment_method: a.payment_method ?? null,
             };
         });
     }

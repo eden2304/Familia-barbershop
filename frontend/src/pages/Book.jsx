@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   ChevronLeft, ChevronRight, AlertCircle, Scissors, Calendar,
-  CheckCircle2, Clock, Clock4, Zap, Tag, Lock
+  CheckCircle2, Clock, Clock4, Zap, Tag, Lock, Banknote, CreditCard, CalendarPlus
 } from "lucide-react";
+import { openAddToCalendar } from "@/lib/calendar-links";
 import { format, addDays, startOfWeek, startOfDay, isBefore, isSameDay, differenceInCalendarDays } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -226,6 +227,8 @@ export default function Book() {
   const [loadingSlots, setLoadingSlots] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState(null); // 'cash' | 'credit'
+  const [bookedInfo, setBookedInfo] = useState(null); // פרטי התור שנקבע – למסך האישור
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -575,10 +578,22 @@ export default function Book() {
       formatted: slot.formatted ?? hhmm,
       memberOnly: Boolean(slot.memberOnly),
     });
+    setPaymentMethod(null);
     setShowForm(true);
     setError(null);
   };
 
+
+  const handleAddBookedToCalendar = () => {
+    if (!bookedInfo?.startAt) return;
+    openAddToCalendar({
+      title: "תספורת בFamilia",
+      startAt: bookedInfo.startAt,
+      endAt: bookedInfo.endAt,
+      description: `התור שלך ב-Familia${bookedInfo.serviceName ? ` עבור ${bookedInfo.serviceName}` : ""}`,
+      fallbackDurationMinutes: bookedInfo.durationMinutes ?? 45,
+    });
+  };
 
   const handleUrgentAppointment = () => {
     const clientName = client ? `${client.first_name} ${client.last_name}`.trim() : "אני";
@@ -635,6 +650,7 @@ export default function Book() {
       const ln = client?.last_name  ?? client?.lastName  ?? "";
       if (!fn || !ln) throw new Error("שם הלקוח חסר");
       if (!selectedService || !selectedTimeSlot || !selectedDate) throw new Error("שירות/תאריך/שעה לא נבחרו");
+      if (!paymentMethod) throw new Error("יש לבחור אמצעי תשלום");
 
       await api.Appointment.create({
         serviceId: selectedService.id,
@@ -646,9 +662,25 @@ export default function Book() {
           phone: normalizePhone(client.phone),
         },
         note: note?.trim() || undefined,
+        paymentMethod,
+      });
+
+      const durationMinutes =
+          selectedService?.duration_minutes ?? selectedService?.durationMinutes ?? 45;
+      const bookedStart = selectedTimeSlot.time instanceof Date
+          ? selectedTimeSlot.time
+          : combineDateTime(selectedDate, selectedTimeSlot.hhmm);
+      setBookedInfo({
+        serviceName: selectedService?.name,
+        price: selectedService?.price,
+        paymentMethod,
+        startAt: bookedStart,
+        endAt: new Date(bookedStart.getTime() + durationMinutes * 60 * 1000),
+        durationMinutes,
       });
 
       setSuccess(true);
+      setPaymentMethod(null);
       setSelectedService(null);
       setSelectedDate(null);
       setSelectedTimeSlot(null);
@@ -728,11 +760,25 @@ export default function Book() {
               <CheckCircle2 className="w-10 h-10 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">התור נקבע בהצלחה!</h2>
-            <div className="text-gray-600 mb-8 space-y-3">
+            <div className="text-gray-600 mb-6 space-y-3">
               <p>נתראה בקרוב בפמיליה</p>
+              {bookedInfo?.paymentMethod && (
+                <p className="text-sm text-gray-700">
+                  אמצעי תשלום: {bookedInfo.paymentMethod === "cash" ? "מזומן" : "כרטיס אשראי"}
+                </p>
+              )}
               <p>לכל שינוי בשעה או במועד התור יש ליצור קשר עם חן ב-WhatsApp או בטלפון.</p>
               <p className="text-sm text-gray-500">החלון ייסגר אוטומטית בעוד 20 שניות.</p>
             </div>
+            {bookedInfo?.startAt && (
+              <Button
+                onClick={handleAddBookedToCalendar}
+                className="mb-3 w-full rounded-full bg-slate-800 px-8 py-3 font-medium text-white hover:bg-slate-700"
+              >
+                <CalendarPlus className="ml-2 h-4 w-4" />
+                הוספה ליומן
+              </Button>
+            )}
             <Button onClick={() => navigate("/")} className="bg-black text-white hover:bg-gray-800 rounded-full px-8 py-3 font-medium w-full">
               חזור למסך הבית
             </Button>
@@ -829,6 +875,37 @@ export default function Book() {
                   </div>
                 </div>
 
+                {/* אמצעי תשלום */}
+                <div className="mb-6">
+                  <p className="mb-2 text-center text-sm font-semibold text-gray-900">בחר/י אמצעי תשלום</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod("cash")}
+                        className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 px-3 py-3 text-sm font-semibold transition-colors ${
+                            paymentMethod === "cash"
+                                ? "border-black bg-black text-white"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+                        }`}
+                    >
+                      <Banknote className="h-5 w-5" />
+                      מזומן
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod("credit")}
+                        className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 px-3 py-3 text-sm font-semibold transition-colors ${
+                            paymentMethod === "credit"
+                                ? "border-black bg-black text-white"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"
+                        }`}
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      כרטיס אשראי
+                    </button>
+                  </div>
+                </div>
+
                 {/* שגיאה (אם יש) */}
                 {error && (
                     <Alert className="mb-4" variant="destructive">
@@ -840,7 +917,7 @@ export default function Book() {
                 {/* כפתורים */}
                 <div className="flex items-center gap-3">
                   <Button
-                      onClick={() => setShowForm(false)}
+                      onClick={() => { setShowForm(false); setPaymentMethod(null); }}
                       type="button"
                       variant="outline"
                       className="rounded-full h-11 px-6 flex-1"
@@ -850,8 +927,8 @@ export default function Book() {
                   <Button
                       type="button"
                       onClick={handleCreate}
-                      disabled={loading}
-                      className="rounded-full h-11 px-6 flex-1 bg-black text-white hover:bg-gray-800"
+                      disabled={loading || !paymentMethod}
+                      className="rounded-full h-11 px-6 flex-1 bg-black text-white hover:bg-gray-800 disabled:opacity-50"
                   >
                     {loading ? "קובע/ת…" : "אישור התור"}
                   </Button>

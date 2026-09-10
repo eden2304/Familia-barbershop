@@ -782,6 +782,25 @@ export default function Admin() { // Removed props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
+  // אם ה-session פג באמצע השימוש (401 מהשרת מנקה את הטוקן) — לא נשארים על
+  // מסך הניהול הריק, אלא חוזרים לדף הבית כדי שהמנהל יתחבר מחדש.
+  useEffect(() => {
+    const handleAuthLoss = () => {
+      if (getStoredAuthToken()) return;
+      setCanAccessAdmin(false);
+      setIsAuthenticated(false);
+      setIsCodeVerified(false);
+      navigate(createPageUrl("Home"));
+    };
+    window.addEventListener('familia-auth-changed', handleAuthLoss);
+    window.addEventListener('familia-session-expired', handleAuthLoss);
+    return () => {
+      window.removeEventListener('familia-auth-changed', handleAuthLoss);
+      window.removeEventListener('familia-session-expired', handleAuthLoss);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
   useEffect(() => {
     if (!Array.isArray(businessHours) || businessHoursDirty) return;
     const rows = Array.from({ length: 7 }, (_, day) => {

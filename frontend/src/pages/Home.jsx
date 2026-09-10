@@ -14,6 +14,7 @@ import api from "@/api/base44Client";
 import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
 import { openAddToCalendar } from "@/lib/calendar-links";
 import { clearStoredClient, readStoredClient, writeStoredClient } from "@/utils/clientStorage";
+import { openLoginEventName } from "@/lib/sessionExpiredNotice";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -109,6 +110,13 @@ export default function Home() {
       window.removeEventListener('familia-client-updated', syncClientFromStorage);
       window.removeEventListener('storage', syncClientFromStorage);
     };
+  }, []);
+
+  // פתיחת חלון ההתחברות ישירות מדף הבית אחרי ניתוק session (הודעת "החיבור פג תוקף")
+  useEffect(() => {
+    const openLogin = () => setShowVerification(true);
+    window.addEventListener(openLoginEventName, openLogin);
+    return () => window.removeEventListener(openLoginEventName, openLogin);
   }, []);
 
   useEffect(() => {

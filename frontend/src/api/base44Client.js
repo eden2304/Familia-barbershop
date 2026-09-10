@@ -1,7 +1,9 @@
 // src/api/base44Client.js
 
 import { setStoredAuthToken, getStoredAuthToken, clearStoredAuth } from '@/utils/authStorage';
+import { clearStoredClient } from '@/utils/clientStorage';
 import { notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
+import { notifySessionExpired } from '@/lib/sessionExpiredNotice';
 
 
 const ENV_BASE =
@@ -48,11 +50,25 @@ function authHeaders(base = {}) {
 function handleUnauthorized(status, path, payload) {
   if (status !== 401) return;
 
-  // נקה רק כאשר זה auth endpoints (או מקרה שאתה באמת רוצה logout)
-  if (String(path || '').startsWith('/auth/')) {
-    clearStoredAuth();
-    try { localStorage.removeItem('familiaClient'); } catch {}
+  // אנונימיים לא שולחים טוקן -> לא מגיעים לכאן. אם יש טוקן שמור והשרת מחזיר 401,
+  // סימן שה-session פג (ה-JWT חי 30 יום) או בוטל. במקרה כזה מנקים את ההתחברות
+  // ומשגרים אירוע גלובלי כדי שה-UI יחזיר את המשתמש לדף הבית עם הודעה מתאימה.
+  const hadToken = Boolean(getStoredAuthToken());
+  const isAuthEndpoint = String(path || '').startsWith('/auth/');
+  if (!hadToken && !isAuthEndpoint) return;
+
+  clearStoredAuth();
+  clearStoredClient({ dispatch: false });
+  try { localStorage.removeItem('familiaClient'); } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('familia-auth-changed'));
+    window.dispatchEvent(new Event('familia-client-updated'));
   }
+
+  // ההודעה "יש להתחבר מחדש" רלוונטית רק כשבאמת הייתה התחברות שנפלה,
+  // ולא בניסיון התחברות ראשוני שנכשל (שם יש הודעת שגיאה משלו).
+  if (hadToken) notifySessionExpired();
 }
 
 

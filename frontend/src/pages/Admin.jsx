@@ -6404,9 +6404,27 @@ const extractRecurringSchedules = (client) => {
                   <DialogTitle>הוספת סרטון חדש</DialogTitle>
                 </DialogHeader>
                 <GalleryForm
-                    onSubmit={async (data) => {
+                    existingCount={galleryImages.length}
+                    onSubmit={async ({ position, ...data }) => {
                       try {
-                        await GalleryImage.create(data);
+                        const created = await GalleryImage.create(data);
+                        const list = Array.isArray(galleryImages) ? galleryImages : [];
+                        const desiredIndex = Math.min(
+                            Math.max((Number(position) || list.length + 1) - 1, 0),
+                            list.length,
+                        );
+                        const ordered = Array.from(list);
+                        ordered.splice(desiredIndex, 0, created || { ...data });
+                        // ממספרים מחדש את כל הסטורים לפי הסדר החדש (0-based)
+                        await Promise.all(
+                            ordered
+                                .map((item, index) =>
+                                    item?.id
+                                        ? GalleryImage.update(item.id, { ...item, orderIndex: index, order_index: index })
+                                        : null,
+                                )
+                                .filter(Boolean),
+                        );
                         loadData();
                         setShowGalleryForm(false);
                       } catch (error) {
@@ -6674,11 +6692,9 @@ function TestimonialForm({ testimonial, onSubmit, onCancel }) {
 }
 
 // Gallery Form Component with File Upload
-function GalleryForm({ onSubmit, onCancel }) {
-  const [formData, setFormData] = useState({
-    alt_text: "",
-    order_index: 0
-  });
+function GalleryForm({ onSubmit, onCancel, existingCount = 0 }) {
+  const totalPositions = Math.max(1, (Number(existingCount) || 0) + 1);
+  const [position, setPosition] = useState(totalPositions); // ברירת מחדל: הסטורי החדש אחרון
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const { showAlert } = useSystemPopup();
@@ -6703,13 +6719,15 @@ function GalleryForm({ onSubmit, onCancel }) {
         ? (fullUrl.startsWith('http') ? fullUrl : `${base}${fullUrl}`)
         : previewAbs;
 
+      const safePosition = Math.min(Math.max(position, 1), totalPositions);
+
       await onSubmit({
         image_url: previewAbs,
         video_url: fullAbs,
         url: fullAbs,
         full_url: fullAbs,
-        alt_text: formData.alt_text,
-        order_index: formData.order_index
+        order_index: safePosition - 1,
+        position: safePosition,
       });
     } catch (error) {
       console.error("Error uploading file:", error);
@@ -6731,22 +6749,29 @@ function GalleryForm({ onSubmit, onCancel }) {
           />
         </AdminField>
 
-        <AdminField label="תיאור">
-          <Input
-              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
-              value={formData.alt_text}
-              onChange={(e) => setFormData({ ...formData, alt_text: e.target.value })}
-              required
-          />
-        </AdminField>
-
-        <AdminField label="סדר תצוגה">
-          <Input
-              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
-              type="number"
-              value={formData.order_index}
-              onChange={(e) => setFormData({ ...formData, order_index: parseInt(e.target.value) })}
-          />
+        <AdminField label="מיקום בתצוגה">
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: totalPositions }, (_, i) => i + 1).map((n) => (
+                <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPosition(n)}
+                    aria-pressed={position === n}
+                    className={`h-11 min-w-[2.75rem] rounded-2xl border px-4 text-base font-semibold transition ${
+                        position === n
+                            ? 'border-black bg-black text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                    }`}
+                >
+                  {n}
+                </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-slate-500">
+            {position >= totalPositions
+                ? 'הסטורי החדש יופיע אחרון'
+                : `הסטורי החדש ייכנס למקום ${position} והשאר יידחפו אחריו`}
+          </p>
         </AdminField>
 
         <AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סטורי"} onCancel={onCancel} submitDisabled={uploading} />

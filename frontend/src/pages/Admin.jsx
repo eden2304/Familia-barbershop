@@ -370,6 +370,8 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  // עולה ב-1 בכל חצות מקומית, כדי שמסך העדכונים "יתאפס" מעצמו גם אם הוא נשאר פתוח.
+  const [midnightTick, setMidnightTick] = useState(0);
   const [showNoBookingUpdatesDialog, setShowNoBookingUpdatesDialog] = useState(false);
   const [adminPhones, setAdminPhones] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
@@ -800,6 +802,18 @@ export default function Admin() { // Removed props
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
+
+  // טיימר שמתעורר בחצות המקומית הבאה ומקדם את midnightTick, כדי שמסך העדכונים
+  // יתאפס אוטומטית בכל יום. ה-dependency על midnightTick גורם לו לתזמן את עצמו מחדש.
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+    const timer = setTimeout(
+      () => setMidnightTick((n) => n + 1),
+      Math.max(1000, nextMidnight.getTime() - now.getTime()),
+    );
+    return () => clearTimeout(timer);
+  }, [midnightTick]);
 
   useEffect(() => {
     if (!Array.isArray(businessHours) || businessHoursDirty) return;
@@ -3505,9 +3519,29 @@ const extractRecurringSchedules = (client) => {
     return fallbackName ? `name:${fallbackName}` : '';
   };
 
+  // מסך העדכונים מתאפס כל יום בחצות -> מציגים רק עדכונים שנוצרו מתחילת היום.
+  // החריג: הרשימה של "לא קבעו תור" נשמרת 3 ימים אחורה.
+  const NO_BOOKING_RETENTION_DAYS = 3;
+  const updatesWindow = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return {
+      startOfToday,
+      noBookingSince: startOfToday - NO_BOOKING_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midnightTick]);
+
+  const getUpdateTime = (item) => {
+    const t = new Date(item?.createdAt || 0).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+
   const regularAdminUpdates = useMemo(
-    () => (adminUpdates || []).filter((item) => !isNoBookingUpdate(item)),
-    [adminUpdates]
+    () => (adminUpdates || []).filter(
+      (item) => !isNoBookingUpdate(item) && getUpdateTime(item) >= updatesWindow.startOfToday,
+    ),
+    [adminUpdates, updatesWindow]
   );
 
   const noBookingAdminUpdates = useMemo(
@@ -3521,11 +3555,14 @@ const extractRecurringSchedules = (client) => {
         const clientKey = getUpdateClientIdentity(item);
 
         if (String(item?.type || '') === 'booking') {
+          // התאמת תור מבטלת "לא קבע תור" ללא תלות בגיל הרשומה — כדי לא להטריד
+          // על לקוח שקבע תור מזמן.
           if (clientKey) clientsWhoBooked.add(clientKey);
           return;
         }
 
         if (!isNoBookingUpdate(item)) return;
+        if (getUpdateTime(item) < updatesWindow.noBookingSince) return;
         if (!clientKey) {
           uniqueNoBooking.push(item);
           return;
@@ -3538,7 +3575,7 @@ const extractRecurringSchedules = (client) => {
 
       return uniqueNoBooking;
     },
-    [adminUpdates]
+    [adminUpdates, updatesWindow]
   );
 
   const getUpdateHeadline = (item) => {
@@ -4546,6 +4583,10 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
+                          <p className="text-xs font-normal leading-5 text-gray-500">
+                            הרשימה מתאפסת אוטומטית בכל יום בחצות ומציגה את עדכוני היום בלבד.
+                            הרשימה של "לא קבעו תור" נשמרת 3 ימים אחורה.
+                          </p>
                           <div className="flex justify-start" dir="ltr">
                             <div className="flex items-center gap-2 flex-wrap">
                               <Button
@@ -4595,7 +4636,8 @@ const extractRecurringSchedules = (client) => {
                                 <DialogHeader>
                                   <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
                                   <DialogDescription>
-                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים.
+                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים, ונשמרת 3 ימים אחורה
+                                    (בשונה משאר העדכונים שמתאפסים כל יום בחצות).
                                   </DialogDescription>
                                 </DialogHeader>
                                 <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">

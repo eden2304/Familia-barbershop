@@ -92,6 +92,19 @@ export class WebauthnService implements OnModuleInit {
             )`,
             `CREATE UNIQUE INDEX IF NOT EXISTS "uq_webauthn_credentials_credential_id" ON "webauthn_credentials" ("credential_id")`,
             `CREATE INDEX IF NOT EXISTS "idx_webauthn_credentials_client_id" ON "webauthn_credentials" ("client_id")`,
+            // refresh_tokens has an entity but no migration. The WhatsApp OTP flow
+            // never sets rememberMe, so it was never exercised in prod; a biometric
+            // session that opts into a refresh token would otherwise hit a missing
+            // table. Create it here defensively so issueSessionForClient is safe.
+            `CREATE TABLE IF NOT EXISTS "refresh_tokens" (
+                "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                "token_hash" character varying NOT NULL,
+                "expires_at" TIMESTAMPTZ NOT NULL,
+                "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "revoked_at" TIMESTAMPTZ,
+                "user_agent" character varying,
+                "client_id" integer REFERENCES "clients"("id") ON DELETE CASCADE
+            )`,
         ];
         for (const sql of statements) {
             try {
@@ -358,7 +371,17 @@ export class WebauthnService implements OnModuleInit {
         cred.lastUsedAt = new Date();
         await this.credRepo.save(cred);
 
-        return this.authService.issueSessionForClient(client, opts.rememberMe, opts.userAgent);
+        try {
+            return await this.authService.issueSessionForClient(client, opts.rememberMe, opts.userAgent);
+        } catch (error) {
+            // The passkey assertion was valid — a failure here is a server-side
+            // problem minting the session (e.g. schema drift). Surface it clearly
+            // instead of a bare 500.
+            this.logger.error(
+                `WebAuthn session issuance failed for client ${client.id}: ${error instanceof Error ? error.stack || error.message : error}`,
+            );
+            throw new ServiceUnavailableException('SESSION_ISSUANCE_FAILED');
+        }
     }
 
     /* --------------------------- device management ------------------------ */

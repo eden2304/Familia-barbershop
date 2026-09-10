@@ -111,10 +111,11 @@ export async function loginWithBiometric({ phone } = {}) {
   const optionsRes = await apiPost('/auth/webauthn/login/options', body);
   const { challengeId, options } = optionsRes;
   const assertion = await startAuthentication({ optionsJSON: options });
+  // No rememberMe — mirror the WhatsApp OTP flow exactly (access token only,
+  // kept in localStorage). Avoids the refresh-token path entirely.
   return apiPost('/auth/webauthn/login/verify', {
     challengeId,
     response: assertion,
-    rememberMe: true,
   });
 }
 

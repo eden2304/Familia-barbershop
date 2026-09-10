@@ -3,10 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Shield, UserPlus, X } from "lucide-react";
+import { Fingerprint, Shield, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
+import {
+  clearBiometricHint,
+  enrollBiometric,
+  getBiometricHint,
+  isBiometricSupported,
+  isUserCancellation,
+  loginWithBiometric,
+  setBiometricHint,
+} from '@/lib/biometricAuth';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const BLOCKED_CLIENT_MESSAGE = "כדי לקבוע תור חדש בFamilia, יש ליצור קשר עם חן בWhatsApp או בטלפון";
@@ -92,6 +101,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [resendTimer, setResendTimer] = useState(0);
   const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const [showBlockedPopup, setShowBlockedPopup] = useState(false);
+
+  // biometric (WebAuthn / passkey)
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricHint, setBiometricHintState] = useState(() => getBiometricHint());
+  const [biometricBusy, setBiometricBusy] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState(null); // { payload, token, phone }
+
   const inputRefs = useRef([]);
   const termsFeedbackTimeoutRef = useRef(null);
 
@@ -138,6 +154,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = "unset"; };
+  }, []);
+
+  // זיהוי תמיכה בהזדהות ביומטרית במכשיר
+  useEffect(() => {
+    let alive = true;
+    isBiometricSupported().then((ok) => { if (alive) setBiometricAvailable(ok); });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => () => {
@@ -309,10 +332,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         roles: Array.isArray(res?.roles) ? res.roles : undefined,
       };
 
-      localStorage.setItem("familiaClient", JSON.stringify(payload));
-      if (res.token) setStoredAuthToken(res.token);
-      notifyAuthChange();
-      onVerify(payload);
+      completeAuth(payload, res.token);
     }
 
     try {
@@ -430,10 +450,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           is_member: memberFlag,
           roles: Array.isArray(res?.roles) ? res.roles : undefined,
         };
-        localStorage.setItem("familiaClient", JSON.stringify(payload));
-        if (res.token) setStoredAuthToken(res.token);
-        notifyAuthChange();
-        onVerify(payload);
+        completeAuth(payload, res.token);
       } else {
         setError("שגיאה ביצירת המשתמש. נסה שוב.");
       }
@@ -455,6 +472,105 @@ export default function VerificationModal({ onVerify, onCancel }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // סיום התחברות: שמירה מקומית + הצעת הפעלת כניסה ביומטרית (אם רלוונטי)
+  const completeAuth = (payload, token) => {
+    localStorage.setItem("familiaClient", JSON.stringify(payload));
+    if (token) setStoredAuthToken(token);
+    notifyAuthChange();
+
+    const payloadPhone = normalizePhone(payload?.phone || "");
+    const storedHint = getBiometricHint();
+    const alreadyEnrolled =
+      storedHint && payloadPhone && normalizePhone(storedHint) === payloadPhone;
+
+    if (biometricAvailable && token && !alreadyEnrolled) {
+      setPendingAuth({ payload, token, phone: payloadPhone });
+      setError("");
+      setInfoMessage("");
+      setLoading(false);
+      setView("biometricEnroll");
+      return;
+    }
+    onVerify(payload);
+  };
+
+  const finalizeBiometricSession = (res, fallbackPhone) => {
+    const c = res?.client || res?.user;
+    if (!res?.ok || !c) throw new Error("BIOMETRIC_FAILED");
+    const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
+    const adminFlag = Boolean(res?.roles?.includes("admin") || c.isAdmin || c.is_admin);
+    const payload = {
+      ...c,
+      phone: (c.phone || fallbackPhone || "").toString(),
+      firstName: c.firstName || c.first_name || "",
+      lastName: c.lastName || c.last_name || "",
+      isAdmin: adminFlag,
+      is_admin: adminFlag,
+      isMember: memberFlag,
+      is_member: memberFlag,
+      roles: Array.isArray(res?.roles) ? res.roles : undefined,
+    };
+    localStorage.setItem("familiaClient", JSON.stringify(payload));
+    if (res.token) setStoredAuthToken(res.token);
+    setBiometricHint(payload.phone);
+    setBiometricHintState(payload.phone);
+    notifyAuthChange();
+    onVerify(payload);
+  };
+
+  const handleBiometricLogin = async () => {
+    if (biometricBusy || loading) return;
+    setBiometricBusy(true);
+    setError("");
+    setInfoMessage("");
+    setRateLimitTimer(0);
+    try {
+      const hintPhone = biometricHint
+        ? normalizePhone(biometricHint)
+        : (isValidIsraeliMobilePhone(phone) ? normalizePhone(phone) : "");
+      const res = await loginWithBiometric(hintPhone ? { phone: hintPhone } : {});
+      finalizeBiometricSession(res, hintPhone);
+    } catch (e) {
+      if (isUserCancellation(e)) {
+        // המשתמש ביטל את בקשת הזיהוי — לא מציגים שגיאה
+      } else if (e?.status === 401 || e?.status === 404) {
+        clearBiometricHint();
+        setBiometricHintState("");
+        setError("לא נמצאה כניסה ביומטרית במכשיר הזה. התחברו עם קוד פעם אחת כדי להפעיל.");
+      } else if (e?.status === 429) {
+        handleApiError(e, "בוצעו יותר מדי נסיונות. נסו שוב מאוחר יותר.");
+      } else {
+        setError("ההתחברות הביומטרית נכשלה. נסו שוב או המשיכו עם קוד.");
+      }
+    } finally {
+      setBiometricBusy(false);
+    }
+  };
+
+  const handleEnrollBiometric = async () => {
+    if (!pendingAuth || biometricBusy) return;
+    setBiometricBusy(true);
+    setError("");
+    try {
+      await enrollBiometric({ token: pendingAuth.token, phone: pendingAuth.phone });
+      setBiometricHint(pendingAuth.phone);
+      setBiometricHintState(pendingAuth.phone);
+      onVerify(pendingAuth.payload);
+    } catch (e) {
+      if (isUserCancellation(e)) {
+        setBiometricBusy(false);
+        return; // נשארים במסך כדי לאפשר נסיון נוסף או דילוג
+      }
+      // הפעלה נכשלה — לא חוסמים את הכניסה
+      onVerify(pendingAuth.payload);
+    }
+  };
+
+  const skipEnroll = () => {
+    if (!pendingAuth) return;
+    onVerify(pendingAuth.payload);
   };
 
   // קלטי קוד
@@ -511,25 +627,77 @@ export default function VerificationModal({ onVerify, onCancel }) {
   // === UI ===
   const renderContent = () => {
     switch (view) {
-      case "loginPhone":
+      case "loginPhone": {
+        const biometricLead = biometricAvailable && Boolean(biometricHint);
+        const biometricButton = biometricAvailable && (
+            <Button
+                type="button"
+                onClick={handleBiometricLogin}
+                disabled={biometricBusy || loading}
+                className={
+                  biometricLead
+                    ? "w-full bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2"
+                    : "w-full rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2 bg-white text-black border-2 border-black hover:bg-gray-50"
+                }
+            >
+              <Fingerprint className="h-5 w-5" />
+              {biometricBusy
+                ? "מזהה..."
+                : biometricLead
+                  ? "התחברות עם טביעת אצבע / זיהוי פנים"
+                  : "התחברות מהירה עם טביעת אצבע / פנים"}
+            </Button>
+        );
+        const divider = (label) => (
+            <div className="my-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-gray-200" />
+              <span className="text-xs text-gray-400">{label}</span>
+              <div className="h-px flex-1 bg-gray-200" />
+            </div>
+        );
+
         return (
-            <form onSubmit={handlePhoneSubmit} className="text-center">
+            <div className="text-center">
               <h3 className="text-xl font-bold text-gray-900 mb-2">התחברות</h3>
-              <p className="text-gray-600 mb-6">הזן את מספר הטלפון שלך</p>
-              <Input
-                  type="tel"
-                  placeholder="05X-XXXXXXX"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                  className="text-center bg-gray-50 border-gray-200 rounded-xl h-12 text-lg"
-              />
-              <Button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full mt-4 bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg"
-              >
-                {loading ? "בודק..." : "קבלת קוד"}
-              </Button>
+
+              {biometricLead && (
+                  <>
+                    <p className="text-gray-600 mb-5">
+                      התחברות מהירה עם טביעת אצבע או זיהוי פנים של המכשיר
+                    </p>
+                    {biometricButton}
+                    {divider("או עם מספר טלפון")}
+                  </>
+              )}
+
+              {!biometricLead && (
+                  <p className="text-gray-600 mb-6">הזן את מספר הטלפון שלך</p>
+              )}
+
+              <form onSubmit={handlePhoneSubmit}>
+                <Input
+                    type="tel"
+                    placeholder="05X-XXXXXXX"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                    className="text-center bg-gray-50 border-gray-200 rounded-xl h-12 text-lg"
+                />
+                <Button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full mt-4 bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg"
+                >
+                  {loading ? "בודק..." : "קבלת קוד"}
+                </Button>
+              </form>
+
+              {biometricAvailable && !biometricLead && (
+                  <>
+                    {divider("או")}
+                    {biometricButton}
+                  </>
+              )}
+
               <Button
                   variant="link"
                   onClick={() => {
@@ -541,7 +709,38 @@ export default function VerificationModal({ onVerify, onCancel }) {
               >
                 לקוח חדש? לחץ להרשמה
               </Button>
-            </form>
+            </div>
+        );
+      }
+
+      case "biometricEnroll":
+        return (
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                <Fingerprint className="h-7 w-7 text-gray-700" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">כניסה מהירה בפעם הבאה</h3>
+              <p className="text-gray-600 text-sm mb-6">
+                אפשר להתחבר בפעמים הבאות עם טביעת אצבע או זיהוי פנים של המכשיר,
+                בלי להמתין לקוד ב‑WhatsApp.
+              </p>
+              <Button
+                  onClick={handleEnrollBiometric}
+                  disabled={biometricBusy}
+                  className="w-full bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2"
+              >
+                <Fingerprint className="h-5 w-5" />
+                {biometricBusy ? "מפעיל..." : "הפעלה"}
+              </Button>
+              <Button
+                  variant="link"
+                  onClick={skipEnroll}
+                  disabled={biometricBusy}
+                  className="mt-3 text-gray-500"
+              >
+                אולי בפעם הבאה
+              </Button>
+            </div>
         );
 
       case "loginCode":

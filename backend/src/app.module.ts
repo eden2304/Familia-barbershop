@@ -22,6 +22,7 @@ import { ContentModule } from './modules/content/content.module';
 import { SeedModule } from './seeds/seed.module';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { AuthModule } from './modules/auth/auth.module';
+import { WebauthnModule } from './modules/webauthn/webauthn.module';
 import { ClientsModule } from './clients/clients.module';
 import { WaitingListModule } from './modules/waiting-list/waiting-list.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
@@ -56,6 +57,7 @@ import { AdminPushModule } from './modules/push/admin-push.module';
         ContentModule,
         SeedModule,
         AuthModule,
+        WebauthnModule,
         ClientsModule,
         WaitingListModule,
         RateLimitModule,

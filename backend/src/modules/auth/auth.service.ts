@@ -373,6 +373,20 @@ export class AuthService {
         return this.buildAuthResult(client, body.rememberMe, body.userAgent);
     }
 
+    // Public entry point for alternative auth factors (e.g. WebAuthn / passkeys)
+    // that have already proven the client's identity by other means and just need
+    // a session minted with the exact same shape as the WhatsApp OTP flow.
+    async issueSessionForClient(client: Client, rememberMe?: boolean, userAgent?: string): Promise<AuthTokens> {
+        if (client.is_blocked) throw new ForbiddenException('CLIENT_BLOCKED');
+        return this.buildAuthResult(client, rememberMe, userAgent);
+    }
+
+    async findClientByPhone(phone: string): Promise<Client | null> {
+        const variants = phoneVariants(phone);
+        if (variants.length === 0) return null;
+        return this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
+    }
+
     private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string, logUpdates = true): Promise<AuthTokens> {
         const payload = this.buildClientPayload(client);
         const roles = await this.resolveRolesForPhone(payload.phone);

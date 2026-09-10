@@ -53,7 +53,6 @@ import {
   Upload,
   Users,
   Package,
-  LogOut,
   Menu,
   X,
   BarChart3,
@@ -1009,12 +1008,6 @@ export default function Admin() { // Removed props
   const serviceById = React.useCallback((id) => {
     return services.find((s) => s.id === id) || null;
   }, [services]);
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setAdminCode("");
-    navigate(createPageUrl("Home"));
-  };
 
   // Helper: try .list/.all/.getAll/... so it works with your entities layer
   const listAny = async (entity, order) => {
@@ -3144,7 +3137,7 @@ const extractRecurringSchedules = (client) => {
       setClientDetailsAppointmentsError(null);
       const phoneParam = encodeURIComponent(normalizedPhone);
       const res = clientId
-          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=true`)
+          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=false`)
           : await api.get(`/clients/me/appointments?phone=${phoneParam}`);
       const rows = Array.isArray(res) ? res : (res?.data ?? []);
       const normalizedRows = normalizeAppointmentRows(rows || []);
@@ -3176,6 +3169,19 @@ const extractRecurringSchedules = (client) => {
   const clientDetailsUpcomingCount = React.useMemo(() => {
     return filterUpcomingAppointments(clientDetailsAppointmentsAll).length;
   }, [clientDetailsAppointmentsAll, filterUpcomingAppointments]);
+
+  // התור האחרון של הלקוח (עבר, לא מבוטל) — לתצוגה בפופאפ פרטי הלקוח.
+  const clientDetailsLastAppointment = React.useMemo(() => {
+    if (!clientDetailsModal.client) return null;
+    const nowMs = Date.now();
+    return (clientDetailsAppointmentsAll || [])
+        .filter((apt) => {
+          if (!apt || apt.status === 'canceled' || !apt.starts_at) return false;
+          const t = new Date(apt.starts_at).getTime();
+          return Number.isFinite(t) && t <= nowMs;
+        })
+        .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())[0] || null;
+  }, [clientDetailsModal.client, clientDetailsAppointmentsAll]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -3711,17 +3717,6 @@ const extractRecurringSchedules = (client) => {
                 </Button>
             ))}
           </nav>
-          <div className="p-4 mt-auto border-t">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleLogout}
-                className="w-full justify-start text-gray-500 hover:text-gray-700"
-            >
-              <LogOut className="w-4 h-4 ml-2" />
-              התנתקות
-            </Button>
-          </div>
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -5815,6 +5810,31 @@ const extractRecurringSchedules = (client) => {
                             <Repeat className="w-3 h-3 text-gray-400" />
                             <span>אין תור קבוע</span>
                           </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-gray-800">התור האחרון</h4>
+                      {clientDetailsAppointmentsLoading ? (
+                          <p className="text-sm text-gray-500">טוען…</p>
+                      ) : clientDetailsLastAppointment ? (() => {
+                        const apt = clientDetailsLastAppointment;
+                        const service = serviceById(apt.service_id);
+                        const serviceLabel = service?.name ?? service?.title ?? 'ללא שירות';
+                        let dateLabel = apt.starts_at || '';
+                        try {
+                          dateLabel = format(new Date(apt.starts_at), 'dd/MM/yyyy · HH:mm', { locale: he });
+                        } catch (_) {}
+                        return (
+                            <div className="rounded-2xl border border-gray-200 bg-white/90 p-3 sm:p-4">
+                              <p className="text-base font-semibold text-gray-900">{dateLabel}</p>
+                              <p className="text-sm text-gray-600">{serviceLabel}</p>
+                              {apt.note && (
+                                  <p className="text-xs text-gray-500">הערה: {apt.note}</p>
+                              )}
+                            </div>
+                        );
+                      })() : (
+                          <p className="text-sm text-gray-500">אין תור קודם.</p>
                       )}
                     </div>
                     <div className="space-y-4">

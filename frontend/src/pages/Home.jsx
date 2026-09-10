@@ -14,6 +14,7 @@ import api from "@/api/base44Client";
 import { findNextFutureRecurringAppointment, getAppointmentDate } from "@/lib/recurring-indicators";
 import { openAddToCalendar } from "@/lib/calendar-links";
 import { clearStoredClient, readStoredClient, writeStoredClient } from "@/utils/clientStorage";
+import { openLoginEventName } from "@/lib/sessionExpiredNotice";
 
 const WhatsAppIcon = ({ className = "w-8 h-8" }) => (
   <svg
@@ -109,6 +110,13 @@ export default function Home() {
       window.removeEventListener('familia-client-updated', syncClientFromStorage);
       window.removeEventListener('storage', syncClientFromStorage);
     };
+  }, []);
+
+  // פתיחת חלון ההתחברות ישירות מדף הבית אחרי ניתוק session (הודעת "החיבור פג תוקף")
+  useEffect(() => {
+    const openLogin = () => setShowVerification(true);
+    window.addEventListener(openLoginEventName, openLogin);
+    return () => window.removeEventListener(openLoginEventName, openLogin);
   }, []);
 
   useEffect(() => {
@@ -552,7 +560,7 @@ export default function Home() {
                   <h3 className="text-lg font-bold text-gray-800 mb-6">הישארו מעודכנים</h3>
                   <div className="flex justify-center items-center gap-6 sm:gap-7">
                     <a
-                        href="https://www.instagram.com/familia.barber8?igsh=d3hpdDFkNTZ5dHRw"
+                        href="https://www.instagram.com/familia_.barbershop_"
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label="Instagram"

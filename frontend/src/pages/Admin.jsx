@@ -53,7 +53,6 @@ import {
   Upload,
   Users,
   Package,
-  LogOut,
   Menu,
   X,
   BarChart3,
@@ -370,6 +369,8 @@ export default function Admin() { // Removed props
 
   const [appointments, setAppointments] = useState([]);
   const [adminUpdates, setAdminUpdates] = useState([]);
+  // עולה ב-1 בכל חצות מקומית, כדי שמסך העדכונים "יתאפס" מעצמו גם אם הוא נשאר פתוח.
+  const [midnightTick, setMidnightTick] = useState(0);
   const [showNoBookingUpdatesDialog, setShowNoBookingUpdatesDialog] = useState(false);
   const [adminPhones, setAdminPhones] = useState([]);
   const [isRefreshingUpdates, setIsRefreshingUpdates] = useState(false);
@@ -782,6 +783,37 @@ export default function Admin() { // Removed props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
+  // אם ה-session פג באמצע השימוש (401 מהשרת מנקה את הטוקן) — לא נשארים על
+  // מסך הניהול הריק, אלא חוזרים לדף הבית כדי שהמנהל יתחבר מחדש.
+  useEffect(() => {
+    const handleAuthLoss = () => {
+      if (getStoredAuthToken()) return;
+      setCanAccessAdmin(false);
+      setIsAuthenticated(false);
+      setIsCodeVerified(false);
+      navigate(createPageUrl("Home"));
+    };
+    window.addEventListener('familia-auth-changed', handleAuthLoss);
+    window.addEventListener('familia-session-expired', handleAuthLoss);
+    return () => {
+      window.removeEventListener('familia-auth-changed', handleAuthLoss);
+      window.removeEventListener('familia-session-expired', handleAuthLoss);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  // טיימר שמתעורר בחצות המקומית הבאה ומקדם את midnightTick, כדי שמסך העדכונים
+  // יתאפס אוטומטית בכל יום. ה-dependency על midnightTick גורם לו לתזמן את עצמו מחדש.
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+    const timer = setTimeout(
+      () => setMidnightTick((n) => n + 1),
+      Math.max(1000, nextMidnight.getTime() - now.getTime()),
+    );
+    return () => clearTimeout(timer);
+  }, [midnightTick]);
+
   useEffect(() => {
     if (!Array.isArray(businessHours) || businessHoursDirty) return;
     const rows = Array.from({ length: 7 }, (_, day) => {
@@ -976,12 +1008,6 @@ export default function Admin() { // Removed props
   const serviceById = React.useCallback((id) => {
     return services.find((s) => s.id === id) || null;
   }, [services]);
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setAdminCode("");
-    navigate(createPageUrl("Home"));
-  };
 
   // Helper: try .list/.all/.getAll/... so it works with your entities layer
   const listAny = async (entity, order) => {
@@ -3111,7 +3137,7 @@ const extractRecurringSchedules = (client) => {
       setClientDetailsAppointmentsError(null);
       const phoneParam = encodeURIComponent(normalizedPhone);
       const res = clientId
-          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=true`)
+          ? await api.get(`/admin/clients/${encodeURIComponent(clientId)}/appointments?future=false`)
           : await api.get(`/clients/me/appointments?phone=${phoneParam}`);
       const rows = Array.isArray(res) ? res : (res?.data ?? []);
       const normalizedRows = normalizeAppointmentRows(rows || []);
@@ -3143,6 +3169,19 @@ const extractRecurringSchedules = (client) => {
   const clientDetailsUpcomingCount = React.useMemo(() => {
     return filterUpcomingAppointments(clientDetailsAppointmentsAll).length;
   }, [clientDetailsAppointmentsAll, filterUpcomingAppointments]);
+
+  // התור האחרון של הלקוח (עבר, לא מבוטל) — לתצוגה בפופאפ פרטי הלקוח.
+  const clientDetailsLastAppointment = React.useMemo(() => {
+    if (!clientDetailsModal.client) return null;
+    const nowMs = Date.now();
+    return (clientDetailsAppointmentsAll || [])
+        .filter((apt) => {
+          if (!apt || apt.status === 'canceled' || !apt.starts_at) return false;
+          const t = new Date(apt.starts_at).getTime();
+          return Number.isFinite(t) && t <= nowMs;
+        })
+        .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())[0] || null;
+  }, [clientDetailsModal.client, clientDetailsAppointmentsAll]);
 
   const clientDetailsRecurringMeta = React.useMemo(() => {
     if (!clientDetailsModal.client) return [];
@@ -3486,9 +3525,29 @@ const extractRecurringSchedules = (client) => {
     return fallbackName ? `name:${fallbackName}` : '';
   };
 
+  // מסך העדכונים מתאפס כל יום בחצות -> מציגים רק עדכונים שנוצרו מתחילת היום.
+  // החריג: הרשימה של "לא קבעו תור" נשמרת 3 ימים אחורה.
+  const NO_BOOKING_RETENTION_DAYS = 3;
+  const updatesWindow = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return {
+      startOfToday,
+      noBookingSince: startOfToday - NO_BOOKING_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midnightTick]);
+
+  const getUpdateTime = (item) => {
+    const t = new Date(item?.createdAt || 0).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+
   const regularAdminUpdates = useMemo(
-    () => (adminUpdates || []).filter((item) => !isNoBookingUpdate(item)),
-    [adminUpdates]
+    () => (adminUpdates || []).filter(
+      (item) => !isNoBookingUpdate(item) && getUpdateTime(item) >= updatesWindow.startOfToday,
+    ),
+    [adminUpdates, updatesWindow]
   );
 
   const noBookingAdminUpdates = useMemo(
@@ -3502,11 +3561,14 @@ const extractRecurringSchedules = (client) => {
         const clientKey = getUpdateClientIdentity(item);
 
         if (String(item?.type || '') === 'booking') {
+          // התאמת תור מבטלת "לא קבע תור" ללא תלות בגיל הרשומה — כדי לא להטריד
+          // על לקוח שקבע תור מזמן.
           if (clientKey) clientsWhoBooked.add(clientKey);
           return;
         }
 
         if (!isNoBookingUpdate(item)) return;
+        if (getUpdateTime(item) < updatesWindow.noBookingSince) return;
         if (!clientKey) {
           uniqueNoBooking.push(item);
           return;
@@ -3519,7 +3581,7 @@ const extractRecurringSchedules = (client) => {
 
       return uniqueNoBooking;
     },
-    [adminUpdates]
+    [adminUpdates, updatesWindow]
   );
 
   const getUpdateHeadline = (item) => {
@@ -3655,17 +3717,6 @@ const extractRecurringSchedules = (client) => {
                 </Button>
             ))}
           </nav>
-          <div className="p-4 mt-auto border-t">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleLogout}
-                className="w-full justify-start text-gray-500 hover:text-gray-700"
-            >
-              <LogOut className="w-4 h-4 ml-2" />
-              התנתקות
-            </Button>
-          </div>
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -4527,6 +4578,10 @@ const extractRecurringSchedules = (client) => {
                       <Card className="bg-white rounded-2xl shadow-sm">
                         <CardHeader className="space-y-3">
                           <CardTitle>עדכוני לקוחות</CardTitle>
+                          <p className="text-xs font-normal leading-5 text-gray-500">
+                            הרשימה מתאפסת אוטומטית בכל יום בחצות ומציגה את עדכוני היום בלבד.
+                            הרשימה של "לא קבעו תור" נשמרת 3 ימים אחורה.
+                          </p>
                           <div className="flex justify-start" dir="ltr">
                             <div className="flex items-center gap-2 flex-wrap">
                               <Button
@@ -4576,7 +4631,8 @@ const extractRecurringSchedules = (client) => {
                                 <DialogHeader>
                                   <DialogTitle>לקוחות שנכנסו ולא קבעו תור</DialogTitle>
                                   <DialogDescription>
-                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים.
+                                    הרשימה מתעדכנת אוטומטית בכל כניסה למסך העדכונים, ונשמרת 3 ימים אחורה
+                                    (בשונה משאר העדכונים שמתאפסים כל יום בחצות).
                                   </DialogDescription>
                                 </DialogHeader>
                                 <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
@@ -5756,6 +5812,31 @@ const extractRecurringSchedules = (client) => {
                           </div>
                       )}
                     </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-gray-800">התור האחרון</h4>
+                      {clientDetailsAppointmentsLoading ? (
+                          <p className="text-sm text-gray-500">טוען…</p>
+                      ) : clientDetailsLastAppointment ? (() => {
+                        const apt = clientDetailsLastAppointment;
+                        const service = serviceById(apt.service_id);
+                        const serviceLabel = service?.name ?? service?.title ?? 'ללא שירות';
+                        let dateLabel = apt.starts_at || '';
+                        try {
+                          dateLabel = format(new Date(apt.starts_at), 'dd/MM/yyyy · HH:mm', { locale: he });
+                        } catch (_) {}
+                        return (
+                            <div className="rounded-2xl border border-gray-200 bg-white/90 p-3 sm:p-4">
+                              <p className="text-base font-semibold text-gray-900">{dateLabel}</p>
+                              <p className="text-sm text-gray-600">{serviceLabel}</p>
+                              {apt.note && (
+                                  <p className="text-xs text-gray-500">הערה: {apt.note}</p>
+                              )}
+                            </div>
+                        );
+                      })() : (
+                          <p className="text-sm text-gray-500">אין תור קודם.</p>
+                      )}
+                    </div>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-semibold text-gray-800">התורים הקרובים</h4>
@@ -6323,9 +6404,27 @@ const extractRecurringSchedules = (client) => {
                   <DialogTitle>הוספת סרטון חדש</DialogTitle>
                 </DialogHeader>
                 <GalleryForm
-                    onSubmit={async (data) => {
+                    existingCount={galleryImages.length}
+                    onSubmit={async ({ position, ...data }) => {
                       try {
-                        await GalleryImage.create(data);
+                        const created = await GalleryImage.create(data);
+                        const list = Array.isArray(galleryImages) ? galleryImages : [];
+                        const desiredIndex = Math.min(
+                            Math.max((Number(position) || list.length + 1) - 1, 0),
+                            list.length,
+                        );
+                        const ordered = Array.from(list);
+                        ordered.splice(desiredIndex, 0, created || { ...data });
+                        // ממספרים מחדש את כל הסטורים לפי הסדר החדש (0-based)
+                        await Promise.all(
+                            ordered
+                                .map((item, index) =>
+                                    item?.id
+                                        ? GalleryImage.update(item.id, { ...item, orderIndex: index, order_index: index })
+                                        : null,
+                                )
+                                .filter(Boolean),
+                        );
                         loadData();
                         setShowGalleryForm(false);
                       } catch (error) {
@@ -6593,11 +6692,9 @@ function TestimonialForm({ testimonial, onSubmit, onCancel }) {
 }
 
 // Gallery Form Component with File Upload
-function GalleryForm({ onSubmit, onCancel }) {
-  const [formData, setFormData] = useState({
-    alt_text: "",
-    order_index: 0
-  });
+function GalleryForm({ onSubmit, onCancel, existingCount = 0 }) {
+  const totalPositions = Math.max(1, (Number(existingCount) || 0) + 1);
+  const [position, setPosition] = useState(totalPositions); // ברירת מחדל: הסטורי החדש אחרון
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const { showAlert } = useSystemPopup();
@@ -6622,13 +6719,15 @@ function GalleryForm({ onSubmit, onCancel }) {
         ? (fullUrl.startsWith('http') ? fullUrl : `${base}${fullUrl}`)
         : previewAbs;
 
+      const safePosition = Math.min(Math.max(position, 1), totalPositions);
+
       await onSubmit({
         image_url: previewAbs,
         video_url: fullAbs,
         url: fullAbs,
         full_url: fullAbs,
-        alt_text: formData.alt_text,
-        order_index: formData.order_index
+        order_index: safePosition - 1,
+        position: safePosition,
       });
     } catch (error) {
       console.error("Error uploading file:", error);
@@ -6650,22 +6749,29 @@ function GalleryForm({ onSubmit, onCancel }) {
           />
         </AdminField>
 
-        <AdminField label="תיאור">
-          <Input
-              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
-              value={formData.alt_text}
-              onChange={(e) => setFormData({ ...formData, alt_text: e.target.value })}
-              required
-          />
-        </AdminField>
-
-        <AdminField label="סדר תצוגה">
-          <Input
-              className="h-11 rounded-2xl border-slate-200 bg-white text-base"
-              type="number"
-              value={formData.order_index}
-              onChange={(e) => setFormData({ ...formData, order_index: parseInt(e.target.value) })}
-          />
+        <AdminField label="מיקום בתצוגה">
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: totalPositions }, (_, i) => i + 1).map((n) => (
+                <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPosition(n)}
+                    aria-pressed={position === n}
+                    className={`h-11 min-w-[2.75rem] rounded-2xl border px-4 text-base font-semibold transition ${
+                        position === n
+                            ? 'border-black bg-black text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                    }`}
+                >
+                  {n}
+                </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-slate-500">
+            {position >= totalPositions
+                ? 'הסטורי החדש יופיע אחרון'
+                : `הסטורי החדש ייכנס למקום ${position} והשאר יידחפו אחריו`}
+          </p>
         </AdminField>
 
         <AdminFormActions submitLabel={uploading ? "מעלה..." : "הוסף סטורי"} onCancel={onCancel} submitDisabled={uploading} />

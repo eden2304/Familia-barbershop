@@ -4,10 +4,10 @@ export class CreateWebauthnCredentials1745000000000 implements MigrationInterfac
     name = 'CreateWebauthnCredentials1745000000000';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+        // gen_random_uuid() is built into Postgres 13+ — no extension needed.
         await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "webauthn_credentials" (
-                "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 "client_id" integer NOT NULL,
                 "credential_id" text NOT NULL,
                 "public_key" text NOT NULL,

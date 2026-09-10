@@ -541,6 +541,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
         setError("לא נמצאה כניסה ביומטרית במכשיר הזה. התחברו עם קוד פעם אחת כדי להפעיל.");
       } else if (e?.status === 429) {
         handleApiError(e, "בוצעו יותר מדי נסיונות. נסו שוב מאוחר יותר.");
+      } else if (e?.status === 503) {
+        setError("שירות ההתחברות הביומטרית אינו זמין כרגע. התחברו עם קוד.");
       } else {
         setError("ההתחברות הביומטרית נכשלה. נסו שוב או המשיכו עם קוד.");
       }
@@ -559,12 +561,16 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setBiometricHintState(pendingAuth.phone);
       onVerify(pendingAuth.payload);
     } catch (e) {
+      setBiometricBusy(false);
       if (isUserCancellation(e)) {
-        setBiometricBusy(false);
         return; // נשארים במסך כדי לאפשר נסיון נוסף או דילוג
       }
-      // הפעלה נכשלה — לא חוסמים את הכניסה
-      onVerify(pendingAuth.payload);
+      // ההפעלה נכשלה בצד השרת — מיידעים ומשאירים את המשתמש להחליט (הכניסה עצמה תקינה)
+      setError(
+        e?.status === 503
+          ? "לא ניתן להפעיל כרגע כניסה מהירה. אפשר להמשיך ולהתחבר עם קוד בפעם הבאה."
+          : "הפעלת הכניסה המהירה נכשלה. אפשר לנסות שוב או להמשיך.",
+      );
     }
   };
 
@@ -628,49 +634,37 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const renderContent = () => {
     switch (view) {
       case "loginPhone": {
-        const biometricLead = biometricAvailable && Boolean(biometricHint);
-        const biometricButton = biometricAvailable && (
-            <Button
-                type="button"
-                onClick={handleBiometricLogin}
-                disabled={biometricBusy || loading}
-                className={
-                  biometricLead
-                    ? "w-full bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2"
-                    : "w-full rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2 bg-white text-black border-2 border-black hover:bg-gray-50"
-                }
-            >
-              <Fingerprint className="h-5 w-5" />
-              {biometricBusy
-                ? "מזהה..."
-                : biometricLead
-                  ? "התחברות עם טביעת אצבע / זיהוי פנים"
-                  : "התחברות מהירה עם טביעת אצבע / פנים"}
-            </Button>
-        );
-        const divider = (label) => (
-            <div className="my-4 flex items-center gap-3">
-              <div className="h-px flex-1 bg-gray-200" />
-              <span className="text-xs text-gray-400">{label}</span>
-              <div className="h-px flex-1 bg-gray-200" />
-            </div>
-        );
+        // הכפתור הביומטרי מופיע רק אם המכשיר הזה כבר הגדיר כניסה ביומטרית
+        // (אחרי התחברות ראשונית עם קוד). לפני זה אין passkey ולכן אין מה להציג.
+        const showBiometric = biometricAvailable && Boolean(biometricHint);
 
         return (
             <div className="text-center">
               <h3 className="text-xl font-bold text-gray-900 mb-2">התחברות</h3>
 
-              {biometricLead && (
+              {showBiometric && (
                   <>
                     <p className="text-gray-600 mb-5">
                       התחברות מהירה עם טביעת אצבע או זיהוי פנים של המכשיר
                     </p>
-                    {biometricButton}
-                    {divider("או עם מספר טלפון")}
+                    <Button
+                        type="button"
+                        onClick={handleBiometricLogin}
+                        disabled={biometricBusy || loading}
+                        className="w-full bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg flex items-center justify-center gap-2"
+                    >
+                      <Fingerprint className="h-5 w-5" />
+                      {biometricBusy ? "מזהה..." : "התחברות עם טביעת אצבע / זיהוי פנים"}
+                    </Button>
+                    <div className="my-4 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-gray-200" />
+                      <span className="text-xs text-gray-400">או עם מספר טלפון</span>
+                      <div className="h-px flex-1 bg-gray-200" />
+                    </div>
                   </>
               )}
 
-              {!biometricLead && (
+              {!showBiometric && (
                   <p className="text-gray-600 mb-6">הזן את מספר הטלפון שלך</p>
               )}
 
@@ -690,13 +684,6 @@ export default function VerificationModal({ onVerify, onCancel }) {
                   {loading ? "בודק..." : "קבלת קוד"}
                 </Button>
               </form>
-
-              {biometricAvailable && !biometricLead && (
-                  <>
-                    {divider("או")}
-                    {biometricButton}
-                  </>
-              )}
 
               <Button
                   variant="link"

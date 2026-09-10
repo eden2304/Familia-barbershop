@@ -4,6 +4,7 @@ import {
     Logger,
     NotFoundException,
     OnModuleInit,
+    ServiceUnavailableException,
     UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -73,31 +74,44 @@ export class WebauthnService implements OnModuleInit {
     }
 
     // Safety net so a deploy works even if the migration has not run yet.
+    // Each statement runs in its own try/catch: gen_random_uuid() is core in
+    // Postgres 13+ (no extension, no superuser), and a failing index must not
+    // stop the table from being created.
     async onModuleInit() {
-        try {
-            await this.ds.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
-            await this.ds.query(`
-                CREATE TABLE IF NOT EXISTS "webauthn_credentials" (
-                    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                    "client_id" integer NOT NULL,
-                    "credential_id" text NOT NULL,
-                    "public_key" text NOT NULL,
-                    "counter" bigint NOT NULL DEFAULT 0,
-                    "transports" character varying(128),
-                    "device_label" character varying(120),
-                    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    "last_used_at" TIMESTAMPTZ
-                )
-            `);
-            await this.ds.query(
-                `CREATE UNIQUE INDEX IF NOT EXISTS "uq_webauthn_credentials_credential_id" ON "webauthn_credentials" ("credential_id")`,
-            );
-            await this.ds.query(
-                `CREATE INDEX IF NOT EXISTS "idx_webauthn_credentials_client_id" ON "webauthn_credentials" ("client_id")`,
-            );
-        } catch (error) {
-            this.logger.warn(
-                `Failed ensuring webauthn_credentials table: ${error instanceof Error ? error.message : error}`,
+        const statements = [
+            `CREATE TABLE IF NOT EXISTS "webauthn_credentials" (
+                "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                "client_id" integer NOT NULL,
+                "credential_id" text NOT NULL,
+                "public_key" text NOT NULL,
+                "counter" bigint NOT NULL DEFAULT 0,
+                "transports" character varying(128),
+                "device_label" character varying(120),
+                "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
+                "last_used_at" TIMESTAMPTZ
+            )`,
+            `CREATE UNIQUE INDEX IF NOT EXISTS "uq_webauthn_credentials_credential_id" ON "webauthn_credentials" ("credential_id")`,
+            `CREATE INDEX IF NOT EXISTS "idx_webauthn_credentials_client_id" ON "webauthn_credentials" ("client_id")`,
+        ];
+        for (const sql of statements) {
+            try {
+                await this.ds.query(sql);
+            } catch (error) {
+                this.logger.warn(
+                    `webauthn_credentials self-heal statement failed: ${error instanceof Error ? error.message : error}`,
+                );
+            }
+        }
+
+        const check = await this.ds
+            .query(`SELECT to_regclass('public.webauthn_credentials') AS reg`)
+            .catch(() => [{ reg: null }]);
+        if (check?.[0]?.reg) {
+            this.logger.log('webauthn_credentials table is present.');
+        } else {
+            this.logger.error(
+                'webauthn_credentials table is MISSING and could not be created — biometric login will fail. ' +
+                'Run "npm run migrate:run" against the production database.',
             );
         }
     }
@@ -145,7 +159,15 @@ export class WebauthnService implements OnModuleInit {
     /* ------------------------------ enrollment ----------------------------- */
 
     async generateRegistration(client: Client) {
-        const existing = await this.credRepo.find({ where: { clientId: client.id } });
+        let existing: WebauthnCredential[];
+        try {
+            existing = await this.credRepo.find({ where: { clientId: client.id } });
+        } catch (error) {
+            this.logger.error(
+                `WebAuthn enrollment unavailable (is the webauthn_credentials table present?): ${error instanceof Error ? error.message : error}`,
+            );
+            throw new ServiceUnavailableException('BIOMETRIC_UNAVAILABLE');
+        }
         const firstName = (client as any).firstName ?? client.first_name ?? '';
         const lastName = (client as any).lastName ?? client.last_name ?? '';
         const displayName = `${firstName} ${lastName}`.trim() || client.phone;
@@ -288,8 +310,19 @@ export class WebauthnService implements OnModuleInit {
         const rawId = typeof response?.id === 'string' ? response.id : null;
         if (!rawId) throw new BadRequestException('MALFORMED_CREDENTIAL');
 
-        const cred = await this.credRepo.findOne({ where: { credentialId: rawId } });
-        if (!cred) throw new UnauthorizedException('CREDENTIAL_NOT_FOUND');
+        let cred: WebauthnCredential | null;
+        try {
+            cred = await this.credRepo.findOne({ where: { credentialId: rawId } });
+        } catch (error) {
+            this.logger.error(
+                `WebAuthn credential lookup failed (is the webauthn_credentials table present?): ${error instanceof Error ? error.message : error}`,
+            );
+            throw new ServiceUnavailableException('BIOMETRIC_UNAVAILABLE');
+        }
+        if (!cred) {
+            this.logger.warn(`WebAuthn login: no stored credential for id ${rawId.slice(0, 12)}…`);
+            throw new UnauthorizedException('CREDENTIAL_NOT_FOUND');
+        }
         if (stored.clientId && stored.clientId !== cred.clientId) {
             throw new UnauthorizedException('CREDENTIAL_MISMATCH');
         }

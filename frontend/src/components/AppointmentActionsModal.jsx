@@ -8,6 +8,7 @@ import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
 import { Admin as AdminApi } from '@/api/base44Client';
 import { WhatsApp } from '@/api/integrations';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function AppointmentActionsModal({
   appointment,
@@ -31,6 +32,7 @@ export default function AppointmentActionsModal({
   const [savingReschedule, setSavingReschedule] = useState(false);
   const [appointmentsForDate, setAppointmentsForDate] = useState(allAppointments);
   const [appointmentsDateKey, setAppointmentsDateKey] = useState(null);
+  const [delayError, setDelayError] = useState(null);
 
   if (!appointment) return null;
 
@@ -54,6 +56,7 @@ export default function AppointmentActionsModal({
     setEditingField(null);
     setSavingReschedule(false);
     setSendingMessage(false);
+    setDelayError(null);
   }, [appointment]);
 
   useEffect(() => {
@@ -98,6 +101,8 @@ export default function AppointmentActionsModal({
       setCreatingRecurring(false);
       handleClose();
     } catch (error) {
+      // ה-parent (Admin.jsx) כבר מציג התראה מתאימה (כולל מודל קונפליקט ייעודי)
+      // ומעביר את השגיאה הלאה, אז כאן רק מפסיקים את מצב הטעינה.
       setCreatingRecurring(false);
     }
   };
@@ -119,12 +124,14 @@ export default function AppointmentActionsModal({
         `תגיע בבקשה בעיכוב של ${delay} דקות, כלומר בשעה ${format(newTime, 'HH:mm')}.`;
 
     if (!appointment?.id || sendingMessage) return;
+    setDelayError(null);
     try {
       setSendingMessage(true);
       await AdminApi.whatsappAppointmentMessage(appointment.id, message);
       handleClose();
     } catch (error) {
       console.error(error);
+      setDelayError("שגיאה בשליחת הודעת העיכוב. נסה שוב.");
     } finally {
       setSendingMessage(false);
     }
@@ -407,7 +414,7 @@ export default function AppointmentActionsModal({
     <>
       <DialogHeader className="text-center mb-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setView('main')} className="rounded-full">
+          <Button variant="ghost" size="icon" onClick={() => { setDelayError(null); setView('main'); }} className="rounded-full">
             <ChevronRight className="w-5 h-5" />
           </Button>
           <div className="flex-1 text-center">
@@ -429,8 +436,14 @@ export default function AppointmentActionsModal({
           </SelectContent>
         </Select>
 
+        {delayError && (
+          <Alert className="border-red-200 bg-red-50 rounded-xl">
+            <AlertDescription className="text-red-700 text-sm">{delayError}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex gap-3">
-          <Button onClick={() => setView('main')} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
+          <Button onClick={() => { setDelayError(null); setView('main'); }} variant="outline" className="flex-1 rounded-full py-3">ביטול</Button>
           <Button onClick={handleSendDelayMessage} disabled={sendingMessage} className="flex-1 bg-black text-white rounded-full py-3">
             <Send className="w-4 h-4 ml-2"/>{sendingMessage ? 'שולח...' : 'שלח הודעה'}
           </Button>

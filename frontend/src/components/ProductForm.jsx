@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UploadFile } from "@/api/integrations";
-import { useSystemPopup } from "@/components/SystemPopupProvider";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function ProductForm({ product, onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
@@ -12,15 +12,16 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
   });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const { showAlert } = useSystemPopup();
+  const [formError, setFormError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!product && !file) {
-      await showAlert("נא לבחור תמונה עבור מוצר חדש.");
+      setFormError("נא לבחור תמונה עבור מוצר חדש.");
       return;
     }
+    setFormError(null);
 
     setUploading(true);
     let imageUrl = product?.image_url;
@@ -39,7 +40,7 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
 
     } catch (error) {
       console.error("Error saving product:", error);
-      await showAlert("שגיאה בשמירת המוצר");
+      setFormError("שגיאה בשמירת המוצר. נסה שוב.");
     } finally {
       setUploading(false);
     }
@@ -82,6 +83,12 @@ export default function ProductForm({ product, onSubmit, onCancel }) {
           </div>
         )}
       </div>
+
+      {formError && (
+        <Alert className="border-red-200 bg-red-50 rounded-xl">
+          <AlertDescription className="text-red-700 text-sm">{formError}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
         <Button type="button" variant="outline" onClick={onCancel} className="h-11 flex-1 rounded-2xl border-slate-200 bg-white text-base font-medium" disabled={uploading}>

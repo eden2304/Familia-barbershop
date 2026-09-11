@@ -563,6 +563,11 @@ export default function Admin() { // Removed props
   const [showGalleryForm, setShowGalleryForm] = useState(false);
   const [showBackgroundVideoForm, setShowBackgroundVideoForm] = useState(false);
   const [showProductForm, setShowProductForm] = useState(false);
+  // הודעות שגיאה מוצגות בתוך הדיאלוג עצמו (פס אדום), לא כפופאפ מערכת נפרד
+  const [serviceFormError, setServiceFormError] = useState(null);
+  const [testimonialFormError, setTestimonialFormError] = useState(null);
+  const [galleryFormError, setGalleryFormError] = useState(null);
+  const [backgroundVideoFormError, setBackgroundVideoFormError] = useState(null);
   const [editingService, setEditingService] = useState(null);
   const [editingTestimonial, setEditingTestimonial] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -2269,6 +2274,7 @@ const extractRecurringSchedules = (client) => {
       setSelectedAppointment(null);
     } catch (error) {
       console.error("Error updating appointment:", error);
+      toast({ title: 'שגיאה בעדכון סטטוס התור', description: 'נסה שוב.', variant: 'destructive' });
     }
   };
 
@@ -2484,6 +2490,7 @@ const extractRecurringSchedules = (client) => {
   };
 
   const handleServiceSubmit = async (serviceData) => {
+    setServiceFormError(null);
     try {
       if (editingService) {
         await Service.update(editingService.id, serviceData);
@@ -2495,6 +2502,7 @@ const extractRecurringSchedules = (client) => {
       setEditingService(null);
     } catch (error) {
       console.error("Error saving service:", error);
+      setServiceFormError("שגיאה בשמירת השירות. נסה שוב.");
     }
   };
 
@@ -2507,6 +2515,7 @@ const extractRecurringSchedules = (client) => {
       text: (testimonialData.text ?? testimonialData.content ?? "").toString().trim(),
     };
 
+    setTestimonialFormError(null);
     try {
       if (editingTestimonial) {
         await Testimonial.update(editingTestimonial.id, payload);
@@ -2518,6 +2527,7 @@ const extractRecurringSchedules = (client) => {
       setEditingTestimonial(null);
     } catch (error) {
       console.error("Error saving testimonial:", error);
+      setTestimonialFormError("שגיאה בשמירת ההמלצה. נסה שוב.");
     }
   };
 
@@ -2533,6 +2543,9 @@ const extractRecurringSchedules = (client) => {
       setEditingProduct(null);
     } catch (error) {
       console.error("Error saving product:", error);
+      // Rethrow so ProductForm's own catch shows the "שגיאה בשמירת המוצר" alert
+      // and keeps the form open instead of silently closing on failure.
+      throw error;
     }
   };
 
@@ -5555,6 +5568,7 @@ const extractRecurringSchedules = (client) => {
                                             loadData();
                                           } catch (error) {
                                             console.error("Error setting active background video:", error);
+                                            toast({ title: 'שגיאה בהחלפת סרטון הרקע', description: 'נסה שוב.', variant: 'destructive' });
                                           }
                                         }
                                       }}
@@ -6362,11 +6376,16 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showServiceForm && (
-            <Dialog open={showServiceForm} onOpenChange={setShowServiceForm}>
+            <Dialog open={showServiceForm} onOpenChange={(open) => { setShowServiceForm(open); if (!open) setServiceFormError(null); }}>
               <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>{editingService ? 'עריכת שירות' : 'הוספת שירות חדש'}</DialogTitle>
                 </DialogHeader>
+                {serviceFormError && (
+                    <Alert className="border-red-200 bg-red-50">
+                      <AlertDescription className="text-red-700">{serviceFormError}</AlertDescription>
+                    </Alert>
+                )}
                 <ServiceForm
                     service={editingService}
                     onSubmit={handleServiceSubmit}
@@ -6380,11 +6399,16 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showTestimonialForm && (
-            <Dialog open={showTestimonialForm} onOpenChange={setShowTestimonialForm}>
+            <Dialog open={showTestimonialForm} onOpenChange={(open) => { setShowTestimonialForm(open); if (!open) setTestimonialFormError(null); }}>
               <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>{editingTestimonial ? 'עריכת תגובה' : 'הוספת תגובה חדשה'}</DialogTitle>
                 </DialogHeader>
+                {testimonialFormError && (
+                    <Alert className="border-red-200 bg-red-50">
+                      <AlertDescription className="text-red-700">{testimonialFormError}</AlertDescription>
+                    </Alert>
+                )}
                 <TestimonialForm
                     testimonial={editingTestimonial}
                     onSubmit={handleTestimonialSubmit}
@@ -6398,14 +6422,20 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showGalleryForm && (
-            <Dialog open={showGalleryForm} onOpenChange={setShowGalleryForm}>
+            <Dialog open={showGalleryForm} onOpenChange={(open) => { setShowGalleryForm(open); if (!open) setGalleryFormError(null); }}>
               <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>הוספת סרטון חדש</DialogTitle>
                 </DialogHeader>
+                {galleryFormError && (
+                    <Alert className="border-red-200 bg-red-50">
+                      <AlertDescription className="text-red-700">{galleryFormError}</AlertDescription>
+                    </Alert>
+                )}
                 <GalleryForm
                     existingCount={galleryImages.length}
                     onSubmit={async ({ position, ...data }) => {
+                      setGalleryFormError(null);
                       try {
                         const created = await GalleryImage.create(data);
                         const list = Array.isArray(galleryImages) ? galleryImages : [];
@@ -6429,6 +6459,7 @@ const extractRecurringSchedules = (client) => {
                         setShowGalleryForm(false);
                       } catch (error) {
                         console.error("Error adding video:", error);
+                        setGalleryFormError("שגיאה בהוספת הפריט לגלריה. נסה שוב.");
                       }
                     }}
                     onCancel={() => setShowGalleryForm(false)}
@@ -6438,13 +6469,19 @@ const extractRecurringSchedules = (client) => {
         )}
 
         {showBackgroundVideoForm && (
-            <Dialog open={showBackgroundVideoForm} onOpenChange={setShowBackgroundVideoForm}>
+            <Dialog open={showBackgroundVideoForm} onOpenChange={(open) => { setShowBackgroundVideoForm(open); if (!open) setBackgroundVideoFormError(null); }}>
               <DialogContent className="w-[92vw] max-w-md rounded-3xl border-0 bg-white p-4 shadow-2xl sm:p-6" aria-describedby={undefined}>
                 <DialogHeader>
                   <DialogTitle>הוספת סרטון רקע חדש</DialogTitle>
                 </DialogHeader>
+                {backgroundVideoFormError && (
+                    <Alert className="border-red-200 bg-red-50">
+                      <AlertDescription className="text-red-700">{backgroundVideoFormError}</AlertDescription>
+                    </Alert>
+                )}
                 <BackgroundVideoForm
                     onSubmit={async (data) => {
+                      setBackgroundVideoFormError(null);
                       try {
                         await Promise.all(
                             backgroundVideos.map(v => BackgroundVideo.update(v.id, { is_active: false }))
@@ -6454,7 +6491,7 @@ const extractRecurringSchedules = (client) => {
                         setShowBackgroundVideoForm(false);
                       } catch (error) {
                         console.error("Error adding background video:", error);
-                        await showAlert("שגיאה בהוספת סרטון רקע: " + error.message);
+                        setBackgroundVideoFormError("שגיאה בהוספת סרטון רקע: " + error.message);
                       }
                     }}
                     onCancel={() => setShowBackgroundVideoForm(false)}

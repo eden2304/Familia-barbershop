@@ -114,6 +114,10 @@ export default function AdminAppointmentForm({
 
   const weekDays = useMemo(() => getWeekDays(selectedWeek), [selectedWeek]);
 
+  const canSubmit = Boolean(
+    selectedService && selectedSlot && formData.client_name && formData.phone && paymentMethod
+  );
+
   const toYMD = (date) => {
     if (!date) return "";
     const y = date.getFullYear();
@@ -437,7 +441,7 @@ export default function AdminAppointmentForm({
 
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={onCancel} className="flex-1 rounded-full py-3">ביטול</Button>
-                  <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800">
+                  <Button type="submit" disabled={loading || !canSubmit} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800 disabled:opacity-50">
                     {loading ? "יוצר..." : "קבע תור"}
                   </Button>
                 </div>

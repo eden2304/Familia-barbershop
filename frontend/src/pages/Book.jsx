@@ -930,7 +930,7 @@ export default function Book() {
                   <Button
                       type="button"
                       onClick={handleCreate}
-                      disabled={loading}
+                      disabled={loading || !paymentMethod}
                       className="rounded-full h-11 px-6 flex-1 bg-black text-white hover:bg-gray-800 disabled:opacity-50"
                   >
                     {loading ? "קובע/ת…" : "אישור התור"}

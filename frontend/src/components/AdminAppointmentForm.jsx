@@ -3,8 +3,8 @@ import api from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Banknote, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard, Sparkles, UserRound, X } from "lucide-react";
-import { useSystemPopup } from "@/components/SystemPopupProvider";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle, Banknote, CalendarDays, ChevronLeft, ChevronRight, Clock3, CreditCard, Sparkles, UserRound, X } from "lucide-react";
 import { format, addDays, startOfWeek, addMinutes, isBefore, startOfDay } from "date-fns";
 import { he } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -89,7 +89,7 @@ export default function AdminAppointmentForm({
   const [suggestions, setSuggestions] = useState([]);
   const [availableByDate, setAvailableByDate] = useState({});
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const { showAlert } = useSystemPopup();
+  const [formError, setFormError] = useState(null);
 
   useEffect(() => {
     setSelectedDay(initialDate instanceof Date && !Number.isNaN(initialDate.getTime()) ? initialDate : null);
@@ -239,14 +239,14 @@ export default function AdminAppointmentForm({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedService || !selectedSlot || !formData.client_name || !formData.phone) {
-      await showAlert("נא למלא את כל השדות");
+      setFormError("נא למלא את כל השדות");
       return;
     }
     if (!paymentMethod) {
-      await showAlert("נא לבחור אמצעי תשלום");
+      setFormError("נא לבחור אמצעי תשלום (מזומן או כרטיס אשראי)");
       return;
     }
-
+    setFormError(null);
     setLoading(true);
 
     try {
@@ -274,7 +274,7 @@ export default function AdminAppointmentForm({
       }
     } catch (error) {
       console.error("Error creating appointment:", error);
-      await showAlert("שגיאה ביצירת התור. אנא נסה שוב.");
+      setFormError("שגיאה ביצירת התור. אנא נסה שוב.");
     } finally {
       setLoading(false);
     }
@@ -404,7 +404,7 @@ export default function AdminAppointmentForm({
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod("cash")}
+                    onClick={() => { setPaymentMethod("cash"); setFormError(null); }}
                     className={`flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-sm font-semibold transition-colors ${
                       paymentMethod === "cash"
                         ? "border-black bg-black text-white"
@@ -416,7 +416,7 @@ export default function AdminAppointmentForm({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod("credit")}
+                    onClick={() => { setPaymentMethod("credit"); setFormError(null); }}
                     className={`flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-sm font-semibold transition-colors ${
                       paymentMethod === "credit"
                         ? "border-black bg-black text-white"
@@ -427,6 +427,14 @@ export default function AdminAppointmentForm({
                     כרטיס אשראי
                   </button>
                 </div>
+
+                {formError && (
+                  <Alert className="border-red-200 bg-red-50 rounded-xl">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <AlertDescription className="text-red-700 text-sm">{formError}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={onCancel} className="flex-1 rounded-full py-3">ביטול</Button>
                   <Button type="submit" disabled={loading} className="flex-1 bg-black text-white rounded-full py-3 hover:bg-gray-800">

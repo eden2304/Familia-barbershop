@@ -2269,6 +2269,7 @@ const extractRecurringSchedules = (client) => {
       setSelectedAppointment(null);
     } catch (error) {
       console.error("Error updating appointment:", error);
+      await showAlert("שגיאה בעדכון סטטוס התור. נסה שוב.");
     }
   };
 
@@ -2495,6 +2496,7 @@ const extractRecurringSchedules = (client) => {
       setEditingService(null);
     } catch (error) {
       console.error("Error saving service:", error);
+      await showAlert("שגיאה בשמירת השירות. נסה שוב.");
     }
   };
 
@@ -2518,6 +2520,7 @@ const extractRecurringSchedules = (client) => {
       setEditingTestimonial(null);
     } catch (error) {
       console.error("Error saving testimonial:", error);
+      await showAlert("שגיאה בשמירת ההמלצה. נסה שוב.");
     }
   };
 
@@ -2533,6 +2536,9 @@ const extractRecurringSchedules = (client) => {
       setEditingProduct(null);
     } catch (error) {
       console.error("Error saving product:", error);
+      // Rethrow so ProductForm's own catch shows the "שגיאה בשמירת המוצר" alert
+      // and keeps the form open instead of silently closing on failure.
+      throw error;
     }
   };
 
@@ -5555,6 +5561,7 @@ const extractRecurringSchedules = (client) => {
                                             loadData();
                                           } catch (error) {
                                             console.error("Error setting active background video:", error);
+                                            await showAlert("שגיאה בהחלפת סרטון הרקע. נסה שוב.");
                                           }
                                         }
                                       }}
@@ -6429,6 +6436,7 @@ const extractRecurringSchedules = (client) => {
                         setShowGalleryForm(false);
                       } catch (error) {
                         console.error("Error adding video:", error);
+                        await showAlert("שגיאה בהוספת הפריט לגלריה. נסה שוב.");
                       }
                     }}
                     onCancel={() => setShowGalleryForm(false)}

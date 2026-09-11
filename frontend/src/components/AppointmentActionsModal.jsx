@@ -8,6 +8,7 @@ import { he } from 'date-fns/locale';
 import { fullName, phone, serviceName } from '@/lib/apt-utils';
 import { Admin as AdminApi } from '@/api/base44Client';
 import { WhatsApp } from '@/api/integrations';
+import { useSystemPopup } from '@/components/SystemPopupProvider';
 
 export default function AppointmentActionsModal({
   appointment,
@@ -31,6 +32,7 @@ export default function AppointmentActionsModal({
   const [savingReschedule, setSavingReschedule] = useState(false);
   const [appointmentsForDate, setAppointmentsForDate] = useState(allAppointments);
   const [appointmentsDateKey, setAppointmentsDateKey] = useState(null);
+  const { showAlert } = useSystemPopup();
 
   if (!appointment) return null;
 
@@ -98,6 +100,8 @@ export default function AppointmentActionsModal({
       setCreatingRecurring(false);
       handleClose();
     } catch (error) {
+      // ה-parent (Admin.jsx) כבר מציג התראה מתאימה (כולל מודל קונפליקט ייעודי)
+      // ומעביר את השגיאה הלאה, אז כאן רק מפסיקים את מצב הטעינה.
       setCreatingRecurring(false);
     }
   };
@@ -125,6 +129,7 @@ export default function AppointmentActionsModal({
       handleClose();
     } catch (error) {
       console.error(error);
+      await showAlert("שגיאה בשליחת הודעת העיכוב. נסה שוב.");
     } finally {
       setSendingMessage(false);
     }

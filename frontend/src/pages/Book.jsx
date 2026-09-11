@@ -650,7 +650,7 @@ export default function Book() {
       const ln = client?.last_name  ?? client?.lastName  ?? "";
       if (!fn || !ln) throw new Error("שם הלקוח חסר");
       if (!selectedService || !selectedTimeSlot || !selectedDate) throw new Error("שירות/תאריך/שעה לא נבחרו");
-      if (!paymentMethod) throw new Error("יש לבחור אמצעי תשלום");
+      if (!paymentMethod) throw new Error("נא לבחור אמצעי תשלום (מזומן או כרטיס אשראי) לפני אישור התור");
 
       await api.Appointment.create({
         serviceId: selectedService.id,
@@ -703,6 +703,9 @@ export default function Book() {
           description: `${popupMessage}\n\nבחר/י בבקשה שעה חדשה מתוך הזמינות המעודכנת.`,
           confirmText: 'הבנתי',
         });
+      } else if (!err?.code && err?.message) {
+        // שגיאת ולידציה מקומית (למשל שדה חסר) - מציגים את ההודעה כמו שהיא, בלי קידומת "שגיאה"
+        setError(err.message);
       } else {
         setError("שגיאה ביצירת התור: " + (err.code || err.message || "נסה שוב."));
       }
@@ -927,7 +930,7 @@ export default function Book() {
                   <Button
                       type="button"
                       onClick={handleCreate}
-                      disabled={loading || !paymentMethod}
+                      disabled={loading}
                       className="rounded-full h-11 px-6 flex-1 bg-black text-white hover:bg-gray-800 disabled:opacity-50"
                   >
                     {loading ? "קובע/ת…" : "אישור התור"}

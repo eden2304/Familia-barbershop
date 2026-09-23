@@ -4332,7 +4332,7 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'grayscale opacity-40 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'grayscale opacity-70 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
                                               {(() => {
@@ -4348,8 +4348,8 @@ const extractRecurringSchedules = (client) => {
                                                   </span>
                                                 );
                                               })()}
-                                              <div className="font-bold truncate text-xs">{displayInfo?.name || 'לקוח'}</div>
-                                              <div className="font-medium opacity-95 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                              <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
+                                              <div className={`truncate text-[11px] ${isDraggableApt ? 'opacity-80' : ''}`}>{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                             </button>
                                           ) : null}
                                         </div>

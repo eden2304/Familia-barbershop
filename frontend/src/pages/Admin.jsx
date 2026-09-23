@@ -4332,7 +4332,7 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'opacity-55 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'grayscale opacity-40 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
                                               {(() => {

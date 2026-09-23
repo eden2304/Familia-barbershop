@@ -4348,8 +4348,8 @@ const extractRecurringSchedules = (client) => {
                                                   </span>
                                                 );
                                               })()}
-                                              <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
-                                              <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                              <div className="font-bold truncate text-xs">{displayInfo?.name || 'לקוח'}</div>
+                                              <div className="font-medium opacity-95 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                             </button>
                                           ) : null}
                                         </div>

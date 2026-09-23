@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectValue, SelectTrigger } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -212,32 +213,30 @@ const APPOINTMENT_STATUS_STYLES = {
   canceled: { label: 'בוטל', className: 'bg-gray-200 text-gray-600' },
 };
 
-// צבעי פסטל לשירותים שאין להם כלל צבע ייעודי (מוקצים לפי סדר השירותים כדי שיהיו יציבים)
-const SERVICE_COLOR_PALETTE = [
-  { dotClassName: 'bg-sky-300', cellClassName: 'bg-sky-100 text-sky-900', badgeClassName: 'bg-black/10 text-gray-700' },
-  { dotClassName: 'bg-amber-300', cellClassName: 'bg-amber-100 text-amber-900', badgeClassName: 'bg-black/10 text-gray-700' },
-  { dotClassName: 'bg-violet-300', cellClassName: 'bg-violet-100 text-violet-900', badgeClassName: 'bg-black/10 text-gray-700' },
-  { dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
+// פלטת צבעים סגורה לשירותים - כל שירות בוחר צבע ידנית ממנה (במסך השירותים), וכל צבע שייך לשירות אחד בלבד.
+// חייבת להישאר בסנכרון עם SERVICE_COLOR_KEYS ב-backend/src/entities/service.entity.ts
+const SERVICE_COLOR_OPTIONS = [
+  { key: 'sky', label: 'תכלת', dotClassName: 'bg-sky-300', cellClassName: 'bg-sky-100 text-sky-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'amber', label: 'ענבר', dotClassName: 'bg-amber-300', cellClassName: 'bg-amber-100 text-amber-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'violet', label: 'סגול בהיר', dotClassName: 'bg-violet-300', cellClassName: 'bg-violet-100 text-violet-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'rose', label: 'ורוד', dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'emerald', label: 'מנטה', dotClassName: 'bg-emerald-300', cellClassName: 'bg-emerald-100 text-emerald-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'pink', label: 'פוקסיה בהיר', dotClassName: 'bg-pink-300', cellClassName: 'bg-pink-100 text-pink-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'black', label: 'שחור', dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' },
+  { key: 'forest', label: 'ירוק כהה', dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' },
 ];
 
-// שירות עם זקן (ולא "ללא זקן") -> שחור, ואם זה גם שירות חייל -> ירוק כהה. שאר השירותים מקבלים פסטל יציב מה-palette למעלה.
-const getServiceColorStyle = (service, allServices = []) => {
-  const name = service?.name || '';
-  const hasBeard = name.includes('זקן') && !name.includes('ללא זקן');
-  const isSoldier = name.includes('חייל');
-  if (hasBeard && isSoldier) {
-    return { dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' };
-  }
-  if (hasBeard) {
-    return { dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' };
-  }
-  const others = (allServices || []).filter((s) => {
-    const n = s?.name || '';
-    return !(n.includes('זקן') && !n.includes('ללא זקן'));
-  });
-  const idx = Math.max(0, others.findIndex((s) => String(s?.id) === String(service?.id)));
-  return SERVICE_COLOR_PALETTE[idx % SERVICE_COLOR_PALETTE.length];
+const SERVICE_COLOR_BY_KEY = Object.fromEntries(SERVICE_COLOR_OPTIONS.map((opt) => [opt.key, opt]));
+
+const DEFAULT_SERVICE_COLOR_STYLE = {
+  key: null,
+  label: 'ללא צבע',
+  dotClassName: 'bg-gray-300',
+  cellClassName: 'bg-gray-100 text-gray-700',
+  badgeClassName: 'bg-black/10 text-gray-700',
 };
+
+const getServiceColorStyle = (service) => SERVICE_COLOR_BY_KEY[service?.color] || DEFAULT_SERVICE_COLOR_STYLE;
 
 const toMinutes = (time) => {
   if (!time && time !== 0) return null;
@@ -2538,7 +2537,17 @@ const extractRecurringSchedules = (client) => {
       setEditingService(null);
     } catch (error) {
       console.error("Error saving service:", error);
-      setServiceFormError("שגיאה בשמירת השירות. נסה שוב.");
+      setServiceFormError(error?.payload?.message || error?.message || "שגיאה בשמירת השירות. נסה שוב.");
+    }
+  };
+
+  const handleServiceColorChange = async (service, colorKey) => {
+    try {
+      await Service.update(service.id, { color: colorKey });
+      loadData();
+    } catch (error) {
+      console.error("Error updating service color:", error);
+      await showAlert(error?.payload?.message || error?.message || "שגיאה בעדכון הצבע. נסה שוב.");
     }
   };
 
@@ -4162,7 +4171,7 @@ const extractRecurringSchedules = (client) => {
                         {services.length > 0 && (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 px-1">
                             {services.map((svc) => {
-                              const style = getServiceColorStyle(svc, services);
+                              const style = getServiceColorStyle(svc);
                               return (
                                 <div key={svc.id} className="flex items-center gap-1.5">
                                   <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dotClassName}`} />
@@ -4200,7 +4209,7 @@ const extractRecurringSchedules = (client) => {
                                       const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
                                       const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
                                       const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
-                                      const serviceColorStyle = apt ? getServiceColorStyle(serviceById(apt.service_id), services) : null;
+                                      const serviceColorStyle = apt ? getServiceColorStyle(serviceById(apt.service_id)) : null;
                                       const isDropTarget = dragTargetCell?.dayKey === dayKey && dragTargetCell?.slotMinute === slotMinute;
                                       return (
                                         <div
@@ -5281,6 +5290,11 @@ const extractRecurringSchedules = (client) => {
                                                     <div {...provided.dragHandleProps} className="cursor-grab text-gray-400 hover:text-gray-600">
                                                       <GripVertical />
                                                     </div>
+                                                    <ServiceColorPickerButton
+                                                        service={service}
+                                                        allServices={services}
+                                                        onSelect={(colorKey) => handleServiceColorChange(service, colorKey)}
+                                                    />
                                                     <div>
                                                       <h3 className="font-bold text-lg text-gray-900">{service.name}</h3>
                                                       <p className="text-xs text-gray-500">{service.description || "ללא תיאור"}</p>
@@ -6438,6 +6452,7 @@ const extractRecurringSchedules = (client) => {
                 )}
                 <ServiceForm
                     service={editingService}
+                    allServices={services}
                     onSubmit={handleServiceSubmit}
                     onCancel={() => {
                       setShowServiceForm(false);
@@ -6656,18 +6671,94 @@ function AdminFormActions({ submitLabel, onCancel, cancelLabel = "ביטול", s
   );
 }
 
+// גריד של עיגולי צבע לבחירה - taken מציין צבעים ששירותים אחרים כבר תפסו (לא ניתנים לבחירה)
+function ServiceColorSwatches({ value, onChange, takenColors = [], disabled = false }) {
+  return (
+      <div className="flex flex-wrap gap-2">
+        {SERVICE_COLOR_OPTIONS.map((opt) => {
+          const isTaken = takenColors.includes(opt.key) && opt.key !== value;
+          const isSelected = value === opt.key;
+          return (
+              <button
+                  key={opt.key}
+                  type="button"
+                  disabled={disabled || isTaken}
+                  onClick={() => onChange(opt.key)}
+                  title={isTaken ? `${opt.label} - כבר בשימוש בשירות אחר` : opt.label}
+                  className={`relative h-9 w-9 rounded-full border-2 transition ${opt.dotClassName} ${
+                      isSelected ? 'border-black ring-2 ring-offset-2 ring-black' : 'border-white shadow-sm'
+                  } ${isTaken ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+              >
+                {isSelected && (
+                    <CheckCircle2 className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />
+                )}
+              </button>
+          );
+        })}
+      </div>
+  );
+}
+
+// עיגול הצבע שמופיע על כרטיס השירות - לחיצה עליו פותחת פופאובר לבחירת צבע חדש, ומעדכן מיד
+function ServiceColorPickerButton({ service, allServices, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const style = getServiceColorStyle(service);
+  const takenColors = (allServices || [])
+      .filter((s) => String(s.id) !== String(service.id))
+      .map((s) => s.color)
+      .filter(Boolean);
+
+  return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+              type="button"
+              title="שינוי צבע"
+              className={`h-6 w-6 shrink-0 rounded-full border-2 border-white shadow ring-1 ring-gray-200 transition hover:scale-110 ${style.dotClassName}`}
+          />
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-3" align="start">
+          <p className="mb-2 text-xs font-semibold text-gray-600">בחר צבע לשירות</p>
+          <ServiceColorSwatches
+              value={service.color}
+              takenColors={takenColors}
+              onChange={(key) => {
+                onSelect(key);
+                setOpen(false);
+              }}
+          />
+        </PopoverContent>
+      </Popover>
+  );
+}
+
 // Service Form Component
-function ServiceForm({ service, onSubmit, onCancel }) {
+function ServiceForm({ service, allServices = [], onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
     name: service?.name || "",
     description: service?.description || "",
     durationMinutes: service?.durationMinutes ?? service?.duration_minutes ?? 30,
     price: service?.price || 0,
-    isActive: service?.isActive ?? service?.is_active ?? true
+    isActive: service?.isActive ?? service?.is_active ?? true,
+    color: service?.color || null,
   });
+  const [colorError, setColorError] = useState(null);
+
+  const takenColors = useMemo(
+      () => (allServices || [])
+          .filter((s) => String(s.id) !== String(service?.id))
+          .map((s) => s.color)
+          .filter(Boolean),
+      [allServices, service]
+  );
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!formData.color) {
+      setColorError('יש לבחור צבע לשירות');
+      return;
+    }
+    setColorError(null);
     onSubmit(formData);
   };
 
@@ -6703,6 +6794,15 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           </AdminField>
         </div>
 
+        <AdminField label="צבע בלוח השבועי">
+          <ServiceColorSwatches
+              value={formData.color}
+              onChange={(key) => { setFormData({ ...formData, color: key }); setColorError(null); }}
+              takenColors={takenColors}
+          />
+          {colorError && <p className="mt-1 text-xs font-medium text-red-600">{colorError}</p>}
+        </AdminField>
+
         <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <Label htmlFor="active-service" className="text-sm font-semibold text-slate-900">שירות פעיל</Label>
           <Switch
@@ -6712,7 +6812,7 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           />
         </div>
 
-        <AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} />
+        <AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} submitDisabled={!formData.color} />
       </form>
   );
 }

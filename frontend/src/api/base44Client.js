@@ -666,6 +666,7 @@ function toServiceBody(b) {
     price: b.price,
     orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+    ...(b.color !== undefined ? { color: b.color } : {}),
   };
 }
 function toProductBody(b) {

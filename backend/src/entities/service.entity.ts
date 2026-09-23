@@ -2,6 +2,9 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 // ... יבואי TypeORM קיימים
 
+// פלטת צבעים סגורה לשירותים - חייבת להישאר בסנכרון עם SERVICE_COLOR_OPTIONS בפרונט (Admin.jsx)
+export const SERVICE_COLOR_KEYS = ['sky', 'amber', 'violet', 'rose', 'emerald', 'pink', 'black', 'forest'];
+
 @Entity({ name: 'services' })
 export class ServiceEntity {
     @PrimaryGeneratedColumn('uuid')
@@ -21,5 +24,9 @@ export class ServiceEntity {
 
     @Column({ name: 'is_active', type: 'boolean', default: true })
     isActive: boolean;
+
+    // מפתח מתוך פלטת צבעים קבועה (ראו SERVICE_COLOR_KEYS) - ייחודי בין שירותים
+    @Column({ type: 'varchar', length: 16, nullable: true })
+    color: string | null;
 }
 

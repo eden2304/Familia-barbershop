@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectValue, SelectTrigger } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -211,6 +212,31 @@ const APPOINTMENT_STATUS_STYLES = {
   completed: { label: 'הושלם', className: 'bg-emerald-100 text-emerald-700' },
   canceled: { label: 'בוטל', className: 'bg-gray-200 text-gray-600' },
 };
+
+// פלטת צבעים סגורה לשירותים - כל שירות בוחר צבע ידנית ממנה (במסך השירותים), וכל צבע שייך לשירות אחד בלבד.
+// חייבת להישאר בסנכרון עם SERVICE_COLOR_KEYS ב-backend/src/entities/service.entity.ts
+const SERVICE_COLOR_OPTIONS = [
+  { key: 'sky', label: 'תכלת', dotClassName: 'bg-sky-300', cellClassName: 'bg-sky-100 text-sky-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'amber', label: 'ענבר', dotClassName: 'bg-amber-300', cellClassName: 'bg-amber-100 text-amber-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'violet', label: 'סגול בהיר', dotClassName: 'bg-violet-300', cellClassName: 'bg-violet-100 text-violet-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'rose', label: 'ורוד', dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'emerald', label: 'מנטה', dotClassName: 'bg-emerald-300', cellClassName: 'bg-emerald-100 text-emerald-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'pink', label: 'פוקסיה בהיר', dotClassName: 'bg-pink-300', cellClassName: 'bg-pink-100 text-pink-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { key: 'black', label: 'שחור', dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' },
+  { key: 'forest', label: 'ירוק כהה', dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' },
+];
+
+const SERVICE_COLOR_BY_KEY = Object.fromEntries(SERVICE_COLOR_OPTIONS.map((opt) => [opt.key, opt]));
+
+const DEFAULT_SERVICE_COLOR_STYLE = {
+  key: null,
+  label: 'ללא צבע',
+  dotClassName: 'bg-gray-300',
+  cellClassName: 'bg-gray-100 text-gray-700',
+  badgeClassName: 'bg-black/10 text-gray-700',
+};
+
+const getServiceColorStyle = (service) => SERVICE_COLOR_BY_KEY[service?.color] || DEFAULT_SERVICE_COLOR_STYLE;
 
 const toMinutes = (time) => {
   if (!time && time !== 0) return null;
@@ -1791,12 +1817,16 @@ const extractRecurringSchedules = (client) => {
   }, [memberSettings]);
 
   const getAppointmentsForDay = (date) => {
+    const now = new Date();
     return appointments
-        .filter(apt =>
-            apt.status !== 'canceled' &&
-            apt.status !== 'blocked' &&            // 👈 אל תציג חסימות ביומן התורים
-            isSameDay(new Date(apt.starts_at), date)
-        )
+        .filter(apt => {
+          if (apt.status === 'canceled' || apt.status === 'blocked') return false; // 👈 אל תציג חסימות ביומן התורים
+          if (!isSameDay(new Date(apt.starts_at), date)) return false;
+          // תורי מזומן נעלמים מרשימת המנהל ברגע שהזמן שלהם נגמר (לא בסוף היום)
+          const paymentMethod = apt.payment_method ?? apt.paymentMethod;
+          if (paymentMethod === 'cash' && apt.ends_at && isAfter(now, new Date(apt.ends_at))) return false;
+          return true;
+        })
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   };
 
@@ -1867,13 +1897,18 @@ const extractRecurringSchedules = (client) => {
   );
 
   const weeklyAppointments = useMemo(() => {
+    const now = new Date();
     const weekStart = startOfDay(weeklyCalendarStart);
     const weekEnd = addDays(weekStart, 6);
     return (weeklyAppointmentsData || [])
         .filter((apt) => {
           if (apt.status === 'canceled' || apt.status === 'blocked') return false;
           const start = new Date(apt.starts_at);
-          return start >= weekStart && start < weekEnd;
+          if (!(start >= weekStart && start < weekEnd)) return false;
+          // תורי מזומן נעלמים מהיומן השבועי ברגע שהזמן שלהם נגמר (לא בסוף היום)
+          const paymentMethod = apt.payment_method ?? apt.paymentMethod;
+          if (paymentMethod === 'cash' && apt.ends_at && isAfter(now, new Date(apt.ends_at))) return false;
+          return true;
         })
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   }, [weeklyAppointmentsData, weeklyCalendarStart]);
@@ -2502,7 +2537,17 @@ const extractRecurringSchedules = (client) => {
       setEditingService(null);
     } catch (error) {
       console.error("Error saving service:", error);
-      setServiceFormError("שגיאה בשמירת השירות. נסה שוב.");
+      setServiceFormError(error?.payload?.message || error?.message || "שגיאה בשמירת השירות. נסה שוב.");
+    }
+  };
+
+  const handleServiceColorChange = async (service, colorKey) => {
+    try {
+      await Service.update(service.id, { color: colorKey });
+      loadData();
+    } catch (error) {
+      console.error("Error updating service color:", error);
+      await showAlert(error?.payload?.message || error?.message || "שגיאה בעדכון הצבע. נסה שוב.");
     }
   };
 
@@ -4123,6 +4168,19 @@ const extractRecurringSchedules = (client) => {
                             <ChevronLeft className="w-4 h-4" />
                           </Button>
                         </div>
+                        {services.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 px-1">
+                            {services.map((svc) => {
+                              const style = getServiceColorStyle(svc);
+                              return (
+                                <div key={svc.id} className="flex items-center gap-1.5">
+                                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dotClassName}`} />
+                                  <span className="text-[11px] text-gray-600 truncate max-w-[140px]">{svc.name}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="min-w-[700px]">
                             <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
@@ -4151,6 +4209,7 @@ const extractRecurringSchedules = (client) => {
                                       const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
                                       const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
                                       const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
+                                      const serviceColorStyle = apt ? getServiceColorStyle(serviceById(apt.service_id)) : null;
                                       const isDropTarget = dragTargetCell?.dayKey === dayKey && dragTargetCell?.slotMinute === slotMinute;
                                       return (
                                         <div
@@ -4282,7 +4341,7 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'grayscale opacity-70 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
                                               {(() => {
@@ -4291,7 +4350,7 @@ const extractRecurringSchedules = (client) => {
                                                 const PayIcon = pm === 'cash' ? Banknote : CreditCard;
                                                 return (
                                                   <span
-                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-0.5 ${isDraggableApt ? 'bg-white/20 text-white' : 'bg-black/10 text-gray-600'}`}
+                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-0.5 ${serviceColorStyle.badgeClassName}`}
                                                     title={pm === 'cash' ? 'תשלום במזומן' : 'תשלום בכרטיס אשראי'}
                                                   >
                                                     <PayIcon className="h-[18px] w-[18px]" />
@@ -4299,7 +4358,7 @@ const extractRecurringSchedules = (client) => {
                                                 );
                                               })()}
                                               <div className="font-semibold truncate">{displayInfo?.name || 'לקוח'}</div>
-                                              <div className="opacity-80 truncate text-[11px]">{format(new Date(apt.starts_at), 'HH:mm')}</div>
+                                              <div className={`truncate text-[11px] ${isDraggableApt ? 'opacity-80' : ''}`}>{format(new Date(apt.starts_at), 'HH:mm')}</div>
                                             </button>
                                           ) : null}
                                         </div>
@@ -5231,6 +5290,11 @@ const extractRecurringSchedules = (client) => {
                                                     <div {...provided.dragHandleProps} className="cursor-grab text-gray-400 hover:text-gray-600">
                                                       <GripVertical />
                                                     </div>
+                                                    <ServiceColorPickerButton
+                                                        service={service}
+                                                        allServices={services}
+                                                        onSelect={(colorKey) => handleServiceColorChange(service, colorKey)}
+                                                    />
                                                     <div>
                                                       <h3 className="font-bold text-lg text-gray-900">{service.name}</h3>
                                                       <p className="text-xs text-gray-500">{service.description || "ללא תיאור"}</p>
@@ -6388,6 +6452,7 @@ const extractRecurringSchedules = (client) => {
                 )}
                 <ServiceForm
                     service={editingService}
+                    allServices={services}
                     onSubmit={handleServiceSubmit}
                     onCancel={() => {
                       setShowServiceForm(false);
@@ -6606,18 +6671,108 @@ function AdminFormActions({ submitLabel, onCancel, cancelLabel = "ביטול", s
   );
 }
 
+// גריד של עיגולי צבע לבחירה - taken מציין צבעים ששירותים אחרים כבר תפסו (לא ניתנים לבחירה)
+// takenColorMap: { colorKey: ownerServiceName } - שמות השירותים שכבר תופסים כל צבע (חוץ מהשירות הנוכחי)
+function ServiceColorSwatches({ value, onChange, takenColorMap = {}, disabled = false }) {
+  const [blockedMessage, setBlockedMessage] = useState(null);
+  return (
+      <div className="w-48">
+        <div className="flex flex-wrap gap-2">
+          {SERVICE_COLOR_OPTIONS.map((opt) => {
+            const takenBy = opt.key !== value ? takenColorMap[opt.key] : null;
+            const isSelected = value === opt.key;
+            return (
+                <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      if (disabled) return;
+                      if (takenBy) {
+                        setBlockedMessage(`תפוס ע"י "${takenBy}"`);
+                        return;
+                      }
+                      setBlockedMessage(null);
+                      onChange(opt.key);
+                    }}
+                    title={takenBy ? `${opt.label} - בשימוש על ידי ${takenBy}` : opt.label}
+                    className={`relative h-9 w-9 rounded-full border-2 transition ${opt.dotClassName} ${
+                        isSelected ? 'border-black ring-2 ring-offset-2 ring-black' : 'border-white shadow-sm'
+                    } ${takenBy ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer hover:scale-105'} ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+                >
+                  {isSelected && (
+                      <CheckCircle2 className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />
+                  )}
+                </button>
+            );
+          })}
+        </div>
+        {blockedMessage && (
+            <p className="mt-1.5 break-words text-xs font-medium text-red-600">{blockedMessage}</p>
+        )}
+      </div>
+  );
+}
+
+// עיגול הצבע שמופיע על כרטיס השירות - לחיצה עליו פותחת פופאובר לבחירת צבע חדש, ומעדכן מיד
+function ServiceColorPickerButton({ service, allServices, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const style = getServiceColorStyle(service);
+  const takenColorMap = {};
+  (allServices || [])
+      .filter((s) => String(s.id) !== String(service.id))
+      .forEach((s) => { if (s.color) takenColorMap[s.color] = s.name; });
+
+  return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+              type="button"
+              title="שינוי צבע"
+              className={`h-6 w-6 shrink-0 rounded-full border-2 border-white shadow ring-1 ring-gray-200 transition hover:scale-110 ${style.dotClassName}`}
+          />
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-3" align="start">
+          <p className="mb-2 text-xs font-semibold text-gray-600">בחר צבע לשירות</p>
+          <ServiceColorSwatches
+              value={service.color}
+              takenColorMap={takenColorMap}
+              onChange={(key) => {
+                onSelect(key);
+                setOpen(false);
+              }}
+          />
+        </PopoverContent>
+      </Popover>
+  );
+}
+
 // Service Form Component
-function ServiceForm({ service, onSubmit, onCancel }) {
+function ServiceForm({ service, allServices = [], onSubmit, onCancel }) {
   const [formData, setFormData] = useState({
     name: service?.name || "",
     description: service?.description || "",
     durationMinutes: service?.durationMinutes ?? service?.duration_minutes ?? 30,
     price: service?.price || 0,
-    isActive: service?.isActive ?? service?.is_active ?? true
+    isActive: service?.isActive ?? service?.is_active ?? true,
+    color: service?.color || null,
   });
+  const [colorError, setColorError] = useState(null);
+
+  const takenColorMap = useMemo(() => {
+    const map = {};
+    (allServices || [])
+        .filter((s) => String(s.id) !== String(service?.id))
+        .forEach((s) => { if (s.color) map[s.color] = s.name; });
+    return map;
+  }, [allServices, service]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!formData.color) {
+      setColorError('יש לבחור צבע לשירות');
+      return;
+    }
+    setColorError(null);
     onSubmit(formData);
   };
 
@@ -6653,6 +6808,15 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           </AdminField>
         </div>
 
+        <AdminField label="צבע בלוח השבועי">
+          <ServiceColorSwatches
+              value={formData.color}
+              onChange={(key) => { setFormData({ ...formData, color: key }); setColorError(null); }}
+              takenColorMap={takenColorMap}
+          />
+          {colorError && <p className="mt-1 text-xs font-medium text-red-600">{colorError}</p>}
+        </AdminField>
+
         <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <Label htmlFor="active-service" className="text-sm font-semibold text-slate-900">שירות פעיל</Label>
           <Switch
@@ -6662,7 +6826,7 @@ function ServiceForm({ service, onSubmit, onCancel }) {
           />
         </div>
 
-        <AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} />
+        <AdminFormActions submitLabel={service ? 'עדכן שירות' : 'הוסף שירות'} onCancel={onCancel} submitDisabled={!formData.color} />
       </form>
   );
 }

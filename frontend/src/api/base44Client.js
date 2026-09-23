@@ -660,12 +660,16 @@ function invalidateAdminSchedulingCaches() {
 
 function toServiceBody(b) {
   b = b || {};
+  const orderIndex = (b.orderIndex !== undefined ? b.orderIndex : b.order_index);
   return {
     name: b.name,
     durationMinutes: (b.durationMinutes !== undefined ? b.durationMinutes : b.duration),
     price: b.price,
-    orderIndex: (b.orderIndex !== undefined ? b.orderIndex : (b.order_index !== undefined ? b.order_index : 0)),
     isActive: (b.isActive !== undefined ? b.isActive : (b.is_active !== undefined ? b.is_active : true)),
+    // לא לשלוח orderIndex כברירת מחדל 0 - זה היה דורס את מיקום השירות ברשימה
+    // בכל עדכון חלקי (למשל שינוי צבע בלבד) שלא כלל אותו במפורש.
+    ...(orderIndex !== undefined ? { orderIndex } : {}),
+    ...(b.color !== undefined ? { color: b.color } : {}),
   };
 }
 function toProductBody(b) {

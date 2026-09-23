@@ -5,6 +5,8 @@ import { ServiceEntity } from '../../entities/service.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 
+// Note: this controller is currently shadowed by ServicesController's admin/services routes
+// (registered first in services.module.ts), so create/update validation lives there instead.
 @Controller('admin/services')
 @UseGuards(JwtAuthGuard)
 @Roles('admin')

@@ -212,6 +212,30 @@ const APPOINTMENT_STATUS_STYLES = {
   canceled: { label: 'בוטל', className: 'bg-gray-200 text-gray-600' },
 };
 
+// צבעי פסטל לשירותים שאין להם כלל צבע ייעודי (מוקצים לפי סדר השירותים כדי שיהיו יציבים)
+const SERVICE_COLOR_PALETTE = [
+  { dotClassName: 'bg-sky-300', cellClassName: 'bg-sky-100 text-sky-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { dotClassName: 'bg-amber-300', cellClassName: 'bg-amber-100 text-amber-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { dotClassName: 'bg-violet-300', cellClassName: 'bg-violet-100 text-violet-900', badgeClassName: 'bg-black/10 text-gray-700' },
+  { dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
+];
+
+// תספורת קלאסית עם זקן -> שחור, חייל עם זקן -> ירוק כהה. שאר השירותים מקבלים פסטל יציב מה-palette למעלה.
+const getServiceColorStyle = (service, allServices = []) => {
+  const name = service?.name || '';
+  const hasBeard = name.includes('זקן');
+  const isSoldier = name.includes('חייל');
+  if (hasBeard && isSoldier) {
+    return { dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' };
+  }
+  if (hasBeard) {
+    return { dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' };
+  }
+  const others = (allServices || []).filter((s) => !(s?.name || '').includes('זקן'));
+  const idx = Math.max(0, others.findIndex((s) => String(s?.id) === String(service?.id)));
+  return SERVICE_COLOR_PALETTE[idx % SERVICE_COLOR_PALETTE.length];
+};
+
 const toMinutes = (time) => {
   if (!time && time !== 0) return null;
   const [hh, mm] = String(time).split(':');
@@ -4132,6 +4156,19 @@ const extractRecurringSchedules = (client) => {
                             <ChevronLeft className="w-4 h-4" />
                           </Button>
                         </div>
+                        {services.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 px-1">
+                            {services.map((svc) => {
+                              const style = getServiceColorStyle(svc, services);
+                              return (
+                                <div key={svc.id} className="flex items-center gap-1.5">
+                                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${style.dotClassName}`} />
+                                  <span className="text-[11px] text-gray-600 truncate max-w-[140px]">{svc.name}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="min-w-[700px]">
                             <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
@@ -4160,6 +4197,7 @@ const extractRecurringSchedules = (client) => {
                                       const apt = weeklyAppointmentsBySlot.get(`${dayKey}-${slotMinute}`);
                                       const displayInfo = apt ? getAppointmentDisplayInfo(apt) : null;
                                       const isDraggableApt = apt ? canDragAppointmentInCalendar(apt) : false;
+                                      const serviceColorStyle = apt ? getServiceColorStyle(serviceById(apt.service_id), services) : null;
                                       const isDropTarget = dragTargetCell?.dayKey === dayKey && dragTargetCell?.slotMinute === slotMinute;
                                       return (
                                         <div
@@ -4291,7 +4329,7 @@ const extractRecurringSchedules = (client) => {
                                                 client_phone: displayInfo?.phone || apt.client_phone,
                                                 client: displayInfo?.client || apt.client,
                                               })}
-                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${isDraggableApt ? 'bg-black text-white hover:bg-gray-800 cursor-move' : 'bg-gray-300 text-gray-700 cursor-not-allowed'}`}
+                                              className={`relative w-full rounded-md text-right pr-1 py-0.5 text-[11px] leading-tight shadow-sm transition select-none ${((apt.payment_method ?? apt.paymentMethod) === 'cash' || (apt.payment_method ?? apt.paymentMethod) === 'credit') ? 'pl-7' : 'pl-1'} ${serviceColorStyle.cellClassName} ${isDraggableApt ? 'hover:brightness-95 cursor-move' : 'opacity-55 cursor-not-allowed'}`}
                                               style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'pan-x', WebkitUserDrag: 'none' }}
                                             >
                                               {(() => {
@@ -4300,7 +4338,7 @@ const extractRecurringSchedules = (client) => {
                                                 const PayIcon = pm === 'cash' ? Banknote : CreditCard;
                                                 return (
                                                   <span
-                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-0.5 ${isDraggableApt ? 'bg-white/20 text-white' : 'bg-black/10 text-gray-600'}`}
+                                                    className={`absolute left-0.5 top-0.5 inline-flex items-center justify-center rounded-full p-0.5 ${serviceColorStyle.badgeClassName}`}
                                                     title={pm === 'cash' ? 'תשלום במזומן' : 'תשלום בכרטיס אשראי'}
                                                   >
                                                     <PayIcon className="h-[18px] w-[18px]" />

@@ -1791,12 +1791,16 @@ const extractRecurringSchedules = (client) => {
   }, [memberSettings]);
 
   const getAppointmentsForDay = (date) => {
+    const now = new Date();
     return appointments
-        .filter(apt =>
-            apt.status !== 'canceled' &&
-            apt.status !== 'blocked' &&            // 👈 אל תציג חסימות ביומן התורים
-            isSameDay(new Date(apt.starts_at), date)
-        )
+        .filter(apt => {
+          if (apt.status === 'canceled' || apt.status === 'blocked') return false; // 👈 אל תציג חסימות ביומן התורים
+          if (!isSameDay(new Date(apt.starts_at), date)) return false;
+          // תורי מזומן נעלמים מרשימת המנהל ברגע שהזמן שלהם נגמר (לא בסוף היום)
+          const paymentMethod = apt.payment_method ?? apt.paymentMethod;
+          if (paymentMethod === 'cash' && apt.ends_at && isAfter(now, new Date(apt.ends_at))) return false;
+          return true;
+        })
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   };
 
@@ -1867,13 +1871,18 @@ const extractRecurringSchedules = (client) => {
   );
 
   const weeklyAppointments = useMemo(() => {
+    const now = new Date();
     const weekStart = startOfDay(weeklyCalendarStart);
     const weekEnd = addDays(weekStart, 6);
     return (weeklyAppointmentsData || [])
         .filter((apt) => {
           if (apt.status === 'canceled' || apt.status === 'blocked') return false;
           const start = new Date(apt.starts_at);
-          return start >= weekStart && start < weekEnd;
+          if (!(start >= weekStart && start < weekEnd)) return false;
+          // תורי מזומן נעלמים מהיומן השבועי ברגע שהזמן שלהם נגמר (לא בסוף היום)
+          const paymentMethod = apt.payment_method ?? apt.paymentMethod;
+          if (paymentMethod === 'cash' && apt.ends_at && isAfter(now, new Date(apt.ends_at))) return false;
+          return true;
         })
         .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
   }, [weeklyAppointmentsData, weeklyCalendarStart]);

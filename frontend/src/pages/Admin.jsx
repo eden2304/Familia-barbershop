@@ -220,10 +220,10 @@ const SERVICE_COLOR_PALETTE = [
   { dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
 ];
 
-// תספורת קלאסית עם זקן -> שחור, חייל עם זקן -> ירוק כהה. שאר השירותים מקבלים פסטל יציב מה-palette למעלה.
+// שירות עם זקן (ולא "ללא זקן") -> שחור, ואם זה גם שירות חייל -> ירוק כהה. שאר השירותים מקבלים פסטל יציב מה-palette למעלה.
 const getServiceColorStyle = (service, allServices = []) => {
   const name = service?.name || '';
-  const hasBeard = name.includes('זקן');
+  const hasBeard = name.includes('זקן') && !name.includes('ללא זקן');
   const isSoldier = name.includes('חייל');
   if (hasBeard && isSoldier) {
     return { dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' };
@@ -231,7 +231,10 @@ const getServiceColorStyle = (service, allServices = []) => {
   if (hasBeard) {
     return { dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' };
   }
-  const others = (allServices || []).filter((s) => !(s?.name || '').includes('זקן'));
+  const others = (allServices || []).filter((s) => {
+    const n = s?.name || '';
+    return !(n.includes('זקן') && !n.includes('ללא זקן'));
+  });
   const idx = Math.max(0, others.findIndex((s) => String(s?.id) === String(service?.id)));
   return SERVICE_COLOR_PALETTE[idx % SERVICE_COLOR_PALETTE.length];
 };

@@ -6672,29 +6672,43 @@ function AdminFormActions({ submitLabel, onCancel, cancelLabel = "ביטול", s
 }
 
 // גריד של עיגולי צבע לבחירה - taken מציין צבעים ששירותים אחרים כבר תפסו (לא ניתנים לבחירה)
-function ServiceColorSwatches({ value, onChange, takenColors = [], disabled = false }) {
+// takenColorMap: { colorKey: ownerServiceName } - שמות השירותים שכבר תופסים כל צבע (חוץ מהשירות הנוכחי)
+function ServiceColorSwatches({ value, onChange, takenColorMap = {}, disabled = false }) {
+  const [blockedMessage, setBlockedMessage] = useState(null);
   return (
-      <div className="flex flex-wrap gap-2">
-        {SERVICE_COLOR_OPTIONS.map((opt) => {
-          const isTaken = takenColors.includes(opt.key) && opt.key !== value;
-          const isSelected = value === opt.key;
-          return (
-              <button
-                  key={opt.key}
-                  type="button"
-                  disabled={disabled || isTaken}
-                  onClick={() => onChange(opt.key)}
-                  title={isTaken ? `${opt.label} - כבר בשימוש בשירות אחר` : opt.label}
-                  className={`relative h-9 w-9 rounded-full border-2 transition ${opt.dotClassName} ${
-                      isSelected ? 'border-black ring-2 ring-offset-2 ring-black' : 'border-white shadow-sm'
-                  } ${isTaken ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
-              >
-                {isSelected && (
-                    <CheckCircle2 className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />
-                )}
-              </button>
-          );
-        })}
+      <div>
+        <div className="flex flex-wrap gap-2">
+          {SERVICE_COLOR_OPTIONS.map((opt) => {
+            const takenBy = opt.key !== value ? takenColorMap[opt.key] : null;
+            const isSelected = value === opt.key;
+            return (
+                <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      if (disabled) return;
+                      if (takenBy) {
+                        setBlockedMessage(`הצבע "${opt.label}" כבר בשימוש על ידי השירות "${takenBy}" - אי אפשר לבחור אותו שוב`);
+                        return;
+                      }
+                      setBlockedMessage(null);
+                      onChange(opt.key);
+                    }}
+                    title={takenBy ? `${opt.label} - בשימוש על ידי ${takenBy}` : opt.label}
+                    className={`relative h-9 w-9 rounded-full border-2 transition ${opt.dotClassName} ${
+                        isSelected ? 'border-black ring-2 ring-offset-2 ring-black' : 'border-white shadow-sm'
+                    } ${takenBy ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer hover:scale-105'} ${disabled ? 'pointer-events-none opacity-50' : ''}`}
+                >
+                  {isSelected && (
+                      <CheckCircle2 className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />
+                  )}
+                </button>
+            );
+          })}
+        </div>
+        {blockedMessage && (
+            <p className="mt-1.5 text-xs font-medium text-red-600">{blockedMessage}</p>
+        )}
       </div>
   );
 }
@@ -6703,10 +6717,10 @@ function ServiceColorSwatches({ value, onChange, takenColors = [], disabled = fa
 function ServiceColorPickerButton({ service, allServices, onSelect }) {
   const [open, setOpen] = useState(false);
   const style = getServiceColorStyle(service);
-  const takenColors = (allServices || [])
+  const takenColorMap = {};
+  (allServices || [])
       .filter((s) => String(s.id) !== String(service.id))
-      .map((s) => s.color)
-      .filter(Boolean);
+      .forEach((s) => { if (s.color) takenColorMap[s.color] = s.name; });
 
   return (
       <Popover open={open} onOpenChange={setOpen}>
@@ -6721,7 +6735,7 @@ function ServiceColorPickerButton({ service, allServices, onSelect }) {
           <p className="mb-2 text-xs font-semibold text-gray-600">בחר צבע לשירות</p>
           <ServiceColorSwatches
               value={service.color}
-              takenColors={takenColors}
+              takenColorMap={takenColorMap}
               onChange={(key) => {
                 onSelect(key);
                 setOpen(false);
@@ -6744,13 +6758,13 @@ function ServiceForm({ service, allServices = [], onSubmit, onCancel }) {
   });
   const [colorError, setColorError] = useState(null);
 
-  const takenColors = useMemo(
-      () => (allServices || [])
-          .filter((s) => String(s.id) !== String(service?.id))
-          .map((s) => s.color)
-          .filter(Boolean),
-      [allServices, service]
-  );
+  const takenColorMap = useMemo(() => {
+    const map = {};
+    (allServices || [])
+        .filter((s) => String(s.id) !== String(service?.id))
+        .forEach((s) => { if (s.color) map[s.color] = s.name; });
+    return map;
+  }, [allServices, service]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -6798,7 +6812,7 @@ function ServiceForm({ service, allServices = [], onSubmit, onCancel }) {
           <ServiceColorSwatches
               value={formData.color}
               onChange={(key) => { setFormData({ ...formData, color: key }); setColorError(null); }}
-              takenColors={takenColors}
+              takenColorMap={takenColorMap}
           />
           {colorError && <p className="mt-1 text-xs font-medium text-red-600">{colorError}</p>}
         </AdminField>

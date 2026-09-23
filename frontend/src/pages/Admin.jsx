@@ -6676,7 +6676,7 @@ function AdminFormActions({ submitLabel, onCancel, cancelLabel = "ביטול", s
 function ServiceColorSwatches({ value, onChange, takenColorMap = {}, disabled = false }) {
   const [blockedMessage, setBlockedMessage] = useState(null);
   return (
-      <div>
+      <div className="w-48">
         <div className="flex flex-wrap gap-2">
           {SERVICE_COLOR_OPTIONS.map((opt) => {
             const takenBy = opt.key !== value ? takenColorMap[opt.key] : null;
@@ -6688,7 +6688,7 @@ function ServiceColorSwatches({ value, onChange, takenColorMap = {}, disabled = 
                     onClick={() => {
                       if (disabled) return;
                       if (takenBy) {
-                        setBlockedMessage(`הצבע "${opt.label}" כבר בשימוש על ידי השירות "${takenBy}" - אי אפשר לבחור אותו שוב`);
+                        setBlockedMessage(`תפוס ע"י "${takenBy}"`);
                         return;
                       }
                       setBlockedMessage(null);
@@ -6707,7 +6707,7 @@ function ServiceColorSwatches({ value, onChange, takenColorMap = {}, disabled = 
           })}
         </div>
         {blockedMessage && (
-            <p className="mt-1.5 text-xs font-medium text-red-600">{blockedMessage}</p>
+            <p className="mt-1.5 break-words text-xs font-medium text-red-600">{blockedMessage}</p>
         )}
       </div>
   );

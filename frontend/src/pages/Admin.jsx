@@ -1886,7 +1886,14 @@ const extractRecurringSchedules = (client) => {
 
   const handleAppointmentsViewModeChange = React.useCallback((nextMode) => {
     if (nextMode === 'list' && appointmentsViewMode === 'calendar') {
-      setSelectedDate((prev) => startOfWeek(prev, { weekStartsOn: 0 }));
+      // מעבר מיומן שבועי לרשימה: היום הנוכחי אם השבוע המוצג הוא השבוע הנוכחי,
+      // אחרת היום הראשון של השבוע המוצג (למשל שבוע הבא).
+      setSelectedDate((prev) => {
+        const weekStart = startOfWeek(prev, { weekStartsOn: 0 });
+        const today = startOfDay(new Date());
+        const isCurrentWeek = isSameDay(startOfWeek(today, { weekStartsOn: 0 }), weekStart);
+        return isCurrentWeek && today.getDay() !== 6 ? today : weekStart;
+      });
     }
     setAppointmentsViewMode(nextMode);
   }, [appointmentsViewMode]);
@@ -1895,6 +1902,23 @@ const extractRecurringSchedules = (client) => {
       () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
   );
+
+  // ביומן השבועי ממרכזים אופקית את היום הנוכחי (ואם השבוע המוצג לא כולל אותו - את היום הראשון בשבוע)
+  const weeklyCalendarStartTime = weeklyCalendarStart.getTime();
+  React.useLayoutEffect(() => {
+    if (appointmentsViewMode !== 'calendar' || activeTab !== 'appointments' || showWaitingListView) return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+    const today = new Date();
+    const targetDay = weeklyCalendarDays.find((day) => isSameDay(day, today)) ?? weeklyCalendarDays[0];
+    const header = container.querySelector(`[data-day-header="${format(targetDay, 'yyyy-MM-dd')}"]`);
+    if (!header) return;
+    const containerRect = container.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const delta = (headerRect.left + headerRect.width / 2) - (containerRect.left + containerRect.width / 2);
+    if (Math.abs(delta) > 1) container.scrollBy({ left: delta, behavior: 'auto' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentsViewMode, activeTab, showWaitingListView, weeklyCalendarStartTime]);
 
   const weeklyAppointments = useMemo(() => {
     const now = new Date();
@@ -4195,6 +4219,7 @@ const extractRecurringSchedules = (client) => {
                                 <button
                                   key={`header-${dayKey}`}
                                   type="button"
+                                  data-day-header={dayKey}
                                   onClick={() => setSelectedDate(day)}
                                   onDoubleClick={() => openDayHoursModal(day)}
                                   title="לחיצה כפולה לעריכת שעות היום"

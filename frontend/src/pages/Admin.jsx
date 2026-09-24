@@ -222,8 +222,8 @@ const SERVICE_COLOR_OPTIONS = [
   { key: 'rose', label: 'ורוד', dotClassName: 'bg-rose-300', cellClassName: 'bg-rose-100 text-rose-900', badgeClassName: 'bg-black/10 text-gray-700' },
   { key: 'emerald', label: 'מנטה', dotClassName: 'bg-emerald-300', cellClassName: 'bg-emerald-100 text-emerald-900', badgeClassName: 'bg-black/10 text-gray-700' },
   { key: 'pink', label: 'פוקסיה בהיר', dotClassName: 'bg-pink-300', cellClassName: 'bg-pink-100 text-pink-900', badgeClassName: 'bg-black/10 text-gray-700' },
-  { key: 'black', label: 'שחור', dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white' },
-  { key: 'forest', label: 'ירוק כהה', dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white' },
+  { key: 'black', label: 'שחור', dotClassName: 'bg-black', cellClassName: 'bg-black text-white', badgeClassName: 'bg-white/20 text-white', isDark: true },
+  { key: 'forest', label: 'ירוק כהה', dotClassName: 'bg-emerald-800', cellClassName: 'bg-emerald-900 text-white', badgeClassName: 'bg-white/20 text-white', isDark: true },
 ];
 
 const SERVICE_COLOR_BY_KEY = Object.fromEntries(SERVICE_COLOR_OPTIONS.map((opt) => [opt.key, opt]));
@@ -4052,6 +4052,13 @@ const extractRecurringSchedules = (client) => {
                                     client_phone: isBlocked ? '' : displayInfo.phone,
                                     client: displayInfo.client || apt.client,
                                   };
+                                  const serviceColorStyle = isBlocked ? null : getServiceColorStyle(service);
+                                  const isDark = Boolean(serviceColorStyle?.isDark);
+                                  const primaryTextClass = isDark ? 'text-white' : 'text-gray-900';
+                                  const mutedTextClass = isDark ? 'text-white/70' : 'text-gray-500';
+                                  const serviceTextClass = isDark ? 'text-white/85' : 'text-gray-600';
+                                  const iconButtonClass = isDark ? 'text-white/60 hover:text-white' : 'text-gray-400 hover:text-gray-700';
+                                  const dividerClass = isDark ? 'bg-white/25' : 'bg-gray-200';
                                   return (
                                       <motion.div
                                           key={apt.id}
@@ -4061,25 +4068,25 @@ const extractRecurringSchedules = (client) => {
                                           onClick={() =>
                                               setSelectedAppointment(selectedData)
                                           }
-                                          className={`bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 hover:bg-gray-50${isBlocked ? 'bg-gray-200 opacity-80' : ''}${isCompleted ? 'opacity-60' : ''}${passed ? 'border border-green-300' : 'border border-gray-200'}`}
+                                          className={`rounded-2xl p-3 shadow-sm flex items-center gap-3 cursor-pointer transition-colors duration-200 ${isBlocked ? 'bg-gray-200 opacity-80' : `${serviceColorStyle.cellClassName} hover:brightness-95`}${isCompleted ? ' opacity-60' : ''}${passed ? ' border border-green-300' : ' border border-gray-200'}`}
                                       >
                                         <div className="text-center w-20">
-                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                          <p className={`font-bold text-sm ${primaryTextClass} ${isCompleted || isBlocked ? 'line-through' : ''}`}>
                                             {format(new Date(apt.starts_at), 'HH:mm')}
                                           </p>
-                                          <p className="text-xs text-gray-500">עד</p>
-                                          <p className={`font-bold text-gray-900 text-sm ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                          <p className={`text-xs ${mutedTextClass}`}>עד</p>
+                                          <p className={`font-bold text-sm ${primaryTextClass} ${isCompleted || isBlocked ? 'line-through' : ''}`}>
                                             {format(new Date(apt.ends_at), 'HH:mm')}
                                           </p>
                                         </div>
-                                        <div className="w-px bg-gray-200 h-10 self-center mx-1"></div>
+                                        <div className={`w-px h-10 self-center mx-1 ${dividerClass}`}></div>
                                         <div className="flex-1">
-                                          <h4 className={`font-bold text-gray-900 ${isCompleted || isBlocked ? 'line-through' : ''}`}>
+                                          <h4 className={`font-bold ${primaryTextClass} ${isCompleted || isBlocked ? 'line-through' : ''}`}>
                                             {displayName}
                                           </h4>
-                                          <p className="text-sm text-gray-600">{serviceName({...apt, service})}</p>
+                                          <p className={`text-sm ${serviceTextClass}`}>{serviceName({...apt, service})}</p>
                                         </div>
-                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-700"
+                                        <Button variant="ghost" size="icon" className={iconButtonClass}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
                                                   setSelectedAppointment(selectedData);

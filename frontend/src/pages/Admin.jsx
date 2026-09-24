@@ -365,6 +365,33 @@ const normalizeBusinessHourRow = (row) => {
   return { weekday, open, close, slotMinutes: slot, isOpen };
 };
 
+const isBusinessDayOpen = (row) => {
+  const normalized = normalizeBusinessHourRow(row);
+  if (!normalized) return false;
+  const openMinutes = toMinutes(normalized.open);
+  const closeMinutes = toMinutes(normalized.close);
+  return Boolean(normalized.isOpen) && Number.isFinite(openMinutes) && Number.isFinite(closeMinutes) && closeMinutes > openMinutes;
+};
+
+const findNextOpenDate = (fromDate, businessHoursRows = [], lookAheadDays = 14) => {
+  const baseDate = startOfDay(fromDate instanceof Date ? fromDate : new Date());
+  if (!Number.isFinite(baseDate.getTime())) return null;
+
+  const openByWeekday = {};
+  (businessHoursRows || []).forEach((row) => {
+    const normalized = normalizeBusinessHourRow(row);
+    if (!normalized) return;
+    openByWeekday[normalized.weekday] = isBusinessDayOpen(normalized);
+  });
+
+  for (let offset = 0; offset <= lookAheadDays; offset += 1) {
+    const candidate = addDays(baseDate, offset);
+    if (openByWeekday[candidate.getDay()]) return candidate;
+  }
+
+  return null;
+};
+
 const normalizePhone = (phone) => {
   if (!phone) return "";
   const cleaned = phone.toString().replace(/\D/g, '');
@@ -968,6 +995,7 @@ export default function Admin() { // Removed props
   const dayStripRef1 = React.useRef(null);
   const dayStripRef2 = React.useRef(null);
   const weeklyCalendarRef = React.useRef(null);
+  const didSetInitialOpenDayRef = React.useRef(false);
   const mainContentRef = React.useRef(null);
 
 // מרכזים את היום הנבחר בתוך הפס בכל שינוי/טעינה
@@ -1034,6 +1062,19 @@ export default function Admin() { // Removed props
       });
     });
   }, [scrollSelected]);
+
+  React.useEffect(() => {
+    if (didSetInitialOpenDayRef.current) return;
+    if (!Array.isArray(businessHours) || businessHours.length === 0) return;
+
+    const today = startOfDay(new Date());
+    const preferredDate = findNextOpenDate(today, businessHours);
+
+    didSetInitialOpenDayRef.current = true;
+    if (preferredDate && !isSameDay(preferredDate, selectedDate)) {
+      setSelectedDate(preferredDate);
+    }
+  }, [businessHours, selectedDate]);
 
 
   const serviceById = React.useCallback((id) => {
@@ -1957,6 +1998,25 @@ const extractRecurringSchedules = (client) => {
       return { day, dayKey, isOpen, slots };
     });
   }, [weeklyCalendarDays, weeklyBusinessHoursByDay, weeklyDayHoursOverrides]);
+
+  React.useEffect(() => {
+    if (appointmentsViewMode !== 'calendar') return;
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+    const selectedDayKey = format(selectedDate, 'yyyy-MM-dd');
+    const target = container.querySelector(`[data-weekly-day="${selectedDayKey}"]`);
+    if (!target) return;
+
+    requestAnimationFrame(() => {
+      try {
+        target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+      } catch (_) {
+        const targetCenter = target.offsetLeft + (target.clientWidth / 2);
+        const left = Math.max(0, targetCenter - (container.clientWidth / 2));
+        container.scrollTo({ left, behavior: 'auto' });
+      }
+    });
+  }, [appointmentsViewMode, selectedDate, weeklyCalendarColumns]);
 
   const canDragAppointmentInCalendar = React.useCallback((appointment) => {
     if (!appointment) return false;
@@ -4188,6 +4248,7 @@ const extractRecurringSchedules = (client) => {
                                 <button
                                   key={`header-${dayKey}`}
                                   type="button"
+                                  data-weekly-day={dayKey}
                                   onClick={() => setSelectedDate(day)}
                                   onDoubleClick={() => openDayHoursModal(day)}
                                   title="לחיצה כפולה לעריכת שעות היום"

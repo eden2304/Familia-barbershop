@@ -605,6 +605,7 @@ export default function Admin() { // Removed props
 
   const [showWaitingListView, setShowWaitingListView] = useState(false);
   const [appointmentsViewMode, setAppointmentsViewMode] = useState('list');
+  const [weeklyCenterRequest, setWeeklyCenterRequest] = useState(0); // עולה בכל כניסה מפורשת ליומן השבועי (למשל מהנאב התחתון) כדי למרכז שוב את היום
   const [pendingNotificationClientId, setPendingNotificationClientId] = useState(null);
   const notificationNavigation = useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -1457,6 +1458,12 @@ export default function Admin() { // Removed props
       setActiveTab('appointments');
       if (notificationNavigation.adminView === 'weekly') {
         setAppointmentsViewMode('calendar');
+        if (!nextDate) {
+          // כניסה ליומן השבועי בלי תאריך ספציפי: חוזרים לשבוע הנוכחי (בשבת - לשבוע הבא)
+          const today = startOfDay(new Date());
+          setSelectedDate(today.getDay() === 6 ? addDays(startOfWeek(today, { weekStartsOn: 0 }), 7) : today);
+        }
+        setWeeklyCenterRequest((n) => n + 1);
       } else if (notificationNavigation.target === 'appointment') {
         setAppointmentsViewMode('list');
       }
@@ -1886,7 +1893,14 @@ const extractRecurringSchedules = (client) => {
 
   const handleAppointmentsViewModeChange = React.useCallback((nextMode) => {
     if (nextMode === 'list' && appointmentsViewMode === 'calendar') {
-      setSelectedDate((prev) => startOfWeek(prev, { weekStartsOn: 0 }));
+      // מעבר מיומן שבועי לרשימה: היום הנוכחי אם השבוע המוצג הוא השבוע הנוכחי,
+      // אחרת היום הראשון של השבוע המוצג (למשל שבוע הבא).
+      setSelectedDate((prev) => {
+        const weekStart = startOfWeek(prev, { weekStartsOn: 0 });
+        const today = startOfDay(new Date());
+        const isCurrentWeek = isSameDay(startOfWeek(today, { weekStartsOn: 0 }), weekStart);
+        return isCurrentWeek && today.getDay() !== 6 ? today : weekStart;
+      });
     }
     setAppointmentsViewMode(nextMode);
   }, [appointmentsViewMode]);
@@ -1895,6 +1909,37 @@ const extractRecurringSchedules = (client) => {
       () => Array.from({ length: 6 }, (_, idx) => addDays(weeklyCalendarStart, idx)),
       [weeklyCalendarStart]
   );
+
+  // ביומן השבועי ממרכזים אופקית את היום הנוכחי (ואם השבוע המוצג לא כולל אותו - את היום הראשון בשבוע).
+  // הקונטיינר נוצר מחדש בכל מעבר דרך מסך הטעינה / אנימציית מעבר בין טאבים (AnimatePresence mode="wait"),
+  // לכן הריכוז מופעל מ-callback ref בכל פעם שהקונטיינר עולה, ולא רק משינוי state.
+  const weeklyCalendarDaysRef = React.useRef(weeklyCalendarDays);
+  weeklyCalendarDaysRef.current = weeklyCalendarDays;
+
+  const centerWeeklyCalendar = React.useCallback(() => {
+    const container = weeklyCalendarRef.current;
+    if (!container) return;
+    const days = weeklyCalendarDaysRef.current;
+    const today = new Date();
+    const targetDay = days.find((day) => isSameDay(day, today)) ?? days[0];
+    const header = container.querySelector(`[data-day-header="${format(targetDay, 'yyyy-MM-dd')}"]`);
+    if (!header) return;
+    const containerRect = container.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const delta = (headerRect.left + headerRect.width / 2) - (containerRect.left + containerRect.width / 2);
+    if (Math.abs(delta) > 1) container.scrollBy({ left: delta, behavior: 'auto' });
+  }, []);
+
+  const setWeeklyCalendarNode = React.useCallback((node) => {
+    weeklyCalendarRef.current = node;
+    if (node) centerWeeklyCalendar();
+  }, [centerWeeklyCalendar]);
+
+  // קונטיינר שכבר קיים: ממרכזים מחדש בעת מעבר שבוע או כניסה מפורשת ליומן (למשל מהנאב התחתון)
+  const weeklyCalendarStartTime = weeklyCalendarStart.getTime();
+  React.useLayoutEffect(() => {
+    centerWeeklyCalendar();
+  }, [centerWeeklyCalendar, weeklyCalendarStartTime, weeklyCenterRequest]);
 
   const weeklyAppointments = useMemo(() => {
     const now = new Date();
@@ -4188,13 +4233,14 @@ const extractRecurringSchedules = (client) => {
                             })}
                           </div>
                         )}
-                        <div ref={weeklyCalendarRef} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
+                        <div ref={setWeeklyCalendarNode} className="rounded-2xl bg-white border shadow-sm overflow-x-auto">
                           <div className="min-w-[700px]">
                             <div className="grid" style={{ gridTemplateColumns: 'repeat(6, minmax(96px, 1fr))' }}>
                               {weeklyCalendarColumns.map(({ day, dayKey }) => (
                                 <button
                                   key={`header-${dayKey}`}
                                   type="button"
+                                  data-day-header={dayKey}
                                   onClick={() => setSelectedDate(day)}
                                   onDoubleClick={() => openDayHoursModal(day)}
                                   title="לחיצה כפולה לעריכת שעות היום"

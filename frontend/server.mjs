@@ -1,7 +1,9 @@
 import { createReadStream } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +49,33 @@ const mimeTypes = {
   '.xml': 'application/xml; charset=utf-8',
   '.mp4': 'video/mp4'
 };
+
+const brotliAsync = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+const COMPRESSIBLE_EXTENSIONS = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.xml', '.map']);
+const MIN_COMPRESS_BYTES = 1024;
+// מכווצים כל קובץ פעם אחת ושומרים בזיכרון (dist קטן), כדי לא לשלם CPU על כל בקשה
+const compressedCache = new Map();
+
+function pickEncoding(req) {
+  const accepted = String(req.headers['accept-encoding'] || '');
+  if (/\bbr\b/.test(accepted)) return 'br';
+  if (/\bgzip\b/.test(accepted)) return 'gzip';
+  return null;
+}
+
+async function getCompressedBody(filePath, info, encoding) {
+  const key = `${encoding}:${filePath}:${info.size}:${info.mtimeMs}`;
+  let pending = compressedCache.get(key);
+  if (!pending) {
+    pending = readFile(filePath).then((raw) => (encoding === 'br'
+      ? brotliAsync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } })
+      : gzipAsync(raw, { level: 9 })));
+    compressedCache.set(key, pending);
+    pending.catch(() => compressedCache.delete(key));
+  }
+  return pending;
+}
 
 let readyState = {
   ready: false,
@@ -146,7 +175,7 @@ function resolveAssetPath(requestPath) {
   return candidate;
 }
 
-async function streamFile(res, filePath, statusCode = 200, sendBody = true) {
+async function streamFile(req, res, filePath, statusCode = 200, sendBody = true) {
   try {
     const info = await stat(filePath);
     if (!info.isFile()) {
@@ -158,13 +187,31 @@ async function streamFile(res, filePath, statusCode = 200, sendBody = true) {
 
     res.statusCode = statusCode;
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', info.size);
 
     if (ext === '.html') {
       res.setHeader('Cache-Control', 'no-store');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
+
+    const encoding = COMPRESSIBLE_EXTENSIONS.has(ext) && info.size >= MIN_COMPRESS_BYTES ? pickEncoding(req) : null;
+    if (COMPRESSIBLE_EXTENSIONS.has(ext)) {
+      res.setHeader('Vary', 'Accept-Encoding');
+    }
+
+    if (encoding) {
+      const body = await getCompressedBody(filePath, info, encoding);
+      res.setHeader('Content-Encoding', encoding);
+      res.setHeader('Content-Length', body.length);
+      if (!sendBody) {
+        res.end();
+        return true;
+      }
+      res.end(body);
+      return true;
+    }
+
+    res.setHeader('Content-Length', info.size);
 
     if (!sendBody) {
       res.end();
@@ -217,7 +264,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (pathname === '/favicon.ico') {
-      const served = await streamFile(res, ICON_FILE, 200, method !== 'HEAD');
+      const served = await streamFile(req, res, ICON_FILE, 200, method !== 'HEAD');
       if (served) {
         return;
       }
@@ -225,13 +272,13 @@ const server = createServer(async (req, res) => {
 
     const directFilePath = resolveAssetPath(pathname);
     if (directFilePath) {
-      const served = await streamFile(res, directFilePath, 200, method !== 'HEAD');
+      const served = await streamFile(req, res, directFilePath, 200, method !== 'HEAD');
       if (served) {
         return;
       }
     }
 
-    const servedIndex = await streamFile(res, INDEX_FILE, 200, method !== 'HEAD');
+    const servedIndex = await streamFile(req, res, INDEX_FILE, 200, method !== 'HEAD');
     if (servedIndex) {
       return;
     }

@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
+import { optimizeExistingUploads } from './modules/admin/video-optimizer';
 
 const logger = new Logger('Bootstrap');
 const RETENTION_DAYS = 7;
@@ -151,7 +152,7 @@ async function bootstrap() {
             res.setHeader('Accept-Ranges', 'bytes');
 
             const lowerPath = filePath.toLowerCase();
-            if (lowerPath.endsWith('.mp4')) {
+            if (lowerPath.endsWith('.mp4') || lowerPath.endsWith('.mov') || lowerPath.endsWith('.m4v')) {
                 res.setHeader('Content-Type', 'video/mp4');
             } else if (lowerPath.endsWith('.webm')) {
                 res.setHeader('Content-Type', 'video/webm');
@@ -197,5 +198,14 @@ async function bootstrap() {
     setInterval(() => {
         void pruneOldRecords(dataSource);
     }, 6 * 60 * 60 * 1000);
+
+    // דוחס פעם אחת סרטונים כבדים שכבר הועלו (חוסך תעבורה יוצאת ב-Railway). כיבוי: VIDEO_OPTIMIZE_ON_BOOT=false
+    if (process.env.VIDEO_OPTIMIZE_ON_BOOT !== 'false') {
+        setTimeout(() => {
+            optimizeExistingUploads(uploadDir).catch((error) => {
+                logger.warn(`[optimizeExistingUploads] failed: ${error instanceof Error ? error.message : 'unknown'}`);
+            });
+        }, 60_000).unref();
+    }
 }
 bootstrap();

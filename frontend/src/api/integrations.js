@@ -100,11 +100,17 @@ export const UploadFile = {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(JSON.stringify(data));
 
-        const absoluteUrl = data.url?.startsWith('/')
-            ? `${API_ROOT}${data.url}`
-            : data.url;
+        const toAbsolute = (value) => (value?.startsWith('/') ? `${API_ROOT}${value}` : value);
+        const absoluteUrl = toAbsolute(data.url);
 
-        return { ok: true, url: absoluteUrl, file_url: absoluteUrl };
+        // previewUrl: גרסה קטנה (360p) לתצוגות ממוזערות; fullUrl: הגרסה המכווצת לניגון מלא
+        return {
+            ok: true,
+            url: absoluteUrl,
+            file_url: absoluteUrl,
+            previewUrl: toAbsolute(data.previewUrl),
+            fullUrl: toAbsolute(data.fullUrl),
+        };
     }
 };
 

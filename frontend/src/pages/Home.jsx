@@ -162,13 +162,14 @@ export default function Home() {
       if (!signal?.aborted) setTestimonials(testiFromApi);
 
       const active = Array.isArray(bg) ? (bg.find((v) => v.isActive || v.is_active) || bg[0]) : null;
-      const rawUrl = active?.imageUrl
-        || active?.image_url
-        || active?.fullUrl
+      // סרטון הרקע ממלא את המסך, לכן מעדיפים את הגרסה המלאה ולא את התצוגה המקדימה הקטנה (image_url)
+      const rawUrl = active?.fullUrl
         || active?.full_url
         || active?.videoUrl
         || active?.video_url
         || active?.url
+        || active?.imageUrl
+        || active?.image_url
         || "";
       if (!signal?.aborted) setBackgroundVideoUrl(resolveVideoUrl(rawUrl));
 

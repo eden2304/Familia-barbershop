@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Logger, Param, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../../entities/product.entity';
@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Express } from 'express';
 import { randomUUID } from 'crypto';
-import { execFile, execFileSync } from 'child_process';
+import { isFfmpegAvailable, transcodeFullVideo, transcodePreviewVideo } from './video-optimizer';
 
 const mimeToExtension: Record<string, string> = {
     'video/mp4': 'mp4',
@@ -31,12 +31,12 @@ const mimeToExtension: Record<string, string> = {
 const allowedUploadMimeTypes = new Set(Object.keys(mimeToExtension));
 const videoUploadMimeTypes = new Set(['video/mp4', 'video/quicktime', 'video/x-m4v']);
 
-let ffmpegAvailable: boolean | null = null;
-
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 @Roles('admin')
 export class AdminContentController {
+    private readonly logger = new Logger(AdminContentController.name);
+
     constructor(
         @InjectRepository(Product) private products: Repository<Product>,
         @InjectRepository(Testimonial) private testimonials: Repository<Testimonial>,
@@ -208,52 +208,48 @@ export class AdminContentController {
         }
 
         const previewDir = path.resolve(process.cwd(), 'uploads', 'preview');
-        const previewPath = path.join(previewDir, fullFilename);
+        const fullDir = path.resolve(process.cwd(), 'uploads', 'full');
         const inputPath = file.path;
+        const baseName = path.parse(fullFilename).name;
 
-        let previewUrl = `/uploads/preview/${fullFilename}`;
-        if (ffmpegAvailable === null) {
+        // ברירת מחדל (ללא ffmpeg / כשל בהמרה): מגישים את הקובץ המקורי כמו שהוא
+        let finalFullUrl = fullUrl;
+        let previewUrl = fullUrl;
+
+        if (await isFfmpegAvailable()) {
+            const optimizedFilename = `${baseName}.mp4`;
+            const optimizedPath = path.join(fullDir, `${baseName}.optimized.mp4`);
             try {
-                execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
-                ffmpegAvailable = true;
-            } catch {
-                ffmpegAvailable = false;
-            }
-        }
-        if (ffmpegAvailable) {
-            try {
-                execFile('ffmpeg', [
-                    '-y',
-                    '-i', inputPath,
-                    '-vf', 'scale=360:640,fps=15',
-                    '-c:v', 'libx264',
-                    '-profile:v', 'baseline',
-                    '-preset', 'veryfast',
-                    '-b:v', '300k',
-                    '-maxrate', '350k',
-                    '-bufsize', '600k',
-                    '-movflags', '+faststart',
-                    '-an',
-                    previewPath,
-                ], (error) => {
-                    if (error && fs.existsSync(previewPath)) {
-                        fs.unlinkSync(previewPath);
-                    }
-                });
-            } catch {
-                if (fs.existsSync(previewPath)) {
-                    fs.unlinkSync(previewPath);
+                await transcodeFullVideo(inputPath, optimizedPath);
+                const finalPath = path.join(fullDir, optimizedFilename);
+                if (finalPath !== inputPath) {
+                    fs.unlinkSync(inputPath);
                 }
+                fs.renameSync(optimizedPath, finalPath);
+                finalFullUrl = `/uploads/full/${optimizedFilename}`;
+                previewUrl = finalFullUrl;
+            } catch (error) {
+                fs.rmSync(optimizedPath, { force: true });
+                this.logger.warn(`Full video optimization failed, serving original: ${error instanceof Error ? error.message : 'unknown'}`);
             }
-        } else {
-            previewUrl = fullUrl;
+
+            const servedFullPath = path.join(fullDir, path.basename(finalFullUrl));
+            const previewFilename = `${baseName}.mp4`;
+            const previewPath = path.join(previewDir, previewFilename);
+            try {
+                await transcodePreviewVideo(servedFullPath, previewPath);
+                previewUrl = `/uploads/preview/${previewFilename}`;
+            } catch (error) {
+                fs.rmSync(previewPath, { force: true });
+                this.logger.warn(`Video preview generation failed, using full video: ${error instanceof Error ? error.message : 'unknown'}`);
+            }
         }
 
         return {
             ok: true,
-            fullUrl,
+            fullUrl: finalFullUrl,
             previewUrl,
-            url: previewUrl,
+            url: finalFullUrl,
             size: file.size,
             mime: file.mimetype,
         };

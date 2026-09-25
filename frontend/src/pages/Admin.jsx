@@ -3158,12 +3158,15 @@ const extractRecurringSchedules = (client) => {
           .filter(Boolean)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
       const daysSinceLastAppointment = lastDate ? differenceInDays(now, lastDate) : null;
-      const isRecent = lastDate ? daysSinceLastAppointment <= 30 : false;
+      // ירוק: פחות מ-20 יום, צהוב: 20–30 יום, אדום: יותר מחודש
+      const lastAppointmentStatus = lastDate
+          ? (daysSinceLastAppointment > 30 ? 'red' : daysSinceLastAppointment >= 20 ? 'yellow' : 'green')
+          : null;
 
       return {
         ...c,
         lastAppointmentDate: lastDate,
-        lastAppointmentRecent: isRecent,
+        lastAppointmentStatus,
         daysSinceLastAppointment,
       };
     });
@@ -4544,9 +4547,11 @@ const extractRecurringSchedules = (client) => {
                                   const phoneDisplay = client.phone ?? client.client_phone ?? '';
                                   const clientDisplayName = [first, last].filter(Boolean).join(' ').trim() || phoneDisplay || 'לקוח';
                                   const lastAppointment = client.lastAppointmentDate ? format(new Date(client.lastAppointmentDate), 'dd/MM/yyyy', { locale: he }) : 'אין היסטוריה';
-                                  const lastClass = client.lastAppointmentDate
-                                      ? (client.lastAppointmentRecent ? 'text-green-700' : 'text-red-700')
-                                      : 'text-gray-800';
+                                  const lastClass = {
+                                    green: 'text-green-700',
+                                    yellow: 'text-yellow-600',
+                                    red: 'text-red-700',
+                                  }[client.lastAppointmentStatus] || 'text-gray-800';
                                   const recurringList = extractRecurringSchedules(client);
                                   const recurringMeta = recurringList
                                       .map((recurring) => describeRecurringSchedule(recurring, client.id))

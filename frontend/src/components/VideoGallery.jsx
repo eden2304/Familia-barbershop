@@ -3,6 +3,37 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GalleryImage } from "@/api/entities"; // ← זה ה-export אצלך
 import { X } from "lucide-react";
 
+// מטעין את הסרטון רק כשהאריח מתקרב למסך, כדי שסטוריז שלא רואים לא יורדו סתם (חוסך תעבורה וטעינה במובייל)
+function LazyThumbVideo({ src, className }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
+
+  useEffect(() => {
+    if (visible || !ref.current) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "200px" });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return (
+      <video
+          ref={ref}
+          className={className}
+          src={visible ? src : undefined}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+      />
+  );
+}
+
 export default function VideoGallery() {
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
@@ -112,15 +143,7 @@ export default function VideoGallery() {
                     transition={{ duration: 0.5, delay: index * 0.1 }}
                     onClick={() => setSelectedVideo(video)}
                 >
-                  <video
-                      className="w-full h-full object-cover"
-                      src={src}
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
-                      preload="auto"
-                  />
+                  <LazyThumbVideo className="w-full h-full object-cover" src={src} />
                   <div className="absolute bottom-2 right-2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center border-2 border-white">
                     <img
                         src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/7a0e19259_logo.png"

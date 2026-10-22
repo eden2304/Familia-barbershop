@@ -6,11 +6,12 @@ import {ClientsController} from "./clients.controller";
 import {ClientsService} from "./clients.service";
 import { AuthModule } from '../modules/auth/auth.module';
 import {PublicClientsController} from "./public-clients.controller";
+import { ClientCleanupScheduler } from './client-cleanup.scheduler';
 
 @Module({
     imports: [TypeOrmModule.forFeature([Client, Appointment]), AuthModule],
     controllers: [ClientsController, PublicClientsController],
-    providers: [ClientsService],
+    providers: [ClientsService, ClientCleanupScheduler],
     exports: [ClientsService],
 })
 export class ClientsModule {}

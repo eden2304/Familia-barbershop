@@ -4,10 +4,6 @@ export const WHATSAPP_TEMPLATES = {
         params: ['code'] as const,
         languageCode: 'en_US',
     },
-    appointment_approved: {
-        name: 'appointment_approved',
-        params: ['clientName', 'date', 'time'] as const,
-    },
     remainder_same_day: {
         name: 'remainder_same_day',
         params: ['clientName', 'date', 'time'] as const,

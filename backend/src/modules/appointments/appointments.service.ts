@@ -24,7 +24,6 @@ import { BlockedTime } from '../../entities/blocked-time.entity';
 import { BusinessHour } from '../../entities/business-hour.entity';
 import { BusinessHoursOverride } from '../../entities/business-hours-override.entity';
 import { Setting } from '../../entities/setting.entity';
-import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { AdminPushService } from '../push/admin-push.service';
 
 import { DateTime } from 'luxon';
@@ -103,7 +102,6 @@ export class AppointmentsService {
         @InjectRepository(BusinessHour) private readonly bhRepo: Repository<BusinessHour>,
         @InjectRepository(BusinessHoursOverride) private readonly bhOverrideRepo: Repository<BusinessHoursOverride>,
         @InjectRepository(Setting) private readonly settingsRepo: Repository<Setting>,
-        private readonly whatsappService: WhatsAppService,
         private readonly adminPushService: AdminPushService,
     ) {}
 
@@ -648,12 +646,6 @@ export class AppointmentsService {
         await this.bumpClientLastAppointment((saved.client as any)?.id, startAt);
         await this.appendBookingAdminUpdate(saved);
 
-        try {
-            await this.whatsappService.sendAppointmentConfirmed(saved);
-        } catch (error) {
-            // לא מפיל את הבקשה אם שליחת WA נכשלת
-            console.warn('WhatsApp send failed (appointment_approved).');
-        }
         return saved;
         });
     }

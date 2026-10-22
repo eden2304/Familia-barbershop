@@ -99,9 +99,9 @@ export class AuthService {
         if (!this.jwtSecret || this.jwtSecret.length < 64) {
             throw new Error('JWT_SECRET must be at least 64 characters long');
         }
-        const configuredAccess = this.configService.get<string>('ACCESS_TOKEN_TTL') || '15m';
+        const configuredAccess = this.configService.get<string>('ACCESS_TOKEN_TTL') || '30d';
         this.accessTokenTtl = configuredAccess;
-        this.accessTokenMs = this.parseDurationToMs(configuredAccess, 15 * 60 * 1000);
+        this.accessTokenMs = this.parseDurationToMs(configuredAccess, 30 * 24 * 60 * 60 * 1000);
         const configuredRefresh = this.configService.get<string>('REFRESH_TOKEN_TTL') || '30d';
         this.refreshTokenMs = this.parseDurationToMs(configuredRefresh, 30 * 24 * 60 * 60 * 1000);
         this.otpSecret =

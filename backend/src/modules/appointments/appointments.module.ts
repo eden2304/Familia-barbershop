@@ -12,14 +12,12 @@ import { ClientsController } from './clients.controller';
 import { CashCleanupScheduler } from './cash-cleanup.scheduler';
 import { Setting } from '../../entities/setting.entity';
 import { AuthModule } from '../auth/auth.module';
-import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { AdminPushModule } from '../push/admin-push.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Appointment, ServiceEntity, Client, BlockedTime, BusinessHour, BusinessHoursOverride, Setting]),
         AuthModule,
-        WhatsAppModule,
         AdminPushModule,
     ],
     providers: [AppointmentsService, CashCleanupScheduler],

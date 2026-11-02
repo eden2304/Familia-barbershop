@@ -26,6 +26,8 @@ export class WhatsAppService {
     private readonly token = process.env.WHATSAPP_TOKEN || '';
     private readonly phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     private readonly wabaId = process.env.WHATSAPP_WABA_ID || '';
+    // Selects which Messaging Account (templates + billing) Meta charges when the phone number has more than one.
+    private readonly messagingAccountId = process.env.WHATSAPP_MESSAGING_ACCOUNT_ID || '';
     private readonly defaultLang = process.env.WHATSAPP_DEFAULT_LANG || 'he';
     private readonly timeZone = process.env.WHATSAPP_TIMEZONE || 'Asia/Jerusalem';
     private readonly sendMaxAttempts = Math.max(1, Number(process.env.WHATSAPP_SEND_MAX_ATTEMPTS || 3));
@@ -197,9 +199,12 @@ export class WhatsAppService {
         const normalized = normalizeIsraeliPhoneToE164(params.toPhone || '');
         const recipientForMeta = normalized ? toMetaRecipientFromE164(normalized) : '';
         const languageCode = 'languageCode' in template ? template.languageCode : undefined;
-        const payload = params.templateName === 'auth_code'
+        const payload: Record<string, any> = params.templateName === 'auth_code'
             ? this.buildAuthCodePayload(template.name, recipientForMeta, params.params[0] ?? '', languageCode)
             : this.buildTemplatePayload(template.name, recipientForMeta, params.params, languageCode);
+        if (this.messagingAccountId) {
+            payload.messaging_account_id = this.messagingAccountId;
+        }
 
         if (!normalized) {
             await this.saveLog({

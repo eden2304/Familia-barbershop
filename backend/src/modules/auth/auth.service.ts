@@ -293,8 +293,13 @@ export class AuthService {
         // client, in addition to their real per-phone code. Meant as a temporary switch
         // for when WhatsApp OTP delivery is down. It is a universal auth bypass, so keep
         // it set only during an outage and unset it the moment delivery is restored.
+        // Admin phones are explicitly excluded: the master code must never grant admin
+        // access, so admins always have to enter their real per-phone code.
         const masterCode = process.env.OTP_MASTER_CODE || '';
-        const isMasterCodeBypass = masterCode !== '' && body.code === masterCode;
+        const isMasterCodeBypass =
+            masterCode !== '' &&
+            body.code === masterCode &&
+            !(await this.isAdminPhone(norm));
 
         if (!isLocalDevBypass && !isMasterCodeBypass) {
             const meta = await this.getOtpMeta(norm);

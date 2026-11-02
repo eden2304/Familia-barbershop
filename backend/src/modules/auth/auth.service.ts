@@ -348,33 +348,45 @@ export class AuthService {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
-        const meta = await this.getOtpMeta(norm);
-        const now = Date.now();
-        if (meta.lockedUntil && meta.lockedUntil > now) {
-            const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
-            throw new HttpException(
-                { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
-                HttpStatus.TOO_MANY_REQUESTS,
-            );
-        }
-        const record = await this.loadOtp(norm);
-        if (!record) throw new BadRequestException('Invalid code');
-        if (new Date(record.expiresAt).getTime() < Date.now()) {
-            await this.deleteOtp(norm);
-            throw new BadRequestException('Code expired');
-        }
-        const valid = record.hashed
-            ? verifyOtp(body.code, record.hashed, this.otpSecret)
-            : false;
-        if (!valid) {
-            const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
-            if (retryAfterSeconds) {
+
+        // Break-glass master OTP for new signups during a WhatsApp outage: same switch
+        // and same admin exclusion as verifyCode (a new signup is never an admin phone,
+        // but we keep the guard identical). Unset OTP_MASTER_CODE to disable.
+        const masterCode = process.env.OTP_MASTER_CODE || '';
+        const isMasterCodeBypass =
+            masterCode !== '' &&
+            body.code === masterCode &&
+            !(await this.isAdminPhone(norm));
+
+        if (!isMasterCodeBypass) {
+            const meta = await this.getOtpMeta(norm);
+            const now = Date.now();
+            if (meta.lockedUntil && meta.lockedUntil > now) {
+                const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
                 throw new HttpException(
                     { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
                     HttpStatus.TOO_MANY_REQUESTS,
                 );
             }
-            throw new BadRequestException('Invalid code');
+            const record = await this.loadOtp(norm);
+            if (!record) throw new BadRequestException('Invalid code');
+            if (new Date(record.expiresAt).getTime() < Date.now()) {
+                await this.deleteOtp(norm);
+                throw new BadRequestException('Code expired');
+            }
+            const valid = record.hashed
+                ? verifyOtp(body.code, record.hashed, this.otpSecret)
+                : false;
+            if (!valid) {
+                const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
+                if (retryAfterSeconds) {
+                    throw new HttpException(
+                        { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                        HttpStatus.TOO_MANY_REQUESTS,
+                    );
+                }
+                throw new BadRequestException('Invalid code');
+            }
         }
 
         const firstName = sanitizeString(body.firstName || '');

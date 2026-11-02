@@ -270,39 +270,59 @@ export class AuthService {
         const norm = normalizePhone(body.phone);
         if (!norm) throw new BadRequestException('Phone required');
         if (!/^\d{4}$/.test(String(body.code || ''))) throw new BadRequestException('Invalid code');
-        const meta = await this.getOtpMeta(norm);
-        const now = Date.now();
-        if (meta.lockedUntil && meta.lockedUntil > now) {
-            const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
-            throw new HttpException(
-                { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
-                HttpStatus.TOO_MANY_REQUESTS,
-            );
-        }
-        const record = await this.loadOtp(norm);
-        if (!record) {
-            throw new BadRequestException('Invalid code');
-        }
-        if (new Date(record.expiresAt).getTime() < now) {
-            await this.deleteOtp(norm);
-            throw new BadRequestException('Code expired');
-        }
-        const valid = record.hashed
-            ? verifyOtp(body.code, record.hashed, this.otpSecret)
-            : false;
-        if (!valid) {
-            const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
-            if (retryAfterSeconds) {
+
+        // Local-dev-only shortcut: "1111" always logs in as 0537002171, so whoever is
+        // developing locally doesn't need a real WhatsApp OTP round-trip. Gated on
+        // NODE_ENV !== 'production' (same convention used elsewhere in this codebase,
+        // see main.ts/webauthn.service.ts) so this is dead code in production/staging
+        // regardless of what phone or code is submitted.
+        const isLocalDevBypass =
+            process.env.NODE_ENV !== 'production' &&
+            norm === normalizePhone('0537002171') &&
+            body.code === '1111';
+
+        // Break-glass master OTP: while OTP_MASTER_CODE is set, that code logs in any
+        // client, in addition to their real per-phone code. Meant as a temporary switch
+        // for when WhatsApp OTP delivery is down. It is a universal auth bypass, so keep
+        // it set only during an outage and unset it the moment delivery is restored.
+        const masterCode = process.env.OTP_MASTER_CODE || '';
+        const isMasterCodeBypass = masterCode !== '' && body.code === masterCode;
+
+        if (!isLocalDevBypass && !isMasterCodeBypass) {
+            const meta = await this.getOtpMeta(norm);
+            const now = Date.now();
+            if (meta.lockedUntil && meta.lockedUntil > now) {
+                const retryAfterSeconds = Math.max(1, Math.ceil((meta.lockedUntil - now) / 1000));
                 throw new HttpException(
                     { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
                     HttpStatus.TOO_MANY_REQUESTS,
                 );
             }
-            throw new BadRequestException('Invalid code');
-        }
+            const record = await this.loadOtp(norm);
+            if (!record) {
+                throw new BadRequestException('Invalid code');
+            }
+            if (new Date(record.expiresAt).getTime() < now) {
+                await this.deleteOtp(norm);
+                throw new BadRequestException('Code expired');
+            }
+            const valid = record.hashed
+                ? verifyOtp(body.code, record.hashed, this.otpSecret)
+                : false;
+            if (!valid) {
+                const retryAfterSeconds = await this.recordFailedOtpAttempt(norm);
+                if (retryAfterSeconds) {
+                    throw new HttpException(
+                        { error: 'RATE_LIMITED', message: 'OTP_ATTEMPTS_EXCEEDED', retryAfterSeconds } satisfies RateLimitPayload,
+                        HttpStatus.TOO_MANY_REQUESTS,
+                    );
+                }
+                throw new BadRequestException('Invalid code');
+            }
 
-        await this.deleteOtp(norm);
-        await this.clearOtpMeta(norm);
+            await this.deleteOtp(norm);
+            await this.clearOtpMeta(norm);
+        }
 
         const variants = phoneVariants(norm);
         const client = await this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });

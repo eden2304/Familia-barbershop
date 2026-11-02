@@ -252,10 +252,18 @@ export class AuthService {
 
         await this.storeOtp(norm, code);
 
+        // While the break-glass master code is enabled (OTP_MASTER_CODE set), do not fail
+        // the request when WhatsApp delivery is down: clients can't receive the real code,
+        // but they must still reach the verify screen to enter the master code. Without
+        // this, a failed send throws here and the master code is unreachable.
+        const masterCodeEnabled = (process.env.OTP_MASTER_CODE || '') !== '';
+
         const whatsappResult = await this.whatsAppService.sendAuthCode(norm, code);
         if (!whatsappResult.ok && whatsappResult.status === 'failed') {
             this.logger.error(`OTP WhatsApp send failed for ${maskPhone(norm)}: ${whatsappResult.error || 'unknown_error'}`);
-            throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);
+            if (!masterCodeEnabled) {
+                throw new HttpException('OTP_SEND_FAILED', HttpStatus.BAD_GATEWAY);
+            }
         }
 
         this.logger.log(

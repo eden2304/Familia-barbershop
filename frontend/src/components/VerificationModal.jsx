@@ -736,10 +736,13 @@ export default function VerificationModal({ onVerify, onCancel }) {
             <div className="text-center">
               <Shield className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-xl font-bold text-gray-900 mb-2">אימות קוד</h3>
-              <p className="text-gray-600 text-sm mb-6">
+              <p className="text-gray-600 text-sm mb-4">
                 הזן את 4 הספרות שנשלחו למספר{" "}
                 <span className="font-bold">{phone}</span>
               </p>
+              <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium leading-6 text-amber-800">
+                ישנה תקלה בקבלת הודעות, הזן את הקוד 1111 להתחברות
+              </div>
               <div className="flex justify-center gap-2 my-6" dir="ltr">
                 {code.map((digit, index) => (
                     <Input

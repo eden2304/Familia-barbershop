@@ -3,7 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Appointment } from '../../entities/appointment.entity';
 import { WhatsAppMessageLog } from '../../entities/whatsapp-message-log.entity';
-import { WHATSAPP_TEMPLATES, WhatsAppTemplateName } from './whatsapp.constants';
+import { WHATSAPP_TEMPLATE_LABELS, WHATSAPP_TEMPLATES, WhatsAppTemplateName } from './whatsapp.constants';
+import { AdminPushService } from '../push/admin-push.service';
+import { normalizePhone } from '../../common/security.utils';
 import {
     formatDateForTemplate,
     formatTimeForTemplate,
@@ -32,8 +34,14 @@ export class WhatsAppService {
     private readonly sendRequestTimeoutMs = Math.max(1000, Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 4000));
     private readonly retryBaseDelayMs = Math.max(50, Number(process.env.WHATSAPP_RETRY_BASE_DELAY_MS || 150));
 
+    // Identical failures (same Meta error code) within this window raise only one alert,
+    // so e.g. a billing outage during the morning reminder run doesn't spam the admin.
+    private readonly alertCooldownMs = 10 * 60_000;
+    private readonly alertState = new Map<string, { lastSentAt: number; suppressed: number }>();
+
     constructor(
         @InjectRepository(WhatsAppMessageLog) private readonly logRepo: Repository<WhatsAppMessageLog>,
+        private readonly adminPushService: AdminPushService,
     ) {}
 
     isEnabled(): boolean {
@@ -187,10 +195,12 @@ export class WhatsAppService {
     }): Promise<SendTemplateResult> {
         const template = WHATSAPP_TEMPLATES[params.templateName];
         if (!template) {
+            this.notifySendFailure(params.templateName, params.toPhone, 'unknown_template');
             return { ok: false, status: 'failed', messageId: null, error: 'unknown_template' };
         }
 
         if (params.params.length !== template.params.length) {
+            this.notifySendFailure(params.templateName, params.toPhone, 'invalid_template_params');
             return { ok: false, status: 'failed', messageId: null, error: 'invalid_template_params' };
         }
 
@@ -212,6 +222,7 @@ export class WhatsAppService {
                 appointmentId: params.appointmentId ?? null,
             });
             this.logger.warn(`WhatsApp skipped (invalid phone): template=${template.name}`);
+            this.notifySendFailure(params.templateName, params.toPhone, 'invalid_phone');
             return { ok: false, status: 'failed', messageId: null, error: 'invalid_phone' };
         }
 
@@ -241,6 +252,7 @@ export class WhatsAppService {
                 appointmentId: params.appointmentId ?? null,
             });
             this.logger.warn(`WhatsApp config missing: template=${template.name}`);
+            this.notifySendFailure(params.templateName, normalized, error);
             return { ok: false, status: 'failed', messageId: null, error };
         }
 
@@ -258,9 +270,44 @@ export class WhatsAppService {
 
         if (!result.ok) {
             this.logger.warn(`WhatsApp send failed: template=${template.name}, error=${result.error}`);
+            this.notifySendFailure(params.templateName, normalized, result.error);
         }
 
         return result;
+    }
+
+    /**
+     * Push-alerts the WhatsApp alert admin (see AdminPushService) that a message to a
+     * client failed. Fire-and-forget: never delays or fails the send path.
+     */
+    private notifySendFailure(templateName: WhatsAppTemplateName, toPhone: string, error: string | null) {
+        try {
+            const errorText = String(error || 'unknown_error');
+            const metaCode = errorText.match(/\(#(\d+)\)/)?.[1] ?? null;
+            const isPaymentIssue = metaCode === '131042';
+            const key = metaCode ? `meta_${metaCode}` : errorText;
+
+            const now = Date.now();
+            const state = this.alertState.get(key);
+            if (state && now - state.lastSentAt < this.alertCooldownMs) {
+                state.suppressed += 1;
+                return;
+            }
+            const suppressed = state?.suppressed ?? 0;
+            this.alertState.set(key, { lastSentAt: now, suppressed: 0 });
+
+            const label = WHATSAPP_TEMPLATE_LABELS[templateName] ?? templateName;
+            const phone = normalizePhone(toPhone || '') || toPhone || 'ללא מספר';
+            const extra = suppressed > 0 ? ` (+${suppressed} כשלונות זהים מאז ההתראה הקודמת)` : '';
+            const title = isPaymentIssue ? '⚠️ בעיית תשלום ב-WhatsApp' : '⚠️ הודעת WhatsApp לא נשלחה';
+            const body = `${label} ל-${phone}: ${errorText}${extra}`.slice(0, 180);
+
+            this.adminPushService
+                .sendWhatsAppFailureAlert({ title, body, url: '/Admin', tag: `whatsapp-alert-${now}` })
+                .catch((err) => this.logger.warn(`WhatsApp failure alert push failed: ${err?.message || err}`));
+        } catch (err: any) {
+            this.logger.warn(`WhatsApp failure alert skipped: ${err?.message || err}`);
+        }
     }
 
     private buildTemplatePayload(templateName: string, toPhone: string, params: string[], languageCode?: string) {

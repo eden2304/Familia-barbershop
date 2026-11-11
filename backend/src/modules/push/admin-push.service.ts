@@ -18,7 +18,12 @@ interface PushPayload {
     title: string;
     body: string;
     url?: string;
+    tag?: string;
 }
+
+// Admins listed here receive ONLY WhatsApp send-failure alerts, never the regular
+// admin updates (logins, bookings, waiting list).
+const DEFAULT_WHATSAPP_ALERT_ADMIN_PHONES = '0537002171';
 
 @Injectable()
 export class AdminPushService {
@@ -26,6 +31,7 @@ export class AdminPushService {
     private readonly vapidPublicKey: string;
     private readonly vapidPrivateKey: string;
     private readonly vapidSubject: string;
+    private readonly whatsappAlertPhones: Set<string>;
 
     constructor(
         @InjectRepository(AdminPushSubscription)
@@ -35,6 +41,14 @@ export class AdminPushService {
         this.vapidPublicKey = String(this.configService.get<string>('VAPID_PUBLIC_KEY') || '').trim();
         this.vapidPrivateKey = String(this.configService.get<string>('VAPID_PRIVATE_KEY') || '').trim();
         this.vapidSubject = String(this.configService.get<string>('VAPID_SUBJECT') || 'mailto:admin@familia.local').trim();
+        const alertPhonesRaw = this.configService.get<string>('WHATSAPP_ALERT_ADMIN_PHONES') ?? DEFAULT_WHATSAPP_ALERT_ADMIN_PHONES;
+        this.whatsappAlertPhones = new Set(
+            String(alertPhonesRaw).split(',').map((p) => normalizePhone(p.trim())).filter(Boolean),
+        );
+    }
+
+    private isWhatsAppAlertAdmin(adminPhone: string): boolean {
+        return this.whatsappAlertPhones.has(normalizePhone(adminPhone));
     }
 
     getPublicKey(): string {
@@ -106,9 +120,30 @@ export class AdminPushService {
         }
 
         const all = await this.subscriptionsRepo.find();
-        if (!all.length) return;
+        const recipients = all.filter((row) => !this.isWhatsAppAlertAdmin(row.adminPhone));
+        await this.dispatch(recipients, payload, 'admin');
+    }
 
-        await Promise.all(all.map(async (row) => {
+    async sendWhatsAppFailureAlert(payload: PushPayload) {
+        if (!this.vapidPublicKey || !this.vapidPrivateKey) {
+            this.logger.warn('Skipping WhatsApp alert push: VAPID keys are not configured');
+            return;
+        }
+        if (!this.whatsappAlertPhones.size) return;
+
+        const all = await this.subscriptionsRepo.find();
+        const recipients = all.filter((row) => this.isWhatsAppAlertAdmin(row.adminPhone));
+        if (!recipients.length) {
+            this.logger.warn('WhatsApp failure alert not delivered: alert admin has no push subscription');
+            return;
+        }
+        await this.dispatch(recipients, payload, 'whatsapp-alert');
+    }
+
+    private async dispatch(recipients: AdminPushSubscription[], payload: PushPayload, kind: string) {
+        if (!recipients.length) return;
+
+        await Promise.all(recipients.map(async (row) => {
             try {
                 const result = await this.sendVapidPushWithPayload(row.endpoint, row.p256dh, row.auth, payload);
                 if (result === 410) {
@@ -119,7 +154,7 @@ export class AdminPushService {
             }
         }));
 
-        this.logger.log(`Push dispatched to ${all.length} admin subscriptions (${payload.body})`);
+        this.logger.log(`Push (${kind}) dispatched to ${recipients.length} admin subscriptions (${payload.body})`);
     }
 
     private async sendVapidPushWithPayload(endpoint: string, p256dh: string, auth: string, payload: PushPayload): Promise<number> {
@@ -132,7 +167,7 @@ export class AdminPushService {
                 title: payload.title,
                 body: payload.body,
                 url: payload.url || '/Admin',
-                tag: 'admin-updates',
+                tag: payload.tag || 'admin-updates',
             }), 'utf8'),
             p256dh,
             auth,

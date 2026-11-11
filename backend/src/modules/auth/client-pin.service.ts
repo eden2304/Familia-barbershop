@@ -108,7 +108,7 @@ export class ClientPinService {
         return { method: 'pin', pinLength: stored.length };
     }
 
-    async setPin(clientId: number, pin: string) {
+    async setPin(clientId: number | string, pin: string) {
         const client = await this.authService.findClientById(clientId);
         if (!client) throw new UnauthorizedException('CLIENT_NOT_FOUND');
         if (client.is_blocked) throw new ForbiddenException('CLIENT_BLOCKED');

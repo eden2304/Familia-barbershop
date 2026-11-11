@@ -68,8 +68,11 @@ export class AuthController {
     @Post('auth/pin')
     @HttpCode(200)
     async setPin(@Body() body: SetPinDto, @Req() req: Request & { user?: AuthTokenPayload }) {
-        const clientId = Number(req.user?.sub);
-        if (!Number.isInteger(clientId) || clientId <= 0) throw new UnauthorizedException('AUTH_REQUIRED');
+        // Client ids are integers in production but uuids on some (older/local) schemas.
+        const clientId = req.user?.sub as number | string | undefined;
+        if (clientId === undefined || clientId === null || String(clientId).trim() === '') {
+            throw new UnauthorizedException('AUTH_REQUIRED');
+        }
         return this.pins.setPin(clientId, body.pin);
     }
 

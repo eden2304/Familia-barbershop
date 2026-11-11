@@ -394,9 +394,9 @@ export class AuthService {
         return this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
     }
 
-    async findClientById(id: number): Promise<Client | null> {
-        if (!Number.isInteger(id) || id <= 0) return null;
-        return this.clientRepo.findOne({ where: { id } });
+    async findClientById(id: number | string): Promise<Client | null> {
+        if (id === undefined || id === null || String(id).trim() === '') return null;
+        return this.clientRepo.findOne({ where: { id: id as any } });
     }
 
     async isAdminPhoneNumber(phone: string): Promise<boolean> {

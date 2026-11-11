@@ -155,12 +155,3 @@ export default function PinPad({
     </div>
   );
 }
-
-export function isWeakPin(pin) {
-  if (!/^\d{4,6}$/.test(pin)) return true;
-  if (/^(\d)\1+$/.test(pin)) return true;
-  const d = pin.split("").map(Number);
-  const steps = d.slice(1).map((x, i) => x - d[i]);
-  if (steps.every((s) => s === 1) || steps.every((s) => s === -1)) return true;
-  return ["1212", "121212", "1122", "112233", "2580", "0852"].includes(pin);
-}

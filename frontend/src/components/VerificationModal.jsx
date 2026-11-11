@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Fingerprint, KeyRound, Shield, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
-import PinPad, { isWeakPin } from '@/components/PinPad';
+import PinPad from '@/components/PinPad';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 import {
   clearBiometricHint,
@@ -626,12 +626,6 @@ export default function VerificationModal({ onVerify, onCancel }) {
 
   // הגדרת קוד — שלב 1: בחירת קוד
   const handleNewPinEntered = (pin) => {
-    if (isWeakPin(pin)) {
-      setPinValue("");
-      setPinErrorKey((k) => k + 1);
-      setError("הקוד פשוט מדי. בחר קוד שאינו רצף או ספרה חוזרת (כמו 1234 או 0000).");
-      return;
-    }
     setError("");
     setFirstPin(pin);
     setPinValue("");
@@ -662,12 +656,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
       setFirstPin("");
       setPinStage("enter");
       setPinErrorKey((k) => k + 1);
-      const message = e?.payload?.message ?? e?.message;
-      if (message === "PIN_TOO_WEAK") {
-        setError("הקוד פשוט מדי. בחר קוד אחר.");
-      } else {
-        handleApiError(e, "שמירת הקוד נכשלה. נסה שוב.");
-      }
+      handleApiError(e, "שמירת הקוד נכשלה. נסה שוב.");
     } finally {
       setLoading(false);
     }

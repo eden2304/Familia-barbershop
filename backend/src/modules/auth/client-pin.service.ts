@@ -34,16 +34,6 @@ interface PinRow {
 
 export type LoginMethod = { method: 'pin'; pinLength: number } | { method: 'otp' };
 
-export function isWeakPin(pin: string): boolean {
-    if (!/^\d{4,6}$/.test(pin)) return true;
-    if (/^(\d)\1+$/.test(pin)) return true; // 0000, 111111
-    const digits = pin.split('').map(Number);
-    const steps = digits.slice(1).map((d, i) => d - digits[i]);
-    if (steps.every((s) => s === 1) || steps.every((s) => s === -1)) return true; // 1234, 654321
-    if (['1212', '121212', '1122', '112233', '2580', '0852'].includes(pin)) return true;
-    return false;
-}
-
 @Injectable()
 export class ClientPinService implements OnModuleInit {
     private readonly logger = new Logger(ClientPinService.name);
@@ -137,8 +127,9 @@ export class ClientPinService implements OnModuleInit {
         if (await this.authService.isAdminPhoneNumber(client.phone)) {
             throw new BadRequestException('PIN_NOT_FOR_ADMIN');
         }
+        // Any 4–6 digit code is accepted (business decision: no "too simple" check).
+        // The PIN never expires; it changes only when the client resets it.
         if (!/^\d{4,6}$/.test(pin)) throw new BadRequestException('PIN_INVALID_FORMAT');
-        if (isWeakPin(pin)) throw new BadRequestException('PIN_TOO_WEAK');
 
         // scrypt N=2^14 (16MB). N=2^15 exceeds Node's default scrypt maxmem and throws.
         const hash = JSON.stringify(hashSecret(pin, 14));

@@ -115,6 +115,8 @@ export class AuthController {
     async verifyCode(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
         const result = await this.svc.verifyCode({ ...body, userAgent: req.headers['user-agent'] });
         this.setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
+        // A verified WhatsApp code lifts any personal-PIN lock for this client.
+        await this.pins.clearLockout(result.client.id);
         return this.toLoginResponse(result);
     }
 

@@ -93,6 +93,22 @@ export class ClientPinService implements OnModuleInit {
         );
     }
 
+    /**
+     * Called after a successful WhatsApp-code login: the client proved phone ownership,
+     * so any PIN lock / failed-attempt count is lifted (the PIN itself is kept).
+     */
+    async clearLockout(clientId: number | string) {
+        try {
+            await this.clientRepo.query(
+                `UPDATE clients SET pin_failed_attempts = 0, pin_locked_until = NULL
+                  WHERE id = $1 AND (pin_failed_attempts <> 0 OR pin_locked_until IS NOT NULL)`,
+                [clientId],
+            );
+        } catch (error: any) {
+            this.logger.warn(`Failed clearing PIN lockout for client ${clientId}: ${error?.message || error}`);
+        }
+    }
+
     async hasPin(clientId: number | string): Promise<boolean> {
         return Boolean(this.parseHash(await this.loadPinRow(clientId)));
     }

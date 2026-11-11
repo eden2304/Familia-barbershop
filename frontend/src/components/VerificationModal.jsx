@@ -119,6 +119,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [firstPin, setFirstPin] = useState("");
   const [pinErrorKey, setPinErrorKey] = useState(0);
   const [pinResetMode, setPinResetMode] = useState(false); // OTP flow started from "שכחתי את הקוד"
+  const [pinLocked, setPinLocked] = useState(false);       // too many wrong PINs — offer WhatsApp login
   const [pendingPinAuth, setPendingPinAuth] = useState(null); // { payload, token } waiting for a PIN to be set
 
   const inputRefs = useRef([]);
@@ -196,6 +197,14 @@ export default function VerificationModal({ onVerify, onCancel }) {
       return () => clearTimeout(t);
     }
   }, [resendTimer]);
+
+  // סוף זמן החסימה — מחזירים את המקלדת לפעולה
+  useEffect(() => {
+    if (pinLocked && rateLimitTimer <= 0) {
+      setPinLocked(false);
+      setError("");
+    }
+  }, [pinLocked, rateLimitTimer]);
 
   useEffect(() => {
     if (rateLimitTimer <= 0) return;
@@ -548,11 +557,14 @@ export default function VerificationModal({ onVerify, onCancel }) {
     setRateLimitTimer(0);
     setPinValue("");
     setPinResetMode(false);
+    setPinLocked(false);
     setView("loginPhone");
   };
 
-  // "שכחתי את הקוד" — שולחים קוד אימות ב-WhatsApp ואחריו מגדירים קוד אישי חדש
-  const startPinReset = async (message = "") => {
+  // "שכחתי את הקוד" — שולחים קוד אימות ב-WhatsApp ואחריו מגדירים קוד אישי חדש.
+  // עם { reset: false } (לקוח חסום אחרי ניסיונות שגויים) — התחברות רגילה בקוד WhatsApp,
+  // שגם מבטלת את החסימה בשרת, והקוד האישי הקיים נשמר.
+  const startPinReset = async (message = "", { reset = true } = {}) => {
     if (loading) return;
     setLoading(true);
     setError("");
@@ -560,7 +572,8 @@ export default function VerificationModal({ onVerify, onCancel }) {
     setRateLimitTimer(0);
     try {
       await postJson("/auth/request-code-login", { phone: normalizePhone(phone) });
-      setPinResetMode(true);
+      setPinResetMode(reset);
+      setPinLocked(false);
       setCode(new Array(4).fill(""));
       setView("loginCode");
     } catch (e) {
@@ -599,6 +612,10 @@ export default function VerificationModal({ onVerify, onCancel }) {
       } else if (e?.status === 429) {
         setPinErrorKey((k) => k + 1);
         handleApiError(e);
+        if (message === "PIN_ATTEMPTS_EXCEEDED") {
+          setPinLocked(true);
+          setError("הוזן קוד שגוי יותר מדי פעמים. אפשר להתחבר עכשיו עם קוד ב‑WhatsApp, או לנסות שוב בעוד:");
+        }
       } else {
         handleApiError(e, "שגיאה בהתחברות. נסה שוב.");
       }
@@ -895,9 +912,19 @@ export default function VerificationModal({ onVerify, onCancel }) {
                   onChange={(v) => { setPinValue(v); if (error) setError(""); }}
                   onComplete={handlePinLogin}
                   length={pinLength || 4}
-                  disabled={loading || rateLimitTimer > 0}
+                  disabled={loading || rateLimitTimer > 0 || pinLocked}
                   errorKey={pinErrorKey}
               />
+              {pinLocked && (
+                  <Button
+                      type="button"
+                      onClick={() => startPinReset("", { reset: false })}
+                      disabled={loading}
+                      className="w-full mt-6 bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg"
+                  >
+                    {loading ? "שולח..." : "התחברות עם קוד ב‑WhatsApp"}
+                  </Button>
+              )}
               <div className="mt-6 flex items-center justify-center gap-4 text-sm">
                 <Button
                     type="button"

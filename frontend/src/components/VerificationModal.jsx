@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Fingerprint, Shield, UserPlus, X } from "lucide-react";
+import { Fingerprint, KeyRound, Shield, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setStoredAuthToken } from '@/utils/authStorage';
+import PinPad from '@/components/PinPad';
 import { formatRateLimitCountdown, notifyRateLimited, pickRetryAfterSeconds } from '@/lib/rateLimitNotice';
 import {
   clearBiometricHint,
@@ -47,10 +48,13 @@ async function checkPhoneExists(phoneRaw) {
   return !!res?.exists;
 }
 
-async function postJson(path, body) {
+async function postJson(path, body, token) {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body ?? {}),
   });
   const ct = res.headers.get("content-type") || "";
@@ -107,6 +111,16 @@ export default function VerificationModal({ onVerify, onCancel }) {
   const [biometricHint, setBiometricHintState] = useState(() => getBiometricHint());
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [pendingAuth, setPendingAuth] = useState(null); // { payload, token, phone }
+
+  // personal PIN (קוד אישי)
+  const [pinValue, setPinValue] = useState("");
+  const [pinLength, setPinLength] = useState(null);      // length of the client's PIN (login screen)
+  const [pinStage, setPinStage] = useState("enter");     // setPin: "enter" | "confirm"
+  const [firstPin, setFirstPin] = useState("");
+  const [pinErrorKey, setPinErrorKey] = useState(0);
+  const [pinResetMode, setPinResetMode] = useState(false); // OTP flow started from "שכחתי את הקוד"
+  const [pinLocked, setPinLocked] = useState(false);       // too many wrong PINs — offer WhatsApp login
+  const [pendingPinAuth, setPendingPinAuth] = useState(null); // { payload, token } waiting for a PIN to be set
 
   const inputRefs = useRef([]);
   const termsFeedbackTimeoutRef = useRef(null);
@@ -183,6 +197,14 @@ export default function VerificationModal({ onVerify, onCancel }) {
       return () => clearTimeout(t);
     }
   }, [resendTimer]);
+
+  // סוף זמן החסימה — מחזירים את המקלדת לפעולה
+  useEffect(() => {
+    if (pinLocked && rateLimitTimer <= 0) {
+      setPinLocked(false);
+      setError("");
+    }
+  }, [pinLocked, rateLimitTimer]);
 
   useEffect(() => {
     if (rateLimitTimer <= 0) return;
@@ -279,6 +301,26 @@ export default function VerificationModal({ onVerify, onCancel }) {
     const p0 = normalizePhone(phone);                           // 05XXXXXXXX
     const p972 = p0.startsWith("0") ? `972${p0.slice(1)}` : p0; // 9725XXXXXXXX
 
+    // לקוח שכבר הגדיר קוד אישי מתחבר איתו — בלי לשלוח קוד ב-WhatsApp
+    try {
+      const method = await postJson("/auth/login-method", { phone: p0 });
+      if (method?.method === "pin" && Number(method?.pinLength) >= 4) {
+        setPinLength(Number(method.pinLength));
+        setPinValue("");
+        setPinResetMode(false);
+        setView("loginPin");
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      if (e?.status === 429) {
+        handleApiError(e);
+        setLoading(false);
+        return;
+      }
+      // כל שגיאה אחרת: ממשיכים לזרימת קוד ה-WhatsApp הרגילה
+    }
+
     try {
       await postJson("/auth/request-code-login", { phone: p0 });
       setView("loginCode");
@@ -332,7 +374,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
         roles: Array.isArray(res?.roles) ? res.roles : undefined,
       };
 
-      completeAuth(payload, res.token);
+      afterOtpAuth(payload, res);
     }
 
     try {
@@ -450,7 +492,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
           is_member: memberFlag,
           roles: Array.isArray(res?.roles) ? res.roles : undefined,
         };
-        completeAuth(payload, res.token);
+        afterOtpAuth(payload, res);
       } else {
         setError("שגיאה ביצירת המשתמש. נסה שוב.");
       }
@@ -469,6 +511,152 @@ export default function VerificationModal({ onVerify, onCancel }) {
       } else {
         handleApiError(e, "שגיאה ביצירת המשתמש. נסה שוב.");
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- PERSONAL PIN FLOW ---
+
+  // אחרי אימות קוד WhatsApp: אם ללקוח אין עדיין קוד אישי (או שהוא מאפס אותו) — מגדירים קוד לפני סיום ההתחברות
+  const afterOtpAuth = (payload, res) => {
+    if (res?.token && (res?.pinRequired || pinResetMode)) {
+      setPendingPinAuth({ payload, token: res.token });
+      setPinStage("enter");
+      setPinValue("");
+      setFirstPin("");
+      setError("");
+      setInfoMessage("");
+      setLoading(false);
+      setView("setPin");
+      return;
+    }
+    completeAuth(payload, res?.token);
+  };
+
+  const buildSessionPayload = (res, fallbackPhone) => {
+    const c = res?.client || res?.user || {};
+    const memberFlag = Boolean(c.isMember ?? c.is_member ?? false);
+    const adminFlag = Boolean(res?.roles?.includes("admin") || c.isAdmin || c.is_admin);
+    return {
+      ...c,
+      phone: (c.phone || fallbackPhone || "").toString(),
+      firstName: c.firstName || c.first_name || "",
+      lastName: c.lastName || c.last_name || "",
+      isAdmin: adminFlag,
+      is_admin: adminFlag,
+      isMember: memberFlag,
+      is_member: memberFlag,
+      roles: Array.isArray(res?.roles) ? res.roles : undefined,
+    };
+  };
+
+  const backToPhone = () => {
+    setError("");
+    setInfoMessage("");
+    setRateLimitTimer(0);
+    setPinValue("");
+    setPinResetMode(false);
+    setPinLocked(false);
+    setView("loginPhone");
+  };
+
+  // "שכחתי את הקוד" — שולחים קוד אימות ב-WhatsApp ואחריו מגדירים קוד אישי חדש.
+  // עם { reset: false } (לקוח חסום אחרי ניסיונות שגויים) — התחברות רגילה בקוד WhatsApp,
+  // שגם מבטלת את החסימה בשרת, והקוד האישי הקיים נשמר.
+  const startPinReset = async (message = "", { reset = true } = {}) => {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    setInfoMessage(message);
+    setRateLimitTimer(0);
+    try {
+      await postJson("/auth/request-code-login", { phone: normalizePhone(phone) });
+      setPinResetMode(reset);
+      setPinLocked(false);
+      setCode(new Array(4).fill(""));
+      setView("loginCode");
+    } catch (e) {
+      handleApiError(e, "שגיאה בשליחת קוד. נסה שוב.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePinLogin = async (pin) => {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    setInfoMessage("");
+    setRateLimitTimer(0);
+    const p0 = normalizePhone(phone);
+    try {
+      const res = await postJson("/auth/pin/login", { phone: p0, pin });
+      if (!res?.ok || !(res?.client || res?.user)) throw new Error("PIN_LOGIN_FAILED");
+      completeAuth(buildSessionPayload(res, p0), res.token);
+    } catch (e) {
+      setPinValue("");
+      const message = e?.payload?.message ?? e?.message;
+      if (e?.status === 401 && message === "INVALID_PIN") {
+        setPinErrorKey((k) => k + 1);
+        const left = Number(e?.payload?.attemptsLeftBeforeLock);
+        setError(left > 0 && left <= 3 ? `קוד שגוי. נותרו ${left} ניסיונות.` : "קוד שגוי. נסה שוב.");
+      } else if (e?.status === 401 && message === "PIN_RESET_REQUIRED") {
+        setLoading(false);
+        await startPinReset("מטעמי אבטחה הקוד האישי אופס. שלחנו לך קוד אימות ב-WhatsApp כדי להגדיר קוד חדש.");
+        return;
+      } else if (e?.status === 401 && message === "PIN_NOT_SET") {
+        setLoading(false);
+        await startPinReset();
+        return;
+      } else if (e?.status === 429) {
+        setPinErrorKey((k) => k + 1);
+        handleApiError(e);
+        if (message === "PIN_ATTEMPTS_EXCEEDED") {
+          setPinLocked(true);
+          setError("הוזן קוד שגוי יותר מדי פעמים. אפשר להתחבר עכשיו עם קוד ב‑WhatsApp, או לנסות שוב בעוד:");
+        }
+      } else {
+        handleApiError(e, "שגיאה בהתחברות. נסה שוב.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // הגדרת קוד — שלב 1: בחירת קוד
+  const handleNewPinEntered = (pin) => {
+    setError("");
+    setFirstPin(pin);
+    setPinValue("");
+    setPinStage("confirm");
+  };
+
+  // הגדרת קוד — שלב 2: אימות הקוד ושמירה בשרת
+  const handleConfirmPinEntered = async (pin) => {
+    if (loading || !pendingPinAuth) return;
+    if (pin !== firstPin) {
+      setPinValue("");
+      setFirstPin("");
+      setPinStage("enter");
+      setPinErrorKey((k) => k + 1);
+      setError("הקודים לא תואמים. נסה שוב.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await postJson("/auth/pin", { pin }, pendingPinAuth.token);
+      const { payload, token } = pendingPinAuth;
+      setPendingPinAuth(null);
+      setPinResetMode(false);
+      completeAuth(payload, token);
+    } catch (e) {
+      setPinValue("");
+      setFirstPin("");
+      setPinStage("enter");
+      setPinErrorKey((k) => k + 1);
+      handleApiError(e, "שמירת הקוד נכשלה. נסה שוב.");
     } finally {
       setLoading(false);
     }
@@ -681,7 +869,7 @@ export default function VerificationModal({ onVerify, onCancel }) {
                     disabled={loading}
                     className="w-full mt-4 bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg"
                 >
-                  {loading ? "בודק..." : "קבלת קוד"}
+                  {loading ? "בודק..." : "המשך"}
                 </Button>
               </form>
 
@@ -696,6 +884,97 @@ export default function VerificationModal({ onVerify, onCancel }) {
               >
                 לקוח חדש? לחץ להרשמה
               </Button>
+            </div>
+        );
+      }
+
+      case "loginPin":
+        return (
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                <KeyRound className="h-7 w-7 text-gray-700" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">הזן את הקוד האישי</h3>
+              <p className="text-gray-500 text-sm mb-7" dir="ltr">{phone}</p>
+              <PinPad
+                  value={pinValue}
+                  onChange={(v) => { setPinValue(v); if (error) setError(""); }}
+                  onComplete={handlePinLogin}
+                  length={pinLength || 4}
+                  disabled={loading || rateLimitTimer > 0 || pinLocked}
+                  errorKey={pinErrorKey}
+              />
+              {pinLocked && (
+                  <Button
+                      type="button"
+                      onClick={() => startPinReset("", { reset: false })}
+                      disabled={loading}
+                      className="w-full mt-6 bg-black text-white hover:bg-gray-800 rounded-full py-3 font-medium text-lg"
+                  >
+                    {loading ? "שולח..." : "התחברות עם קוד ב‑WhatsApp"}
+                  </Button>
+              )}
+              <div className="mt-6 flex items-center justify-center gap-4 text-sm">
+                <Button
+                    type="button"
+                    variant="link"
+                    onClick={() => startPinReset()}
+                    disabled={loading}
+                    className="p-0 h-auto text-gray-700 font-medium"
+                >
+                  שכחתי את הקוד
+                </Button>
+                <span className="h-4 w-px bg-gray-200" aria-hidden="true" />
+                <Button
+                    type="button"
+                    variant="link"
+                    onClick={backToPhone}
+                    disabled={loading}
+                    className="p-0 h-auto text-gray-500"
+                >
+                  החלפת מספר
+                </Button>
+              </div>
+            </div>
+        );
+
+      case "setPin": {
+        const confirming = pinStage === "confirm";
+        return (
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                <KeyRound className="h-7 w-7 text-gray-700" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">
+                {confirming ? "הזן שוב את הקוד" : "בחר קוד אישי"}
+              </h3>
+              <p className="text-gray-600 text-sm mb-7 leading-6">
+                {confirming
+                  ? "לאישור הקוד שבחרת"
+                  : "4 עד 6 ספרות. איתו תתחבר בפעמים הבאות, בלי לחכות לקוד ב‑WhatsApp."}
+              </p>
+              <PinPad
+                  value={pinValue}
+                  onChange={(v) => { setPinValue(v); if (error) setError(""); }}
+                  onComplete={confirming ? handleConfirmPinEntered : handleNewPinEntered}
+                  {...(confirming ? { length: firstPin.length } : { minLength: 4, maxLength: 6 })}
+                  disabled={loading}
+                  errorKey={pinErrorKey}
+              />
+              {confirming && (
+                  <Button
+                      type="button"
+                      variant="link"
+                      onClick={() => { setPinStage("enter"); setFirstPin(""); setPinValue(""); setError(""); }}
+                      disabled={loading}
+                      className="mt-6 p-0 h-auto text-sm text-gray-500"
+                  >
+                    בחירת קוד אחר
+                  </Button>
+              )}
+              {!confirming && (
+                  <p className="mt-6 text-xs text-gray-400">לאחר 4 ספרות אפשר ללחוץ על ✓ או להמשיך עד 6</p>
+              )}
             </div>
         );
       }
@@ -735,9 +1014,11 @@ export default function VerificationModal({ onVerify, onCancel }) {
         return (
             <div className="text-center">
               <Shield className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-2">אימות קוד</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                {pinResetMode ? "איפוס קוד אישי" : "אימות קוד"}
+              </h3>
               <p className="text-gray-600 text-sm mb-6">
-                הזן את 4 הספרות שנשלחו למספר{" "}
+                הזן את 4 הספרות שנשלחו ב‑WhatsApp למספר{" "}
                 <span className="font-bold">{phone}</span>
               </p>
               <div className="flex justify-center gap-2 my-6" dir="ltr">

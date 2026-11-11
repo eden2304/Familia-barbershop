@@ -4,6 +4,10 @@ export const WHATSAPP_TEMPLATES = {
         params: ['code'] as const,
         languageCode: 'en_US',
     },
+    appointment_approved: {
+        name: 'appointment_approved',
+        params: ['clientName', 'date', 'time'] as const,
+    },
     remainder_same_day: {
         name: 'remainder_same_day',
         params: ['clientName', 'date', 'time'] as const,
@@ -47,6 +51,7 @@ export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;
 // Human-readable (Hebrew) names used in admin failure alerts.
 export const WHATSAPP_TEMPLATE_LABELS: Record<WhatsAppTemplateName, string> = {
     auth_code: 'קוד התחברות',
+    appointment_approved: 'אישור תור',
     remainder_same_day: 'תזכורת לתור היום',
     reminder_prev_day: 'תזכורת לתור מחר',
     appointment_canceled: 'ביטול תור',

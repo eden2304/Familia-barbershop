@@ -1,12 +1,19 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Logger, Post, Query, Req } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import {Public} from "../auth/public.decorator";
 import { RateLimitPolicy } from "../../common/rate-limit/rate-limit.decorator";
 import { Request } from 'express';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { normalizePhone } from '../../common/security.utils';
 
 @Controller('appointments')
 export class AppointmentsController {
-    constructor(private readonly svc: AppointmentsService) {}
+    private readonly logger = new Logger(AppointmentsController.name);
+
+    constructor(
+        private readonly svc: AppointmentsService,
+        private readonly whatsappService: WhatsAppService,
+    ) {}
 
     private normDate(date: string): string {
         if (!date) throw new BadRequestException('date is required');
@@ -55,7 +62,7 @@ export class AppointmentsController {
 
     @RateLimitPolicy('booking-create')
     @Post()
-    async create(@Body() body: any, @Req() req: Request & { user?: { roles?: string[] } }) {
+    async create(@Body() body: any, @Req() req: Request & { user?: { roles?: string[]; phone?: string } }) {
         // (ללא שינוי מהגרסה האחרונה ששלחתי)
         const hasNestedClient = !!body?.client;
 
@@ -101,6 +108,17 @@ export class AppointmentsController {
 
         const isAdmin = Boolean(req.user?.roles?.includes('admin'));
         const saved = await this.svc.create(dto, { bypassMemberRestrictions: isAdmin });
+
+        // WhatsApp booking confirmation only when an admin booked FOR a client (admin
+        // schedule screen). Clients booking for themselves already see the in-app
+        // confirmation, so they get no message (saves cost). Fire-and-forget: a slow or
+        // failed send never delays or fails the booking (failures alert the admin).
+        const bookedForSomeoneElse = normalizePhone(String(clientPhone)) !== normalizePhone(String(req.user?.phone ?? ''));
+        if (isAdmin && bookedForSomeoneElse) {
+            void this.whatsappService.sendAppointmentConfirmed(saved).catch((error: any) => {
+                this.logger.warn(`WhatsApp booking confirmation failed: ${error?.message || error}`);
+            });
+        }
 
         return {
             ok: true,

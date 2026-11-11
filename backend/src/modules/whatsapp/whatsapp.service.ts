@@ -52,6 +52,13 @@ export class WhatsAppService {
         return this.timeZone;
     }
 
+    /** Booking confirmation — sent only for appointments an admin booked for a client. */
+    async sendAppointmentConfirmed(appointment: Appointment) {
+        return this.sendAppointmentTemplate('appointment_approved', appointment, {
+            appointmentId: appointment.id,
+        });
+    }
+
     async sendAppointmentReminderSameDay(appointment: Appointment) {
         const alreadySent = await this.logRepo.exist({
             where: { appointmentId: appointment.id, templateName: 'remainder_same_day' },
@@ -143,7 +150,7 @@ export class WhatsAppService {
     }
 
     private async sendAppointmentTemplate(
-        templateName: 'remainder_same_day' | 'reminder_prev_day' | 'appointment_canceled',
+        templateName: 'appointment_approved' | 'remainder_same_day' | 'reminder_prev_day' | 'appointment_canceled',
         appointment: Appointment,
         opts: { appointmentId?: string } = {},
     ) {

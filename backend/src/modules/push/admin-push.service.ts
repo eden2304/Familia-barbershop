@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +12,7 @@ import {
     createCipheriv,
 } from 'crypto';
 import { AdminPushSubscription } from '../../entities/admin-push-subscription.entity';
+import { Setting } from '../../entities/setting.entity';
 import { normalizePhone } from '../../common/security.utils';
 
 interface PushPayload {
@@ -25,8 +26,12 @@ interface PushPayload {
 // admin updates (logins, bookings, waiting list).
 const DEFAULT_WHATSAPP_ALERT_ADMIN_PHONES = '0537002171';
 
+// Settings key marking that the one-time sample alert (sent on the first deploy of
+// this feature) was delivered. Delete the row to send the sample again on next boot.
+const WHATSAPP_ALERT_SAMPLE_SETTING_KEY = 'whatsapp_alert_sample_sent';
+
 @Injectable()
-export class AdminPushService {
+export class AdminPushService implements OnApplicationBootstrap {
     private readonly logger = new Logger(AdminPushService.name);
     private readonly vapidPublicKey: string;
     private readonly vapidPrivateKey: string;
@@ -36,6 +41,8 @@ export class AdminPushService {
     constructor(
         @InjectRepository(AdminPushSubscription)
         private readonly subscriptionsRepo: Repository<AdminPushSubscription>,
+        @InjectRepository(Setting)
+        private readonly settingsRepo: Repository<Setting>,
         private readonly configService: ConfigService,
     ) {
         this.vapidPublicKey = String(this.configService.get<string>('VAPID_PUBLIC_KEY') || '').trim();
@@ -49,6 +56,37 @@ export class AdminPushService {
 
     private isWhatsAppAlertAdmin(adminPhone: string): boolean {
         return this.whatsappAlertPhones.has(normalizePhone(adminPhone));
+    }
+
+    onApplicationBootstrap() {
+        // Fire-and-forget: never delay or fail app startup.
+        void this.sendWhatsAppAlertSampleOnce().catch((err) => {
+            this.logger.warn(`WhatsApp alert sample failed: ${err?.message || err}`);
+        });
+    }
+
+    /**
+     * Sends a single sample alert to the WhatsApp alert admin(s) so it's visible that
+     * alerts arrive. Marked done only once actually delivered, so if the admin hasn't
+     * enabled push yet it is retried on the next boot.
+     */
+    private async sendWhatsAppAlertSampleOnce() {
+        if (!this.vapidPublicKey || !this.vapidPrivateKey || !this.whatsappAlertPhones.size) return;
+        const alreadySent = await this.settingsRepo.findOne({ where: { key: WHATSAPP_ALERT_SAMPLE_SETTING_KEY } });
+        if (alreadySent) return;
+
+        const delivered = await this.sendWhatsAppFailureAlert({
+            title: '⚠️ הודעת WhatsApp לא נשלחה (דוגמה)',
+            body: 'זו הודעת בדיקה בלבד: כך תיראה התראה כשהודעת WhatsApp ללקוח תיכשל.',
+            url: '/Admin',
+            tag: 'whatsapp-alert-sample',
+        });
+        if (delivered > 0) {
+            await this.settingsRepo.save(this.settingsRepo.create({
+                key: WHATSAPP_ALERT_SAMPLE_SETTING_KEY,
+                value: { sentAt: new Date().toISOString(), delivered },
+            }));
+        }
     }
 
     getPublicKey(): string {
@@ -76,6 +114,19 @@ export class AdminPushService {
         }
 
         await this.subscriptionsRepo.save(existing);
+
+        if (this.isWhatsAppAlertAdmin(adminPhone)) {
+            // Confirm on the newly enabled device that WhatsApp failure alerts will arrive there.
+            const saved = existing;
+            void this.dispatch([saved], {
+                title: 'התראות WhatsApp הופעלו',
+                body: 'מעכשיו תקבל במכשיר הזה התראה על כל הודעת WhatsApp ללקוח שלא נשלחה.',
+                url: '/Admin',
+                tag: 'whatsapp-alert-enabled',
+            }, 'whatsapp-alert-enabled').catch((err) => {
+                this.logger.warn(`WhatsApp alert confirmation failed: ${err?.message || err}`);
+            });
+        }
         return existing;
     }
 
@@ -124,37 +175,42 @@ export class AdminPushService {
         await this.dispatch(recipients, payload, 'admin');
     }
 
-    async sendWhatsAppFailureAlert(payload: PushPayload) {
+    /** Returns how many subscriptions the alert was actually delivered to. */
+    async sendWhatsAppFailureAlert(payload: PushPayload): Promise<number> {
         if (!this.vapidPublicKey || !this.vapidPrivateKey) {
             this.logger.warn('Skipping WhatsApp alert push: VAPID keys are not configured');
-            return;
+            return 0;
         }
-        if (!this.whatsappAlertPhones.size) return;
+        if (!this.whatsappAlertPhones.size) return 0;
 
         const all = await this.subscriptionsRepo.find();
         const recipients = all.filter((row) => this.isWhatsAppAlertAdmin(row.adminPhone));
         if (!recipients.length) {
             this.logger.warn('WhatsApp failure alert not delivered: alert admin has no push subscription');
-            return;
+            return 0;
         }
-        await this.dispatch(recipients, payload, 'whatsapp-alert');
+        return this.dispatch(recipients, payload, 'whatsapp-alert');
     }
 
-    private async dispatch(recipients: AdminPushSubscription[], payload: PushPayload, kind: string) {
-        if (!recipients.length) return;
+    private async dispatch(recipients: AdminPushSubscription[], payload: PushPayload, kind: string): Promise<number> {
+        if (!recipients.length) return 0;
 
+        let delivered = 0;
         await Promise.all(recipients.map(async (row) => {
             try {
                 const result = await this.sendVapidPushWithPayload(row.endpoint, row.p256dh, row.auth, payload);
                 if (result === 410) {
                     await this.subscriptionsRepo.delete({ id: row.id });
+                } else {
+                    delivered += 1;
                 }
             } catch (error: any) {
                 this.logger.warn(`Push send failed for subscription ${row.id}: ${String(error?.message || error)}`);
             }
         }));
 
-        this.logger.log(`Push (${kind}) dispatched to ${recipients.length} admin subscriptions (${payload.body})`);
+        this.logger.log(`Push (${kind}) delivered to ${delivered}/${recipients.length} admin subscriptions (${payload.body})`);
+        return delivered;
     }
 
     private async sendVapidPushWithPayload(endpoint: string, p256dh: string, auth: string, payload: PushPayload): Promise<number> {

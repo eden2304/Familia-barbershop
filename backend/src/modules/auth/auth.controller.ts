@@ -5,7 +5,9 @@ import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
 import {Public} from "./public.decorator";
 import { RateLimitPolicy } from '../../common/rate-limit/rate-limit.decorator';
-import { AuthTokenPayload } from './auth.types';
+import { AuthTokenPayload, AuthTokens } from './auth.types';
+import { ClientPinService } from './client-pin.service';
+import { PinLoginDto, SetPinDto } from './dto/pin.dto';
 
 function parseCookies(req: Request): Record<string, string> {
     const header = req.headers['cookie'] || '';
@@ -18,7 +20,58 @@ function parseCookies(req: Request): Record<string, string> {
 
 @Controller()
 export class AuthController {
-    constructor(private readonly svc: AuthService) {}
+    constructor(
+        private readonly svc: AuthService,
+        private readonly pins: ClientPinService,
+    ) {}
+
+    private async toLoginResponse(result: AuthTokens) {
+        const c = result.client;
+        const pinRequired = await this.pins.isPinRequired({ id: c.id, phone: c.phone });
+        return {
+            ok: true,
+            success: true,
+            user: { ...c, isAdmin: result.roles?.includes('admin') },
+            client: { ...c, isAdmin: result.roles?.includes('admin') },
+            token: result.token,
+            expiresAt: result.expiresAt,
+            roles: result.roles,
+            id: c.id,
+            phone: c.phone,
+            firstName: (c as any).firstName,
+            lastName: (c as any).lastName,
+            // Client has no personal PIN yet and must choose one before finishing login.
+            pinRequired,
+        };
+    }
+
+    // ---- Personal PIN login ----
+
+    @Public()
+    @RateLimitPolicy('otp-verify')
+    @Post('auth/login-method')
+    @HttpCode(200)
+    async loginMethod(@Body() body: RequestCodeDto) {
+        return { ok: true, ...(await this.pins.getLoginMethod(body.phone)) };
+    }
+
+    @Public()
+    @RateLimitPolicy('otp-verify')
+    @Post('auth/pin/login')
+    @HttpCode(200)
+    async pinLogin(@Body() body: PinLoginDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
+        const result = await this.pins.loginWithPin(body.phone, body.pin, body.rememberMe, req.headers['user-agent']);
+        this.setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
+        return this.toLoginResponse(result);
+    }
+
+    @Post('auth/pin')
+    @HttpCode(200)
+    async setPin(@Body() body: SetPinDto, @Req() req: Request & { user?: AuthTokenPayload }) {
+        const clientId = Number(req.user?.sub);
+        if (!Number.isInteger(clientId) || clientId <= 0) throw new UnauthorizedException('AUTH_REQUIRED');
+        return this.pins.setPin(clientId, body.pin);
+    }
 
     @Public()
     @RateLimitPolicy('otp-request')
@@ -59,20 +112,7 @@ export class AuthController {
     async verifyCode(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
         const result = await this.svc.verifyCode({ ...body, userAgent: req.headers['user-agent'] });
         this.setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
-        const c = result.client;
-        return {
-            ok: true,
-            success: true,
-            user: { ...c, isAdmin: result.roles?.includes('admin') },
-            client: { ...c, isAdmin: result.roles?.includes('admin') },
-            token: result.token,
-            expiresAt: result.expiresAt,
-            roles: result.roles,
-            id: c.id,
-            phone: c.phone,
-            firstName: (c as any).firstName,
-            lastName: (c as any).lastName,
-        };
+        return this.toLoginResponse(result);
     }
 
     @Public()
@@ -81,20 +121,7 @@ export class AuthController {
     async register(@Body() body: VerifyCodeDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
         const result = await this.svc.register({ ...body, userAgent: req.headers['user-agent'] });
         this.setRefreshCookie(res, result.refreshToken, result.refreshExpiresAt);
-        const c = result.client;
-        return {
-            ok: true,
-            success: true,
-            user: { ...c, isAdmin: result.roles?.includes('admin') },
-            client: { ...c, isAdmin: result.roles?.includes('admin') },
-            token: result.token,
-            expiresAt: result.expiresAt,
-            roles: result.roles,
-            id: c.id,
-            phone: c.phone,
-            firstName: (c as any).firstName,
-            lastName: (c as any).lastName,
-        };
+        return this.toLoginResponse(result);
     }
 
     @Public()

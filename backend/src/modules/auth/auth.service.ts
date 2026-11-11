@@ -262,6 +262,13 @@ export class AuthService {
             `OTP issued for ${maskPhone(norm)}${whatsappResult.status === 'sent' ? ' (WHATSAPP_SENT)' : ''}`
         );
 
+        // Local development only: WhatsApp is disabled, so the code is never delivered.
+        // Print it so sign-up/login can be tested. Double-gated: never in production
+        // (NODE_ENV=production) and never when WhatsApp actually sent the code.
+        if (whatsappResult.status === 'skipped' && process.env.NODE_ENV !== 'production') {
+            this.logger.warn(`[DEV ONLY] OTP for ${maskPhone(norm)}: ${code}`);
+        }
+
         return { ok: true };
     }
 
@@ -385,6 +392,15 @@ export class AuthService {
         const variants = phoneVariants(phone);
         if (variants.length === 0) return null;
         return this.clientRepo.findOne({ where: variants.map((p) => ({ phone: p })) });
+    }
+
+    async findClientById(id: number): Promise<Client | null> {
+        if (!Number.isInteger(id) || id <= 0) return null;
+        return this.clientRepo.findOne({ where: { id } });
+    }
+
+    async isAdminPhoneNumber(phone: string): Promise<boolean> {
+        return this.isAdminPhone(phone);
     }
 
     private async buildAuthResult(client: Client, rememberMe?: boolean, userAgent?: string, logUpdates = true): Promise<AuthTokens> {

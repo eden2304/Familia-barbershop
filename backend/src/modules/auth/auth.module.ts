@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt'; // ✅
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { ClientPinService } from './client-pin.service';
 import { Client } from '../../clients/client.entity';
 import { Setting } from '../../entities/setting.entity';
 import { AdminPhone } from '../../entities/admin-phone.entity';
@@ -38,6 +39,7 @@ import { AdminPushModule } from '../push/admin-push.module';
     controllers: [AuthController],
     providers: [
         AuthService,
+        ClientPinService,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
     ],

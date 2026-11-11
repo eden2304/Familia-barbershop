@@ -43,3 +43,16 @@ export const WHATSAPP_TEMPLATES = {
 }>;
 
 export type WhatsAppTemplateName = keyof typeof WHATSAPP_TEMPLATES;
+
+// Human-readable (Hebrew) names used in admin failure alerts.
+export const WHATSAPP_TEMPLATE_LABELS: Record<WhatsAppTemplateName, string> = {
+    auth_code: 'קוד התחברות',
+    remainder_same_day: 'תזכורת לתור היום',
+    reminder_prev_day: 'תזכורת לתור מחר',
+    appointment_canceled: 'ביטול תור',
+    appointment_rescheduled: 'הזזת תור',
+    general_message: 'הודעה כללית',
+    admin_appointment_message: 'הודעה על תור',
+    fixed_appointment: 'תור קבוע',
+    delete_fixed: 'ביטול תור קבוע',
+};
